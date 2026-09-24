@@ -1,0 +1,6 @@
+backend/node_modules
+backend/*.db
+backend/*.db-*
+backend/bijlagen
+backend/backups
+backend/test

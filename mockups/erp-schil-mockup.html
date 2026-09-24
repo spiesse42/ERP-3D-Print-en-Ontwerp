@@ -1,0 +1,839 @@
+<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>ERP-schil mockup</title>
+<style>
+:root{
+  --ink:#241a12;--paper:#faf6ee;--surface:#fffcf6;--sunken:#f2ebdc;--line:#e2d8c3;--line-strong:#cdbf9f;
+  --muted:#6f6453;--accent:#e2601c;--accent-ink:#fff6ec;--accent-dim:#fbe4d2;--accent-deep:#a4430f;
+  --pos:#3f7d4a;--pos-bg:#e4f2e6;--warn:#94600f;--warn-bg:#faedd6;--crit:#b3362a;--crit-bg:#fbe1dd;--info:#335f93;--info-bg:#e6eef7;
+  --bar:#241a12;--bar-line:#3c2d1e;--bar-text:#e8dccb;--bar-dim:#b5a28b;
+  --radius:3px;--radius-lg:5px;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Consolas,monospace;
+  --shadow:0 1px 2px rgba(36,26,18,.08),0 6px 18px rgba(36,26,18,.08);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --ink:#f1e7d8;--paper:#18120d;--surface:#221a13;--sunken:#2c2219;--line:#3a2e22;--line-strong:#524230;
+  --muted:#b09f88;--accent:#f07a3a;--accent-ink:#1b120b;--accent-dim:#4a2a17;--accent-deep:#f39a66;
+  --pos:#86c592;--pos-bg:#1e3224;--warn:#e3ab52;--warn-bg:#3a2b12;--crit:#f08a7c;--crit-bg:#3d1f1a;--info:#8fb4e3;--info-bg:#1b293a;
+  --bar:#100b07;--bar-line:#2a2017;--shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ink:#f1e7d8;--paper:#18120d;--surface:#221a13;--sunken:#2c2219;--line:#3a2e22;--line-strong:#524230;
+  --muted:#b09f88;--accent:#f07a3a;--accent-ink:#1b120b;--accent-dim:#4a2a17;--accent-deep:#f39a66;
+  --pos:#86c592;--pos-bg:#1e3224;--warn:#e3ab52;--warn-bg:#3a2b12;--crit:#f08a7c;--crit-bg:#3d1f1a;--info:#8fb4e3;--info-bg:#1b293a;
+  --bar:#100b07;--bar-line:#2a2017;--shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{background:var(--paper)}
+body{margin:0;font-family:var(--font);color:var(--ink);font-size:14px;line-height:1.45;padding-inline:16px;padding-block:12px 32px}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono);font-size:12.5px}
+
+/* mockup-balk */
+.mockbar{max-width:1400px;margin:0 auto 12px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between}
+.mockbar .tag{font-size:12px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;font-weight:700}
+.mockbar .tag b{color:var(--accent-deep)}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--radius);overflow:hidden;background:var(--sunken)}
+.seg button{border:0;background:none;padding:7px 14px;font-weight:600;font-size:13px;display:inline-flex;gap:6px;align-items:center;min-height:36px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+
+.stage{display:flex;justify-content:center}
+.app{container-type:inline-size;width:100%;max-width:1400px;background:var(--paper);border:1px solid var(--line-strong);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:720px}
+.stage.gsm .app{max-width:390px;height:780px;min-height:0;border-radius:22px;border-width:6px;border-color:var(--bar)}
+.appscroll{flex:1;overflow:auto}
+
+/* bovenbalk */
+.topbar{background:var(--bar);color:var(--bar-text);display:flex;align-items:center;gap:4px;padding:0 8px;min-height:46px;border-bottom:1px solid var(--bar-line)}
+.topbar .home{background:none;border:0;color:var(--bar-text);width:44px;height:44px;display:grid;place-items:center;border-radius:var(--radius)}
+.topbar .home:hover{background:var(--bar-line)}
+.topbar .appname{font-weight:700;font-size:15px;padding:0 10px 0 4px;white-space:nowrap}
+.topbar nav{display:flex;gap:2px;overflow-x:auto}
+.topbar nav button{background:none;border:0;color:var(--bar-dim);padding:0 12px;height:46px;font-size:13.5px;white-space:nowrap;border-bottom:2px solid transparent}
+.topbar nav button:hover{color:var(--bar-text)}
+.topbar nav button.on{color:var(--bar-text);border-bottom-color:var(--accent)}
+.topbar .spacer{flex:1}
+.topbar .who{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-weight:700;font-size:12px;margin-right:6px}
+
+/* controlepaneel (breadcrumb + zoekbalk + weergaves) */
+.cp{background:var(--surface);border-bottom:1px solid var(--line);padding:10px 16px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:10px 16px;align-items:center}
+.crumbs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.crumbs button{background:none;border:0;padding:0;color:var(--info);font-size:17px}
+.crumbs .sep{color:var(--muted)}
+.crumbs .cur{font-size:17px;font-weight:600}
+.cp .actions{display:flex;gap:8px;flex-wrap:wrap;grid-column:1}
+.search{display:flex;align-items:center;gap:6px;border:1px solid var(--line-strong);background:var(--sunken);border-radius:var(--radius);padding:4px 6px;min-height:38px;flex-wrap:wrap}
+.search svg{color:var(--muted);flex:none}
+.search input{border:0;background:none;outline:none;flex:1;min-width:90px;font:inherit;color:var(--ink);padding:4px}
+.facet{display:inline-flex;align-items:center;gap:0;border-radius:var(--radius);overflow:hidden;font-size:12.5px;border:1px solid var(--line-strong)}
+.facet .k{background:var(--ink);color:var(--paper);padding:3px 6px;display:grid;place-items:center}
+.facet .v{background:var(--surface);padding:3px 8px}
+.facet button{border:0;background:var(--surface);padding:3px 6px;color:var(--muted)}
+.cp .right{display:flex;gap:8px;align-items:center;justify-content:flex-end;grid-column:2;flex-wrap:wrap}
+.pager{color:var(--muted);font-size:13px}
+.views{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--radius);overflow:hidden}
+.views button{border:0;background:var(--surface);width:40px;height:34px;display:grid;place-items:center;color:var(--muted)}
+.views button[aria-pressed="true"]{background:var(--accent-dim);color:var(--accent-deep)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;grid-column:2;justify-content:flex-end}
+.chip{border:1px dashed var(--line-strong);background:none;border-radius:999px;padding:4px 10px;font-size:12.5px;color:var(--muted);min-height:30px}
+.chip[aria-pressed="true"]{border-style:solid;border-color:var(--accent);color:var(--accent-deep);background:var(--accent-dim)}
+
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--radius);border:1px solid var(--line-strong);background:var(--sunken);color:var(--ink);font-size:13px;font-weight:600;min-height:36px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent-deep);color:var(--accent-ink)}
+.btn.primary:hover{background:var(--accent-deep);color:var(--accent-ink)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.ghost{background:none;border-color:transparent}
+
+/* badges */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;letter-spacing:.01em}
+.b-neutral{background:var(--sunken);color:var(--muted)}
+.b-info{background:var(--info-bg);color:var(--info)}
+.b-warn{background:var(--warn-bg);color:var(--warn)}
+.b-pos{background:var(--pos-bg);color:var(--pos)}
+.b-crit{background:var(--crit-bg);color:var(--crit)}
+.b-accent{background:var(--accent-dim);color:var(--accent-deep)}
+
+/* startscherm */
+.home-wrap{padding:40px 24px 56px;max-width:980px;margin:0 auto}
+.home-wrap h1{font-size:22px;margin:0 0 4px;text-wrap:balance}
+.home-wrap p{margin:0 0 28px;color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:18px 14px 14px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;min-height:150px;position:relative}
+.tile:hover{border-color:var(--accent);box-shadow:var(--shadow)}
+.tile .ic{width:58px;height:58px;border-radius:12px;display:grid;place-items:center;color:#fff}
+.tile .t{font-weight:700;font-size:14.5px}
+.tile .todo{font-size:12px}
+.tile .mocked{position:absolute;top:8px;right:8px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+
+/* lijst */
+.listwrap{padding:0 0 24px;overflow-x:auto}
+table.list{width:100%;border-collapse:collapse;min-width:760px}
+table.list th{text-align:left;font-size:12.5px;color:var(--muted);font-weight:700;padding:10px 12px;border-bottom:1px solid var(--line-strong);background:var(--surface);position:sticky;top:0;white-space:nowrap}
+table.list td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.list tr.row{cursor:pointer}
+table.list tr.row:hover td{background:var(--accent-dim)}
+table.list tr.grp td{background:var(--sunken);font-weight:700;font-size:13px;cursor:default}
+table.list .r{text-align:right}
+table.list input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
+.sub{color:var(--muted);font-size:12.5px}
+.prog{display:inline-flex;align-items:center;gap:8px}
+.bar{width:70px;height:6px;background:var(--sunken);border-radius:3px;overflow:hidden;border:1px solid var(--line)}
+.bar i{display:block;height:100%;background:var(--accent)}
+.cards{display:none}
+
+/* kanban */
+.kanban{display:flex;gap:12px;padding:14px 16px 24px;overflow-x:auto;align-items:flex-start}
+.kcol{flex:0 0 250px;background:var(--sunken);border-radius:var(--radius-lg);padding:8px;display:flex;flex-direction:column;gap:8px}
+.kcol h3{margin:2px 4px 4px;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+.kcol h3 span{color:var(--muted);font-weight:600}
+.kcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px;display:flex;flex-direction:column;gap:6px;text-align:left;width:100%}
+.kcard:hover{border-color:var(--accent)}
+.kcard .t{font-weight:700;font-size:13.5px}
+.kcard .meta{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+.swatches{display:inline-flex;gap:3px}
+.sw{width:12px;height:12px;border-radius:50%;border:1px solid var(--line-strong);display:inline-block}
+
+/* formulier */
+.form-actions{padding:10px 16px;display:flex;gap:10px 16px;align-items:center;justify-content:space-between;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--surface)}
+.form-actions .btns{display:flex;gap:8px;flex-wrap:wrap}
+.statusbar{display:flex;align-items:stretch;border:1px solid var(--line-strong);border-radius:var(--radius);overflow:hidden;background:var(--sunken)}
+.statusbar span{padding:6px 12px 6px 18px;font-size:12.5px;color:var(--muted);position:relative;white-space:nowrap;display:flex;align-items:center}
+.statusbar span:first-child{padding-left:12px}
+.statusbar span+span::before{content:"";position:absolute;left:0;top:0;bottom:0;width:8px;background:linear-gradient(to bottom right,transparent 49%,var(--line-strong) 50%, transparent 52%) top/100% 50% no-repeat,linear-gradient(to top right,transparent 49%,var(--line-strong) 50%, transparent 52%) bottom/100% 50% no-repeat}
+.statusbar span.done{color:var(--ink)}
+.statusbar span.cur{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.statusbar .cur-mobile{display:none}
+.sheet-wrap{padding:16px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px;max-width:1180px;margin:0 auto}
+.sheet{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow)}
+.sheet-head{padding:18px 22px 6px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.sheet-head .nr{font-family:var(--mono);color:var(--muted);font-size:13px}
+.sheet-head h2{margin:2px 0 0;font-size:22px;text-wrap:balance}
+.smart{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;align-self:flex-start}
+.smart button{background:var(--surface);border:0;border-right:1px solid var(--line);padding:6px 14px;display:flex;gap:8px;align-items:center;min-height:48px;text-align:left}
+.smart button:last-child{border-right:0}
+.smart button:hover{background:var(--accent-dim)}
+.smart svg{color:var(--accent-deep)}
+.smart .n{font-weight:700;display:block;font-size:14px;line-height:1.1}
+.smart .l{font-size:12px;color:var(--muted);display:block}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 36px;padding:10px 22px 16px}
+.field{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;padding:5px 0;align-items:baseline}
+.field .k{font-weight:700;font-size:13px}
+.field .v a,.linkish{color:var(--info);text-decoration:none;background:none;border:0;padding:0}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--line-strong);padding:0 22px;overflow-x:auto}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:10px 14px;font-weight:600;color:var(--muted);white-space:nowrap;min-height:44px}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tabpanel{padding:14px 22px 22px}
+.lines{width:100%;border-collapse:collapse;min-width:620px}
+.lines th{font-size:12px;text-align:left;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line-strong);white-space:nowrap}
+.lines td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.lines .r{text-align:right}
+.lines .type{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.addline{display:flex;gap:14px;padding:10px 8px 0;flex-wrap:wrap}
+.totals{display:flex;justify-content:flex-end;margin-top:12px}
+.totals dl{display:grid;grid-template-columns:auto auto;gap:4px 24px;margin:0;min-width:260px}
+.totals dt{color:var(--muted);text-align:right}
+.totals dd{margin:0;text-align:right}
+.totals .grand{font-size:17px;font-weight:700;border-top:1px solid var(--line-strong);padding-top:6px}
+.scroll-x{overflow-x:auto}
+.note{font-size:12.5px;color:var(--muted)}
+.cmp{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.cmp .box{border:1px solid var(--line);border-radius:var(--radius);padding:12px;background:var(--paper)}
+.cmp .k{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.cmp .v{font-size:22px;font-weight:700}
+.fiche{border:1px dashed var(--line-strong);border-radius:var(--radius);padding:14px;background:var(--paper);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 28px}
+.fiche .field{grid-template-columns:140px minmax(0,1fr)}
+.inp{border:1px solid var(--line-strong);background:var(--sunken);border-radius:var(--radius);padding:7px 10px;font:inherit;color:var(--ink);width:100%}
+.rows2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px;align-items:end}
+.rows2 label{display:block;font-size:12.5px;font-weight:700;margin-bottom:4px}
+
+/* historiek */
+.chatter{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 22px 18px}
+.chatter h3{margin:0 0 10px;font-size:14px}
+.compose{display:flex;gap:8px;margin-bottom:14px}
+.compose input{flex:1}
+.day{font-size:12px;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:10px;margin:14px 0 6px}
+.day::after{content:"";flex:1;height:1px;background:var(--line)}
+.ev{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;padding:6px 0}
+.ev .dot{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--sunken);color:var(--muted)}
+.ev .dot.a{background:var(--accent-dim);color:var(--accent-deep)}
+.ev .dot.p{background:var(--pos-bg);color:var(--pos)}
+.ev .dot.c{background:var(--crit-bg);color:var(--crit)}
+.ev .top{font-size:12.5px;color:var(--muted)}
+.ev .top b{color:var(--ink)}
+
+/* productie */
+.alert{margin:14px 16px 0;border:1px solid var(--warn);background:var(--warn-bg);border-radius:var(--radius-lg);padding:12px 14px;display:flex;gap:12px 18px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.alert .txt{display:flex;gap:10px;align-items:flex-start;color:var(--ink)}
+.alert .txt svg{color:var(--warn);flex:none;margin-top:2px}
+.alert .opts{display:flex;gap:8px;flex-wrap:wrap}
+.picklist{flex-basis:100%;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--warn);padding-top:10px}
+.pickhead{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.pick{display:flex;justify-content:space-between;align-items:center;gap:8px 14px;flex-wrap:wrap;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:9px 12px;min-height:48px;width:100%}
+.pick:hover:not(:disabled){border-color:var(--accent)}
+.pick:disabled{opacity:.6;cursor:not-allowed}
+.pick .pr{display:flex;gap:6px;flex-wrap:wrap}
+.alert.ok{border-color:var(--pos);background:var(--pos-bg)}
+.alert.ok .txt svg{color:var(--pos)}
+.pgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:14px 16px 24px}
+.pcol{display:flex;flex-direction:column;gap:10px}
+.pcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden}
+.pcard .ph{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+.pcard .ph b{font-size:14.5px}
+.pcard .pb{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.tele{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.tele div{background:var(--sunken);border-radius:var(--radius);padding:6px;text-align:center}
+.tele .k{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block}
+.tele .v{font-weight:700;font-size:13.5px}
+.layerbar{height:10px;border-radius:2px;background:repeating-linear-gradient(to right,var(--sunken) 0 3px,var(--line) 3px 4px);border:1px solid var(--line);overflow:hidden}
+.layerbar i{display:block;height:100%;background:repeating-linear-gradient(to right,var(--accent) 0 3px,var(--accent-deep) 3px 4px)}
+.qhead{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:2px 2px 0}
+.qitem{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:9px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center;cursor:grab}
+.qitem .grip{color:var(--line-strong);margin-right:8px}
+.pcard .pf{padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+.spool{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.spool button{border:1px solid var(--line);background:var(--paper);border-radius:var(--radius);padding:8px;display:flex;gap:8px;align-items:center;text-align:left;min-height:44px}
+.spool button:hover{border-color:var(--accent)}
+.spool .ring{width:26px;height:26px;border-radius:50%;border:6px solid;flex:none;box-shadow:inset 0 0 0 3px var(--paper)}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:var(--radius-lg);font-size:13.5px;box-shadow:var(--shadow);max-width:calc(100% - 32px);z-index:10}
+
+/* ── smal scherm (gsm-kader of echte gsm) ── */
+@container (max-width:700px){
+  .topbar nav{display:none}
+  .cp{grid-template-columns:minmax(0,1fr)}
+  .cp .right,.filters,.cp .actions{grid-column:1;justify-content:flex-start}
+  .tiles{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .tile{min-height:120px;padding:12px 6px}
+  .tile .ic{width:48px;height:48px}
+  .home-wrap{padding:24px 12px 40px}
+  .listwrap table{display:none}
+  .cards{display:flex;flex-direction:column;gap:8px;padding:12px}
+  .cards .grp{font-weight:700;font-size:13px;margin-top:6px}
+  .mcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:12px;display:flex;flex-direction:column;gap:6px;text-align:left;width:100%}
+  .mcard .l1{display:flex;justify-content:space-between;gap:8px}
+  .statusbar span{display:none}
+  .statusbar .cur-mobile{display:flex;padding:6px 12px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:12.5px}
+  .fields{grid-template-columns:minmax(0,1fr);padding:10px 16px}
+  .field{grid-template-columns:120px minmax(0,1fr)}
+  .sheet-head,.tabpanel{padding-left:16px;padding-right:16px}
+  .tabs{padding:0 8px}
+  .sheet-wrap{padding:10px}
+  .smart{width:100%}
+  .smart button{flex:1 1 50%;border-bottom:1px solid var(--line)}
+  .cmp{grid-template-columns:minmax(0,1fr)}
+  .fiche,.rows2{grid-template-columns:minmax(0,1fr)}
+  .pgrid{grid-template-columns:minmax(0,1fr)}
+  .chatter{padding:14px 16px}
+  .tele{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@container (min-width:701px) and (max-width:1000px){
+  .tiles{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .pgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .fields{grid-template-columns:minmax(0,1fr)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<style>
+/* ── aanvullingen volledige mockup ── */
+.topbar nav button{cursor:pointer}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 16px;display:flex;flex-direction:column;gap:2px;text-align:left}
+.kpi .k{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.kpi .v{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.kpi .s{font-size:12.5px;color:var(--muted)}
+button.kpi:hover{border-color:var(--accent)}
+.page{padding:16px;display:flex;flex-direction:column;gap:16px;max-width:1240px;margin:0 auto;width:100%}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg)}
+.panel>h3{margin:0;padding:12px 16px;font-size:14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.panel .pbody{padding:14px 16px}
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.meter{height:12px;border-radius:6px;background:var(--sunken);border:1px solid var(--line);overflow:hidden;margin:8px 0 4px}
+.meter i{display:block;height:100%;background:var(--accent);border-radius:6px}
+.meter-scale{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.chart{position:relative}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart .tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--paper);font-size:12px;padding:4px 8px;border-radius:var(--radius);white-space:nowrap;transform:translate(-50%,-110%)}
+.mini{width:100%;border-collapse:collapse}
+.mini td,.mini th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;font-size:13.5px}
+.mini th{font-size:12px;color:var(--muted)}
+.mini tr.clk{cursor:pointer}
+.mini tr.clk:hover td{background:var(--accent-dim)}
+.mini .r{text-align:right}
+.drop{border:2px dashed var(--line-strong);border-radius:var(--radius-lg);background:var(--sunken);padding:26px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;color:var(--muted)}
+.drop b{color:var(--ink)}
+.settings{display:grid;grid-template-columns:220px minmax(0,1fr);gap:16px;padding:16px;max-width:1240px;margin:0 auto;width:100%}
+.snav{display:flex;flex-direction:column;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:6px;align-self:start}
+.snav button{background:none;border:0;text-align:left;padding:9px 12px;border-radius:var(--radius);font-weight:600;color:var(--muted);min-height:40px}
+.snav button[aria-current="true"]{background:var(--accent-dim);color:var(--accent-deep)}
+.fgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 24px}
+.fgrid label{display:block;font-size:12.5px;font-weight:700;margin-bottom:4px}
+.fgrid .unit{display:flex;align-items:center;gap:8px}
+.fgrid .unit span{color:var(--muted);font-size:12.5px;white-space:nowrap}
+.fgroup{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);grid-column:1/-1;border-bottom:1px solid var(--line);padding-bottom:4px;margin-top:6px}
+.ccard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:12px;display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;text-align:left;width:100%;align-items:start}
+.ccard:hover{border-color:var(--accent)}
+.avatar{width:44px;height:44px;border-radius:var(--radius);display:grid;place-items:center;font-weight:700;color:#fff;font-size:15px}
+.cgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 16px 24px}
+.ringsw{width:22px;height:22px;border-radius:50%;border:5px solid;display:inline-block;vertical-align:middle;box-shadow:inset 0 0 0 2px var(--surface)}
+.recv{margin-top:14px;border:1px solid var(--accent);border-radius:var(--radius-lg);background:var(--accent-dim);padding:12px 14px}
+.recv h4{margin:0 0 8px;font-size:14px}
+.recv table{width:100%;border-collapse:collapse}
+.recv td{padding:6px 4px;vertical-align:middle}
+.recv .inp{max-width:110px}
+.recv select.inp{max-width:200px}
+.edit .inp{max-width:none}
+.ph-empty{padding:26px;text-align:center;color:var(--muted)}
+@container (max-width:700px){
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .two,.fgrid{grid-template-columns:minmax(0,1fr)}
+  .settings{grid-template-columns:minmax(0,1fr);padding:10px}
+  .snav{flex-direction:row;overflow-x:auto}
+  .snav button{white-space:nowrap}
+  .cgrid{grid-template-columns:minmax(0,1fr);padding:12px}
+  .page{padding:10px}
+}
+@container (min-width:701px) and (max-width:1000px){
+  .cgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+</style></head><body>
+<div class="mockbar">
+  <div class="tag"><b>Mockup</b> · ERP 3D Print &amp; Ontwerp · voorbeeldgegevens, niets wordt opgeslagen</div>
+  <div class="seg" role="group" aria-label="Weergave">
+    <button id="mDesk" type="button" aria-pressed="true">Desktop</button>
+    <button id="mGsm" type="button" aria-pressed="false">Gsm</button>
+  </div>
+</div>
+<div class="stage" id="stage">
+  <div class="app" id="app"></div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+const I = {
+  grid:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  search:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  list:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  kanban:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="5" height="14" rx="1"/><rect x="10" y="4" width="5" height="9" rx="1"/><rect x="17" y="4" width="4" height="12" rx="1"/></svg>',
+  filter:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>',
+  layers:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg>',
+  x:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  doc:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
+  printer:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 21V9l8-6 8 6v12"/><path d="M8 21v-6h8v6M12 9v3"/></svg>',
+  truck:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
+  receipt:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
+  folder:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 13h8"/></svg>',
+  nozzle:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 3h10v6H7zM9 9h6l-2 5h-2z"/><path d="M5 20h14M8 17h8"/></svg>',
+  cart:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 4h2l2.5 11h10L20 8H6.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>',
+  spool:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>',
+  people:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.5a5 5 0 0 1 5.5 5"/></svg>',
+  euro:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6.5A7 7 0 1 0 18 17.5"/><path d="M4 10h9M4 14h9"/></svg>',
+  cog:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  alert:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>',
+  check:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m5 12 5 5 9-10"/></svg>',
+  play:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z"/><path d="m10 8 6 4-6 4z"/></svg>',
+  pen:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
+  box:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m3 7 9-4 9 4v10l-9 4-9-4z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg>',
+  grip:'<svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor"><circle cx="3" cy="3" r="1.4"/><circle cx="9" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="9" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="9" cy="13" r="1.4"/></svg>',
+  copy:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="8" y="8" width="12" height="12" rx="1"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>'
+};
+
+/* ══════════ helpers ══════════ */
+const esc=s=>String(s);
+function eur(n){return n==null?'<span class="sub">—</span>':'€ '+n.toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
+function sw(list){return '<span class="swatches">'+list.map(c=>'<i class="sw" style="background:'+c+'"></i>').join('')+'</span>';}
+function bdg(txt,c){return '<span class="badge '+c+'">'+txt+'</span>';}
+function prog(a,b){if(a==null)return '<span class="sub">—</span>';const p=Math.round(a/b*100);return '<span class="prog"><span class="bar"><i style="width:'+p+'%"></i></span><span class="num sub">'+a+'/'+b+'</span></span>';}
+function initials(n){return n.split(/\s+/).filter(w=>/^[A-Za-zÀ-ÿ]/.test(w)).slice(0,2).map(w=>w[0].toUpperCase()).join('');}
+
+/* ══════════ voorbeeldgegevens (fictief) ══════════ */
+const FASE={offerte:{l:'Offerte verstuurd',c:'b-info'},productie:{l:'In productie',c:'b-accent'},deels:{l:'Deels geleverd',c:'b-warn'},af:{l:'Af te rekenen',c:'b-crit'},afgerekend:{l:'Afgerekend',c:'b-neutral'},betaald:{l:'Betaald',c:'b-pos'}};
+const FASEVOLG=['offerte','productie','deels','af','afgerekend','betaald'];
+const KLANTEN=[
+ {id:'k1',naam:'Jeugdhuis De Sleutel vzw',type:'Zakelijk',gem:'Geel',peppol:true,kleur:'#c2531a'},
+ {id:'k2',naam:'Atelier Verbeke bv',type:'Zakelijk',gem:'Mol',peppol:true,kleur:'#3a6ea8'},
+ {id:'k3',naam:'Bakkerij Lintjes',type:'Zakelijk',gem:'Herentals',peppol:false,kleur:'#8a5a2b'},
+ {id:'k4',naam:'Café Het Anker',type:'Zakelijk',gem:'Turnhout',peppol:false,kleur:'#2f7a6a'},
+ {id:'k5',naam:'Sofie Maes',type:'Particulier',gem:'Kasterlee',kleur:'#7a4f86'},
+ {id:'k6',naam:'Tom Peeters',type:'Particulier',gem:'Geel',kleur:'#6b7d3a'},
+ {id:'k7',naam:'Lien De Smet',type:'Particulier',gem:'Olen',kleur:'#a4430f'}
+];
+const DOSSIERS=[
+ {nr:'D-2026-0014',k:'k3',oms:'Koekjesvormen met logo, 5 stuks',fase:'offerte',bedrag:42.00,lev:null,datum:'22/09',kl:['#d9a441']},
+ {nr:'D-2026-0013',k:'k5',oms:'Naamplaatje voor fiets',fase:'productie',bedrag:18.50,lev:null,datum:'22/09',kl:['#1e88e5','#f5f5f0']},
+ {nr:'D-2026-0012',k:'k1',oms:'50 sleutelhangers met logo, twee kleuren',fase:'deels',bedrag:114.70,lev:[20,50],datum:'15/09',kl:['#1a1a1a','#f57c00']},
+ {nr:'D-2026-0011',k:null,eigen:true,oms:'Kabelhouders voor de webshop, 30 stuks',fase:'productie',bedrag:null,lev:null,datum:'12/09',kl:['#808080']},
+ {nr:'D-2026-0010',k:'k6',oms:'Vervangonderdeel stofzuigerklep',fase:'af',bedrag:12.00,lev:[1,1],datum:'10/09',kl:['#1a1a1a']},
+ {nr:'D-2026-0009',k:'k2',oms:'Prototype behuizing, versie 3',fase:'afgerekend',bedrag:86.40,lev:[2,2],datum:'04/09',kl:['#f5f5f0'],ref:'Factuur F-2026-0031 · openstaand'},
+ {nr:'D-2026-0008',k:'k7',oms:'Figuur als verjaardagscadeau',fase:'betaald',bedrag:24.00,lev:[1,1],datum:'02/09',kl:['#8e24aa','#fdd835'],ref:'Bonnetje B-2026-0112 · cash'},
+ {nr:'D-2026-0007',k:'k4',oms:'Onderzetters met logo, 24 stuks',fase:'betaald',bedrag:57.60,lev:[24,24],datum:'28/08',kl:['#43a047'],ref:'Factuur F-2026-0029 · betaald'}
+];
+const klant=id=>KLANTEN.find(k=>k.id===id);
+const dosKlant=d=>d.eigen?'Eigen product':klant(d.k).naam;
+const dosSoort=d=>d.eigen?'Voorraad':klant(d.k).type;
+
+const ART=[
+ {id:'a1',soort:'filament',naam:'PLA Matte zwart',groep:'Bambu Lab · PLA Matte',kleur:'#1a1a1a',voorraad:4,besteld:1,min:2,eenh:'rollen',prijs:'€ 32,00/kg'},
+ {id:'a2',soort:'filament',naam:'PLA Matte oranje',groep:'Bambu Lab · PLA Matte',kleur:'#f57c00',voorraad:1,besteld:2,min:2,eenh:'rollen',prijs:'€ 32,00/kg'},
+ {id:'a3',soort:'filament',naam:'PLA Basic wit',groep:'Bambu Lab · PLA Basic',kleur:'#f5f5f0',voorraad:3,besteld:0,min:2,eenh:'rollen',prijs:'€ 28,00/kg'},
+ {id:'a4',soort:'filament',naam:'PLA Basic blauw',groep:'Bambu Lab · PLA Basic',kleur:'#1e88e5',voorraad:3,besteld:0,min:2,eenh:'rollen',prijs:'€ 28,00/kg'},
+ {id:'a5',soort:'filament',naam:'PETG Matte grijs',groep:'eSUN · PETG Matte',kleur:'#808080',voorraad:2,besteld:0,min:1,eenh:'rollen',prijs:'€ 30,00/kg'},
+ {id:'a6',soort:'filament',naam:'PETG Matte zwart',groep:'eSUN · PETG Matte',kleur:'#1a1a1a',voorraad:0,besteld:2,min:1,eenh:'rollen',prijs:'€ 30,00/kg'},
+ {id:'a7',soort:'filament',naam:'PLA+ rood',groep:'Sunlu · PLA+',kleur:'#d32f2f',voorraad:1,besteld:0,min:2,eenh:'rollen',prijs:'€ 26,00/kg'},
+ {id:'a8',soort:'onderdeel',naam:'Sleutelring 25 mm',voorraad:68,besteld:0,min:50,eenh:'stuks',prijs:'€ 0,18/st'},
+ {id:'a9',soort:'onderdeel',naam:'Magneet 10×2 mm',voorraad:12,besteld:0,min:40,eenh:'stuks',prijs:'€ 0,25/st'},
+ {id:'a10',soort:'onderdeel',naam:'Inzetmoer M3',voorraad:140,besteld:0,min:50,eenh:'stuks',prijs:'€ 0,12/st'},
+ {id:'a11',soort:'eindproduct',naam:'Kabelhouder',voorraad:6,besteld:0,min:10,eenh:'stuks',prijs:'€ 4,50/st',inprod:30},
+ {id:'a12',soort:'eindproduct',naam:'Telefoonstandaard',voorraad:4,besteld:0,min:3,eenh:'stuks',prijs:'€ 12,00/st'},
+ {id:'a13',soort:'dienst',naam:'Verzending bpost',voorraad:null,min:null,eenh:'',prijs:'€ 3,50 · vaste prijs'},
+ {id:'a14',soort:'dienst',naam:'Ontwerp op maat',voorraad:null,min:null,eenh:'',prijs:'€ 25,00/u · regie'}
+];
+const SOORTL={filament:'Filament',onderdeel:'Onderdeel',eindproduct:'Eindproduct',dienst:'Dienst'};
+const art=id=>ART.find(a=>a.id===id);
+function tekort(a){return a.min!=null && (a.voorraad+(a.besteld||0)+(a.inprod||0))<a.min;}
+function stockBadge(a){
+  if(a.voorraad==null)return bdg('Geen voorraad','b-neutral');
+  if(tekort(a))return bdg('Te bestellen','b-crit');
+  if(a.voorraad<a.min)return bdg(a.besteld?'Besteld':'In productie','b-info');
+  return bdg('Op voorraad','b-pos');
+}
+
+const AANKOPEN=[
+ {nr:'AK-2026-0021',lev:'Bambu Lab Store',datum:'20/09',status:'besteld',bron:'Manueel',bedrag:65.96,regels:[['a2','PLA Matte oranje',2,0,19.99],['a1','PLA Matte zwart',1,0,19.99],['','Verzending',1,0,5.99]]},
+ {nr:'AK-2026-0020',lev:'Amazon.nl',datum:'16/09',status:'deels',bron:'Manueel',bedrag:48.68,regels:[['ph','PETG Matte zwart · merk nog onbekend',2,0,21.99],['a9','Magneet 10×2 mm',20,20,0.235]]},
+ {nr:'AK-2026-0019',lev:'Bouwmarkt (bonnetje)',datum:'11/09',status:'ontvangen',bron:'OCR',bedrag:11.95,regels:[['a10','Inzetmoer M3',100,100,0.1195]]},
+ {nr:'AK-2026-0018',lev:'Bambu Lab Store',datum:'02/09',status:'ontvangen',bron:'UBL (Accountable)',bedrag:85.95,regels:[['a3','PLA Basic wit',2,2,19.99],['a4','PLA Basic blauw',2,2,19.99],['','Verzending',1,1,5.99]]}
+];
+const AKST={concept:{l:'Concept',c:'b-neutral'},besteld:{l:'Besteld',c:'b-info'},deels:{l:'Deels ontvangen',c:'b-warn'},ontvangen:{l:'Ontvangen',c:'b-pos'}};
+const LEVERANCIERS=[['Bambu Lab Store','Filament','2 aankopen'],['Amazon.nl','Filament, onderdelen','1 aankoop'],['Bouwmarkt (bonnetje)','Onderdelen','1 aankoop']];
+
+const PO=[
+ ['PO-31','Sleutelhangers 20 st','D-2026-0012','Bambu A1 Mini','voltooid','2 runs · 20 goed'],
+ ['PO-32','Sleutelhangers 20 st','D-2026-0012','Bambu A1 Mini','bezig','run #88 · 64%'],
+ ['PO-33','Sleutelhangers 10 st','D-2026-0012','Bambu A1 Mini','gepland',''],
+ ['PO-34','Naamplaatje fiets (proef)','D-2026-0013','Bambu A1 Mini','voltooid','1 run · 1 goed'],
+ ['PO-35','Kabelhouders 10 st','D-2026-0011','Ender 3 S1 Pro','gepland',''],
+ ['PO-36','Naamplaatje fiets','D-2026-0013','Bambu A1 Mini','gepland',''],
+ ['PO-38','Kabelhouders 10 st','D-2026-0011','Ender 3 S1 Pro','gepland','']
+];
+const POST={gepland:'b-neutral',bezig:'b-accent',voltooid:'b-pos',mislukt:'b-crit'};
+const RUNS=[
+ ['#89','Ender 3 S1 Pro','23/09 13:47','bezig','0,04','—'],
+ ['#88','Bambu A1 Mini','23/09 09:05','bezig','0,39','PO-32'],
+ ['#87','Ender 3 S1 Pro','22/09 20:10','klaar','0,11','Intern · kalibratie PETG'],
+ ['#86','Bambu A1 Mini','21/09 08:30','klaar','0,08','PO-34'],
+ ['#85','Bambu A1 Mini','19/09 11:02','klaar','0,61','PO-31'],
+ ['#84','Bambu A1 Mini','19/09 09:40','mislukt','0,09','PO-31']
+];
+
+/* ══════════ staat ══════════ */
+const S={app:'home',page:null,rec:null,view:'list',tab:null,q:'',open:true,grouped:false,klantF:null,run:null,pick:false,spoolOpen:false,recv:false,ocr:false,imp:false,setSec:'tarieven',gsm:false,newDos:false};
+const APPS={
+ dossiers:{naam:'Dossiers',menu:[['dossiers','Dossiers'],['leveringen','Leveringen'],['offertes','Offertes']]},
+ productie:{naam:'Productie',menu:[['printers','Printers'],['opdrachten','Printopdrachten'],['runs','Runs']]},
+ inkoop:{naam:'Inkoop',menu:[['aankopen','Aankopen'],['inlezen','Factuur inlezen'],['leveranciers','Leveranciers']]},
+ voorraad:{naam:'Voorraad',menu:[['artikelen','Artikelen'],['tebestellen','Te bestellen'],['mutaties','Mutaties']]},
+ klanten:{naam:'Klanten',menu:[['klanten','Klanten']]},
+ financien:{naam:'Financiën',menu:[['overzicht','Overzicht'],['import','Accountable-import']]},
+ instellingen:{naam:'Instellingen',menu:[['instellingen','Instellingen']]}
+};
+function go(app,page,rec){S.app=app;S.page=page||(APPS[app]?APPS[app].menu[0][0]:null);S.rec=rec||null;S.q='';S.tab=null;S.recv=false;S.newDos=false;if(app!=='dossiers')S.klantF=null;}
+
+/* ══════════ schil ══════════ */
+function topbar(){
+  const a=APPS[S.app];
+  return '<div class="topbar"><button class="home" type="button" data-nav="home" aria-label="Naar het startscherm">'+I.grid+'</button>'+
+   '<span class="appname">'+(a?a.naam:'ERP 3D Print &amp; Ontwerp')+'</span>'+
+   '<nav aria-label="Menu">'+(a?a.menu.map(m=>'<button type="button" class="'+(m[0]===S.page?'on':'')+'" data-nav="'+S.app+'/'+m[0]+'">'+m[1]+'</button>').join(''):'')+'</nav>'+
+   '<span class="spacer"></span><span class="who" aria-label="Ingelogd als Spiesse">SP</span></div>';
+}
+function cp(o){
+  const crumbs='<div class="crumbs">'+(o.crumbs||[]).map((c,i,arr)=>i<arr.length-1?'<button type="button" data-nav="'+c[1]+'">'+c[0]+'</button><span class="sep">/</span>':'<span class="cur'+(c[2]?' mono':'')+'">'+c[0]+'</span>').join('')+'</div>';
+  const search=o.search?'<div class="search">'+I.search+(o.facets||[]).map(f=>'<span class="facet"><span class="k">'+(f[2]||I.filter)+'</span><span class="v">'+f[0]+'</span><button type="button" data-t="'+f[1]+'" aria-label="'+f[0]+' weghalen">'+I.x+'</button></span>').join('')+'<input id="q" type="search" value="'+S.q.replace(/"/g,'&quot;')+'" placeholder="Zoeken…" aria-label="Zoeken"></div>':'<div></div>';
+  const views=o.views?'<div class="views" role="group" aria-label="Weergave"><button type="button" data-view="list" aria-pressed="'+(S.view==='list')+'" aria-label="Lijst">'+I.list+'</button><button type="button" data-view="kanban" aria-pressed="'+(S.view==='kanban')+'" aria-label="Kanban">'+I.kanban+'</button></div>':'';
+  return '<div class="cp">'+crumbs+search+'<div class="actions">'+(o.actions||'')+'</div><div class="right">'+(o.chips?'<div class="filters">'+o.chips+'</div>':'')+(o.pager?'<span class="pager num">'+o.pager+'</span>':'')+views+'</div></div>';
+}
+function listTable(cols,rows){
+  // cols: [label, fn(row), cls]; rows: [{_open, ...}]; groups: rows with _grp
+  let body='',cards='';
+  rows.forEach(r=>{
+    if(r._grp){body+='<tr class="grp"><td colspan="'+cols.length+'">'+r._grp+'</td></tr>';cards+='<div class="grp">'+r._grp+'</div>';return;}
+    body+='<tr class="row" '+(r._open?'data-open="'+r._open+'"':'')+'>'+cols.map(c=>'<td class="'+(c[2]||'')+'">'+c[1](r)+'</td>').join('')+'</tr>';
+    cards+='<button type="button" class="mcard" '+(r._open?'data-open="'+r._open+'"':'')+'><span class="l1"><b>'+r._t1+'</b><span class="num">'+(r._t2||'')+'</span></span>'+(r._t3?'<span>'+r._t3+'</span>':'')+'<span class="l1"><span class="mono sub">'+(r._t4||'')+'</span>'+(r._t5||'')+'</span></button>';
+  });
+  if(!rows.length){body='<tr><td colspan="'+cols.length+'" class="ph-empty">Niets gevonden.</td></tr>';cards='<div class="ph-empty">Niets gevonden.</div>';}
+  return '<div class="listwrap"><table class="list"><thead><tr>'+cols.map(c=>'<th class="'+(c[2]||'')+'">'+c[0]+'</th>').join('')+'</tr></thead><tbody>'+body+'</tbody></table><div class="cards">'+cards+'</div></div>';
+}
+function match(...xs){if(!S.q)return true;const q=S.q.toLowerCase();return xs.some(x=>String(x||'').toLowerCase().includes(q));}
+function chatterBox(events){
+  return '<div class="chatter"><h3>Historiek</h3><div class="compose"><input class="inp" id="note" placeholder="Notitie toevoegen…" aria-label="Notitie"><button type="button" class="btn" data-soon="Notitie opslaan">Opslaan</button></div>'+
+   events.map(e=>e.day?'<div class="day">'+e.day+'</div>':'<div class="ev"><span class="dot '+(e.c||'')+'">'+(e.i||I.pen)+'</span><div><div class="top"><b>'+e.w+'</b></div><div>'+(e.t||'')+'</div></div></div>').join('')+'</div>';
+}
+function statusbar(steps,cur,mobile){
+  return '<div class="statusbar" aria-label="Status">'+steps.map((f,i)=>'<span class="'+(i<cur?'done':'')+(i===cur?' cur':'')+'"'+(i===cur?' aria-current="step"':'')+'>'+f+'</span>').join('')+'<span class="cur-mobile">'+(mobile||steps[cur])+'</span></div>';
+}
+function sheet(o){
+  return '<div class="sheet"><div class="sheet-head"><div><div class="nr">'+o.nr+'</div><h2>'+o.titel+'</h2></div>'+(o.smart?'<div class="smart">'+o.smart+'</div>':'')+'</div>'+
+   (o.fields?'<div class="fields">'+o.fields.map(col=>'<div>'+col.map(f=>'<div class="field"><span class="k">'+f[0]+'</span><span class="v">'+f[1]+'</span></div>').join('')+'</div>').join('')+'</div>':'')+
+   (o.tabs?'<div class="tabs" role="tablist">'+o.tabs.map(t=>'<button type="button" role="tab" aria-selected="'+(S.tab===t[0])+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('')+'</div><div class="tabpanel">'+o.panel+'</div>':(o.body?'<div class="tabpanel">'+o.body+'</div>':''))+'</div>';
+}
+function smartBtn(ic,n,l,attr){return '<button type="button" '+attr+'>'+ic+'<span><span class="n">'+n+'</span><span class="l">'+l+'</span></span></button>';}
+
+/* ══════════ startscherm ══════════ */
+function viewHome(){
+  const nAf=DOSSIERS.filter(d=>d.fase==='af').length, nTb=ART.filter(tekort).length;
+  const tiles=[['dossiers','Dossiers',I.folder,'#c2531a',nAf+' af te rekenen','b-crit'],['productie','Productie',I.nozzle,'#3a6ea8','1 run te bevestigen','b-warn'],['inkoop','Inkoop',I.cart,'#6b7d3a','2 bestellingen onderweg','b-info'],['voorraad','Voorraad',I.spool,'#8a5a2b',nTb+' te bestellen','b-warn'],['klanten','Klanten',I.people,'#7a4f86','',''],['financien','Financiën',I.euro,'#2f7a6a','1 factuur openstaand','b-info'],['instellingen','Instellingen',I.cog,'#5c5347','','']];
+  return '<div class="appscroll"><div class="home-wrap"><h1>Goeiemiddag, Spiesse</h1><p>Woensdag 23 september · wat vraagt vandaag aandacht staat op de tegels.</p><div class="tiles">'+
+   tiles.map(t=>'<button type="button" class="tile" data-nav="'+t[0]+'"><span class="ic" style="background:'+t[3]+'">'+t[2]+'</span><span class="t">'+t[1]+'</span>'+(t[4]?bdg(t[4],'todo '+t[5]):'<span class="todo sub">&nbsp;</span>')+'</button>').join('')+'</div></div></div>';
+}
+
+/* ══════════ DOSSIERS ══════════ */
+function dossierRows(){
+  let r=DOSSIERS.filter(d=>(!S.open||d.fase!=='betaald')&&(!S.klantF||d.k===S.klantF)&&match(d.nr,dosKlant(d),d.oms));
+  const toRow=d=>({_open:'dos:'+d.nr,d,_t1:dosKlant(d),_t2:eur(d.bedrag),_t3:sw(d.kl)+' '+d.oms,_t4:d.nr,_t5:bdg(FASE[d.fase].l,FASE[d.fase].c)});
+  if(!S.grouped)return r.map(toRow);
+  let out=[];FASEVOLG.forEach(f=>{const g=r.filter(d=>d.fase===f);if(g.length){out.push({_grp:FASE[f].l+' <span class="sub">('+g.length+')</span>'});out=out.concat(g.map(toRow));}});return out;
+}
+function viewDossiers(){
+  const facets=[];if(S.open)facets.push(['Openstaand','open']);if(S.grouped)facets.push(['Fase','grouped',I.layers]);if(S.klantF)facets.push(['Klant: '+klant(S.klantF).naam,'klantF']);
+  const rows=dossierRows();
+  const head=cp({crumbs:[['Dossiers']],search:true,facets,actions:'<button type="button" class="btn primary" data-t="newDos">Nieuw</button>',
+    chips:'<button type="button" class="chip" aria-pressed="'+S.open+'" data-t="open">Openstaand</button><button type="button" class="chip" aria-pressed="'+S.grouped+'" data-t="grouped">Groeperen op fase</button><button type="button" class="chip" data-soon="Filter Deze maand">Deze maand</button>',
+    pager:'1–'+rows.filter(r=>!r._grp).length+' / '+rows.filter(r=>!r._grp).length,views:true});
+  let body;
+  if(S.view==='list') body=listTable([
+    ['Nummer',r=>'<span class="mono">'+r.d.nr+'</span>'],['Klant',r=>dosKlant(r.d)+'<div class="sub">'+dosSoort(r.d)+'</div>'],['Omschrijving',r=>sw(r.d.kl)+' '+r.d.oms],
+    ['Fase',r=>bdg(FASE[r.d.fase].l,FASE[r.d.fase].c)+(r.d.ref?'<div class="sub">'+r.d.ref+'</div>':'')],['Geleverd',r=>r.d.lev?prog(r.d.lev[0],r.d.lev[1]):'<span class="sub">—</span>'],['Bedrag',r=>eur(r.d.bedrag),'r num'],['Datum',r=>r.d.datum,'num']],rows);
+  else { const cols=FASEVOLG.filter(f=>!S.open||f!=='betaald');
+    body='<div class="kanban">'+cols.map(f=>{const l=DOSSIERS.filter(d=>d.fase===f&&(!S.klantF||d.k===S.klantF)&&match(d.nr,dosKlant(d),d.oms));return '<div class="kcol"><h3>'+FASE[f].l+' <span>'+l.length+'</span></h3>'+l.map(d=>'<button type="button" class="kcard" data-open="dos:'+d.nr+'"><span class="t">'+d.oms+'</span><span class="sub">'+dosKlant(d)+'</span><span class="meta"><span class="mono">'+d.nr+'</span>'+sw(d.kl)+'</span><span class="meta">'+(d.lev?prog(d.lev[0],d.lev[1]):'<span></span>')+'<span class="num">'+eur(d.bedrag)+'</span></span></button>').join('')+'</div>';}).join('')+'</div>'; }
+  return head+'<div class="appscroll">'+body+'</div>';
+}
+function viewNieuwDossier(){
+  return cp({crumbs:[['Dossiers','dossiers/dossiers'],['Nieuw']]})+'<div class="appscroll"><div class="form-actions"><div class="btns"><button type="button" class="btn primary" data-soon="Opslaan">Opslaan</button><button type="button" class="btn" data-t="newDos">Verwerpen</button></div>'+statusbar(['Nieuw','Offerte','Akkoord','In productie','Geleverd','Afgerekend','Betaald'],0)+'</div><div class="sheet-wrap"><div class="sheet edit"><div class="sheet-head"><div><div class="nr">Nieuw dossier · nummer volgt bij opslaan</div><h2><input class="inp" id="nd-oms" placeholder="Omschrijving, bv. 20 naamplaatjes voor een vereniging" style="font-size:18px;font-weight:600"></h2></div></div>'+
+   '<div class="fields"><div><div class="field"><span class="k"><label for="nd-soort">Soort</label></span><span class="v"><select id="nd-soort" class="inp"><option>Klantopdracht</option><option>Eigen product (voorraad)</option><option>Intern</option></select></span></div><div class="field"><span class="k"><label for="nd-klant">Klant</label></span><span class="v"><select id="nd-klant" class="inp"><option value="">Kies of maak een klant…</option>'+KLANTEN.map(k=>'<option>'+k.naam+'</option>').join('')+'</select></span></div></div>'+
+   '<div><div class="field"><span class="k"><label for="nd-lev">Gewenste levering</label></span><span class="v"><input id="nd-lev" type="date" class="inp"></span></div><div class="field"><span class="k"><label for="nd-afr">Afrekening</label></span><span class="v"><select id="nd-afr" class="inp"><option>Volgens klanttype</option><option>Factuur</option><option>Bonnetje</option></select></span></div></div></div>'+
+   '<div class="tabs" role="tablist"><button type="button" role="tab" aria-selected="true">Regels</button></div><div class="tabpanel"><div class="ph-empty">Nog geen regels.</div><div class="addline"><button type="button" class="linkish" data-soon="Regel Ontwerp">+ Ontwerp</button><button type="button" class="linkish" data-soon="Regel Printen (rekenmotor)">+ Printen</button><button type="button" class="linkish" data-soon="Regel Artikel uit catalogus">+ Artikel</button><button type="button" class="linkish" data-soon="Regel Dienst">+ Dienst</button></div></div></div></div></div>';
+}
+function viewDossier(nr){
+  const d=DOSSIERS.find(x=>x.nr===nr);
+  if(nr==='D-2026-0012') return viewD12();
+  const steps=['Nieuw','Offerte','Akkoord','In productie','Deels geleverd','Geleverd','Af te rekenen','Afgerekend','Betaald'];
+  const cur={offerte:1,productie:3,deels:4,af:6,afgerekend:7,betaald:8}[d.fase];
+  const actions={offerte:'<button type="button" class="btn primary" data-soon="Akkoord klant registreren">Akkoord klant</button><button type="button" class="btn" data-soon="Offerte opnieuw mailen">Offerte mailen</button>',productie:'<button type="button" class="btn primary" data-soon="Printopdracht plannen">Printopdracht plannen</button>',af:'<button type="button" class="btn primary" data-t="goAfr">Afrekenen in Accountable</button>',afgerekend:'<button type="button" class="btn primary" data-soon="Betaling registreren">Betaald</button>',betaald:''}[d.fase]||'';
+  return cp({crumbs:[['Dossiers','dossiers/dossiers'],[d.nr,'',1]],pager:(DOSSIERS.indexOf(d)+1)+' / '+DOSSIERS.length})+'<div class="appscroll"><div class="form-actions"><div class="btns">'+actions+'<button type="button" class="btn" data-soon="Werkbon">Werkbon</button></div>'+statusbar(steps,cur)+'</div><div class="sheet-wrap">'+
+   sheet({nr:d.nr+' · '+(d.eigen?'eigen product':'klantopdracht'),titel:d.oms,smart:smartBtn(I.printer,d.fase==='productie'?2:1,'Printopdrachten','data-nav="productie/opdrachten"')+smartBtn(I.receipt,d.ref?d.ref.split(' ')[1]:'—','Afrekening','data-soon="Afrekening"'),
+     fields:[[['Klant',d.eigen?'Eigen product':'<button type="button" class="linkish" data-open="kl:'+d.k+'">'+dosKlant(d)+'</button>'],['Soort',dosSoort(d)]],[['Aangemaakt',d.datum+'/2026'],['Bedrag','<span class="num">'+eur(d.bedrag)+'</span>']]],
+     body:'<p class="note" style="margin:0">In deze mockup zijn de regels, marge en afrekening volledig uitgewerkt in <button type="button" class="linkish" data-open="dos:D-2026-0012">D-2026-0012</button>.</p>'})+
+   chatterBox([{day:d.datum},{w:'Dossier aangemaakt',i:I.pen}])+'</div></div>';
+}
+function viewD12(){
+  S.tab=S.tab||'regels';
+  const tabs=[['regels','Regels'],['marge','Marge'],['afrekening','Afrekening'],['info','Overige info']];
+  let panel='';
+  if(S.tab==='regels') panel='<div class="scroll-x"><table class="lines"><thead><tr><th>Regel</th><th>Omschrijving</th><th class="r">Aantal</th><th class="r">Geleverd</th><th class="r">Bedrag</th></tr></thead><tbody>'+
+    '<tr><td class="type">Ontwerp</td><td>Logo omzetten naar 3D-model<div class="sub">90 min × € 25,00/u (regie)</div></td><td class="r num">1</td><td class="r sub">—</td><td class="r num">€ 37,50</td></tr>'+
+    '<tr><td class="type">Printen</td><td>'+sw(['#1a1a1a','#f57c00'])+' Sleutelhanger, multicolor<div class="sub">Bambu A1 Mini · PLA Matte zwart + oranje · 6 g/st · 25 min/st · BMCU</div></td><td class="r num">50</td><td class="r num">20</td><td class="r num">€ 61,20</td></tr>'+
+    '<tr><td class="type">Onderdeel</td><td><button type="button" class="linkish" data-open="art:a8">Sleutelring 25 mm</button><div class="sub">uit voorraad · oudste partij eerst</div></td><td class="r num">50</td><td class="r num">20</td><td class="r num">€ 9,00</td></tr>'+
+    '<tr><td class="type">Dienst</td><td>Verzending bpost, 2 zendingen<div class="sub">vaste prijs · geen marge</div></td><td class="r num">2</td><td class="r num">1</td><td class="r num">€ 7,00</td></tr>'+
+    '</tbody></table></div><div class="addline"><button type="button" class="linkish" data-soon="Regel toevoegen">Regel toevoegen</button><button type="button" class="linkish" data-soon="Artikel uit catalogus">Artikel uit catalogus</button><button type="button" class="linkish" data-soon="Notitie toevoegen">Notitie</button></div>'+
+    '<div class="totals"><dl class="num"><dt>Subtotaal met marge</dt><dd>€ 107,70</dd><dt>Vaste prijzen</dt><dd>€ 7,00</dd><dt class="grand">Totaal</dt><dd class="grand">€ 114,70</dd></dl></div><p class="note">Prijs volgens aanvaarde offerte v2. De gemeten kost wijzigt dit bedrag niet (zie tab Marge).</p>';
+  if(S.tab==='marge') panel='<div class="cmp"><div class="box"><div class="k">Verkoopprijs</div><div class="v num">€ 114,70</div><div class="sub">offerte v2</div></div><div class="box"><div class="k">Geschatte kost</div><div class="v num">€ 71,40</div><div class="sub">rekenmotor bij offerte</div></div><div class="box"><div class="k">Gemeten kost tot nu</div><div class="v num">€ 33,85</div><div class="sub">20 van 50 stuks · incl. 1 mislukte run</div></div></div>'+
+    '<div class="scroll-x"><table class="lines"><thead><tr><th>Printopdracht</th><th>Run</th><th>Printer</th><th class="r">Tijd</th><th class="r">kWh</th><th class="r">Kost</th><th>Uitkomst</th></tr></thead><tbody>'+
+    '<tr><td class="mono">PO-31</td><td class="mono">#84</td><td>Bambu A1 Mini</td><td class="r num">1u 12m</td><td class="r num">0,09</td><td class="r num">€ 3,10</td><td>'+bdg('Mislukt · laag los','b-crit')+'</td></tr>'+
+    '<tr><td class="mono">PO-31</td><td class="mono">#85</td><td>Bambu A1 Mini</td><td class="r num">8u 24m</td><td class="r num">0,61</td><td class="r num">€ 30,75</td><td>'+bdg('20 goede stuks','b-pos')+'</td></tr>'+
+    '<tr><td class="mono">PO-32</td><td class="mono">#88</td><td>Bambu A1 Mini</td><td class="r num">5u 20m</td><td class="r num">0,39</td><td class="r sub">loopt</td><td>'+bdg('Bezig · 64%','b-accent')+'</td></tr>'+
+    '<tr><td class="mono">PO-33</td><td class="sub">—</td><td>Bambu A1 Mini</td><td class="r sub">—</td><td class="r sub">—</td><td class="r sub">—</td><td>'+bdg('Gepland · 10 st','b-neutral')+'</td></tr>'+
+    '</tbody></table></div><p class="note">Omdat er een aanvaarde offerte is, dient de gemeten kost enkel om je marge te bekijken. Zonder offerte zou de werkbon met deze gemeten waarden berekend worden.</p>';
+  if(S.tab==='afrekening') panel='<p style="margin:0 0 12px">'+bdg('Nog niet afgerekend','b-neutral')+' <span class="note">Afrekenen gebeurt in Accountable, na de laatste levering.</span></p>'+
+    '<div class="fiche"><div class="field"><span class="k">Klant</span><span>Jeugdhuis De Sleutel vzw</span></div><div class="field"><span class="k">Ondernemingsnr.</span><span class="mono">[BE0XXX.XXX.XXX]</span></div><div class="field"><span class="k">Peppol-ID</span><span class="mono">0208:[ondernemingsnr.]</span></div><div class="field"><span class="k">Adres</span><span>[straat nr], 2440 Geel</span></div><div class="field"><span class="k">Omschrijving</span><span>50 sleutelhangers met logo (D-2026-0012)</span></div><div class="field"><span class="k">Totaal</span><span class="num"><b>€ 114,70</b> · 4 regels</span></div></div>'+
+    '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn" id="copyFiche">'+I.copy+' Overnamefiche kopiëren</button><button type="button" class="btn" data-soon="Werkbon-PDF">Werkbon-PDF openen</button></div>'+
+    '<div class="rows2"><div><label for="accSoort">Soort</label><select id="accSoort" class="inp"><option>Factuur</option><option>Bonnetje</option></select></div><div><label for="accNr">Nummer in Accountable</label><input id="accNr" class="inp mono" placeholder="bv. F-2026-0033"></div><div><label for="accDat">Datum</label><input id="accDat" class="inp" type="date"></div><div><button type="button" class="btn primary" data-soon="Afrekening registreren">Afrekening registreren</button></div></div>';
+  if(S.tab==='info') panel='<div class="fields" style="padding:0"><div><div class="field"><span class="k">Interne notitie</span><span>Logo aangeleverd als SVG, kleur oranje volgens huisstijl klant.</span></div><div class="field"><span class="k">Bijlagen</span><span><button type="button" class="linkish" data-soon="Bijlage">logo.svg</button> · <button type="button" class="linkish" data-soon="Bijlage">sleutelhanger.3mf</button></span></div></div></div>';
+  return cp({crumbs:[['Dossiers','dossiers/dossiers'],['D-2026-0012','',1]],pager:'3 / 8'})+'<div class="appscroll"><div class="form-actions"><div class="btns"><button type="button" class="btn primary" data-soon="Levering registreren">'+I.box+' Levering registreren</button><button type="button" class="btn" data-soon="Printopdracht plannen">Printopdracht plannen</button><button type="button" class="btn" data-soon="Werkbon maken">Werkbon maken</button><button type="button" class="btn" disabled title="Kan na de laatste levering">Afrekenen in Accountable</button></div>'+statusbar(['Nieuw','Offerte','Akkoord','In productie','Deels geleverd','Geleverd','Af te rekenen','Afgerekend','Betaald'],4,'Fase: Deels geleverd (20/50)')+'</div><div class="sheet-wrap">'+
+   sheet({nr:'D-2026-0012 · klantopdracht',titel:'50 sleutelhangers met logo, twee kleuren',
+    smart:smartBtn(I.doc,'v2','Offerte','data-nav="dossiers/offertes"')+smartBtn(I.printer,'3','Printopdrachten','data-nav="productie/opdrachten"')+smartBtn(I.truck,'1','Levering','data-nav="dossiers/leveringen"')+smartBtn(I.receipt,'1','Werkbon','data-soon="Werkbon (concept)"'),
+    fields:[[['Klant','<button type="button" class="linkish" data-open="kl:k1">Jeugdhuis De Sleutel vzw</button>'],['Contact','[naam contactpersoon]'],['Soort','Klantopdracht · zakelijk']],[['Aangemaakt','15/09/2026'],['Gewenste levering','30/09/2026 · in 2 delen'],['Afrekening','Factuur via Accountable (Peppol)']]],
+    tabs,panel})+
+   chatterBox([{day:'Vandaag'},{c:'a',i:I.play,w:'14:02 · Printerwachter',t:'Run #88 op Bambu A1 Mini gestart. Door jou gekoppeld aan PO-32 (20 st).'},{day:'21 september'},{c:'p',i:I.truck,w:'Levering 1',t:'20 sleutelhangers + 20 ringen geleverd. Pakbon PB-2026-0007 gemaild naar de klant.'},{day:'20 september'},{c:'p',i:I.check,w:'PO-31 voltooid',t:'20 goede stuks bevestigd.'},{day:'19 september'},{c:'c',i:I.alert,w:'Run #84 mislukt',t:'Laag losgekomen na 1u 12m. Nieuwe run gestart binnen PO-31.'},{day:'17 september'},{i:I.check,w:'Akkoord klant',t:'Offerte v2 aanvaard per mail.'},{day:'16 september'},{i:I.doc,w:'Offerte v2 verstuurd',t:'Aantal aangepast van 40 naar 50 stuks.'},{day:'15 september'},{i:I.doc,w:'Offerte v1 verstuurd'},{i:I.pen,w:'Dossier aangemaakt'}])+'</div></div>';
+}
+function viewLeveringen(){
+  const rows=[{n:'LEV-2026-0009',d:'D-2026-0012',k:'Jeugdhuis De Sleutel vzw',dat:'21/09',wat:'20 sleutelhangers, 20 ringen, 1 zending',pb:'PB-2026-0007'},{n:'LEV-2026-0008',d:'D-2026-0010',k:'Tom Peeters',dat:'12/09',wat:'1 klep · afgehaald',pb:'—'},{n:'LEV-2026-0007',d:'D-2026-0009',k:'Atelier Verbeke bv',dat:'09/09',wat:'2 behuizingen',pb:'PB-2026-0006'},{n:'LEV-2026-0006',d:'D-2026-0008',k:'Lien De Smet',dat:'05/09',wat:'1 figuur · afgehaald',pb:'—'}].filter(r=>match(r.n,r.d,r.k,r.wat));
+  return cp({crumbs:[['Leveringen']],search:true,actions:'<button type="button" class="btn primary" data-soon="Nieuwe levering">Nieuw</button>',pager:'1–'+rows.length+' / '+rows.length})+'<div class="appscroll">'+listTable([['Levering',r=>'<span class="mono">'+r.n+'</span>'],['Dossier',r=>'<span class="mono">'+r.d+'</span>'],['Klant',r=>r.k],['Datum',r=>r.dat,'num'],['Geleverd',r=>r.wat],['Pakbon',r=>r.pb==='—'?'<span class="sub">geen</span>':'<span class="mono">'+r.pb+'</span>']],rows.map(r=>Object.assign(r,{_open:'dos:'+r.d,_t1:r.k,_t2:r.dat,_t3:r.wat,_t4:r.n,_t5:r.pb==='—'?'':'<span class="mono sub">'+r.pb+'</span>'})))+'</div>';
+}
+function viewOffertes(){
+  const rows=[{n:'OFF-2026-0022',v:'v1',d:'D-2026-0014',k:'Bakkerij Lintjes',st:['Verstuurd','b-info'],b:42.00,dat:'22/09'},{n:'OFF-2026-0021',v:'v1',d:'D-2026-0013',k:'Sofie Maes',st:['Aanvaard','b-pos'],b:18.50,dat:'21/09'},{n:'OFF-2026-0019',v:'v2',d:'D-2026-0012',k:'Jeugdhuis De Sleutel vzw',st:['Aanvaard','b-pos'],b:114.70,dat:'16/09'},{n:'OFF-2026-0019',v:'v1',d:'D-2026-0012',k:'Jeugdhuis De Sleutel vzw',st:['Vervangen door v2','b-neutral'],b:92.30,dat:'15/09'},{n:'OFF-2026-0017',v:'v1',d:'D-2026-0009',k:'Atelier Verbeke bv',st:['Aanvaard','b-pos'],b:86.40,dat:'02/09'}].filter(r=>match(r.n,r.d,r.k));
+  return cp({crumbs:[['Offertes']],search:true,pager:'1–'+rows.length+' / '+rows.length})+'<div class="appscroll">'+listTable([['Offerte',r=>'<span class="mono">'+r.n+'</span> <span class="sub">'+r.v+'</span>'],['Dossier',r=>'<span class="mono">'+r.d+'</span>'],['Klant',r=>r.k],['Status',r=>bdg(r.st[0],r.st[1])],['Bedrag',r=>eur(r.b),'r num'],['Datum',r=>r.dat,'num']],rows.map(r=>Object.assign(r,{_open:'dos:'+r.d,_t1:r.k,_t2:eur(r.b),_t4:r.n+' '+r.v,_t5:bdg(r.st[0],r.st[1])})))+'<p class="note" style="padding:0 16px">Een offerte is een document van een dossier. Een nieuwe versie vervangt de vorige, die zichtbaar blijft.</p></div>';
+}
+
+/* ══════════ PRODUCTIE ══════════ */
+const GEPLAND=[
+ {po:'PO-35',oms:'Kabelhouders 10 st',dos:'D-2026-0011',wacht:'Ender 3 S1 Pro',mat:'PETG Matte zwart',kl:['#1a1a1a'],stock:0,tijd:'1u 50m'},
+ {po:'PO-38',oms:'Kabelhouders 10 st',dos:'D-2026-0011',wacht:'Ender 3 S1 Pro',mat:'PETG Matte grijs',kl:['#808080'],stock:2,tijd:'1u 50m'},
+ {po:'PO-36',oms:'Naamplaatje fiets',dos:'D-2026-0013',wacht:'Bambu A1 Mini',mat:'PLA Basic blauw',kl:['#1e88e5'],stock:3,tijd:'1u 05m'},
+ {po:'PO-33',oms:'Sleutelhangers 10 st',dos:'D-2026-0012',wacht:'Bambu A1 Mini',mat:'PLA Matte zwart + oranje',kl:['#1a1a1a','#f57c00'],stock:1,tijd:'4u 10m',multi:true}
+];
+const gp=id=>GEPLAND.find(g=>g.po===id);
+function viewPrinters(){
+  let alert;const eerste=GEPLAND[0];
+  if(S.run===null){
+    const lijst=S.pick?'<div class="picklist" role="listbox" aria-label="Geplande printopdrachten"><div class="pickhead">Kies een geplande printopdracht voor deze run</div>'+
+      GEPLAND.map(g=>{const dis=g.multi;return '<button type="button" class="pick" role="option" '+(dis?'disabled':'data-run="'+g.po+'"')+'><span class="pl"><span class="mono">'+g.po+'</span> <b>'+g.oms+'</b> '+sw(g.kl)+'<span class="sub" style="display:block">'+g.dos+' · wachtrij '+g.wacht+' · '+g.mat+' · ± '+g.tijd+'</span></span><span class="pr">'+
+      (dis?bdg('Multicolor: niet op deze printer','b-neutral'):(g.stock===0?bdg('Geen rol op voorraad','b-crit'):bdg(g.stock+' rol'+(g.stock>1?'len':'')+' op voorraad','b-pos')))+(g.po===eerste.po?bdg('Eerste in wachtrij','b-info'):'')+(g.wacht!=='Ender 3 S1 Pro'&&!dis?bdg('Verhuist naar Ender','b-warn'):'')+'</span></button>';}).join('')+'</div>':'';
+    alert='<div class="alert" role="status"><div class="txt">'+I.alert+'<div><b>Ender 3 S1 Pro startte om 13:47 een print.</b><div class="sub">Run #89 wordt al gemeten (tijd, wattage). Koppel hem aan een opdracht.</div></div></div><div class="opts"><button type="button" class="btn primary" data-run="'+eerste.po+'">Koppel aan '+eerste.po+' (eerste gepland)</button><button type="button" class="btn" data-t="pick" aria-expanded="'+S.pick+'">Andere geplande opdracht…</button><button type="button" class="btn" data-run="nieuw">Nieuwe printopdracht</button><button type="button" class="btn" data-run="intern">Intern: kalibratie of test</button></div>'+lijst+'</div>';
+  } else { const g=gp(S.run);
+    const txt=g?'Aan '+g.po+': '+g.oms.toLowerCase()+' ('+g.dos+').'+(g.wacht!=='Ender 3 S1 Pro'?' De opdracht is uit de wachtrij van de '+g.wacht+' gehaald.':''):({nieuw:'Aan een nieuwe printopdracht, die je nog aan een dossier kunt hangen.',intern:'Als interne run (kalibratie/test), niet aan een dossier.'})[S.run];
+    alert='<div class="alert ok" role="status"><div class="txt">'+I.check+'<div><b>Run #89 gekoppeld.</b><div class="sub">'+txt+'</div></div></div><div class="opts"><button type="button" class="btn ghost" data-run="reset">Ongedaan maken</button></div></div>'; }
+  const q=g=>'<div class="qitem"><span><span class="grip">'+I.grip+'</span><span class="mono">'+g.po+'</span> '+g.oms+' '+sw(g.kl)+'</span><span class="sub num">± '+g.tijd+'</span></div>';
+  const wr=pr=>{const l=GEPLAND.filter(g=>g.wacht===pr&&g.po!==S.run);return l.length?l.map(q).join(''):'<div class="sub" style="padding:4px 2px">Leeg. Sleep een opdracht hierheen.</div>';};
+  const g=gp(S.run);
+  const tele=(n,b,w,k)=>'<div class="tele num"><div><span class="k">Nozzle</span><span class="v">'+n+'</span></div><div><span class="k">Bed</span><span class="v">'+b+'</span></div><div><span class="k">Vermogen</span><span class="v">'+w+'</span></div><div><span class="k">Deze run</span><span class="v">'+k+'</span></div></div>';
+  const btns='<div class="pf"><button type="button" class="btn" data-soon="Pauze">Pauze</button><button type="button" class="btn" data-soon="Annuleren">Annuleren</button><button type="button" class="btn" data-t="spoolOpen">Rol leegmelden</button></div>';
+  const bambu='<div class="pcol"><div class="pcard"><div class="ph"><b>Bambu A1 Mini</b>'+bdg('Bezig','b-accent')+'</div><div class="pb"><div><div class="mono sub">PO-32 · run #88 · D-2026-0012</div><div style="font-weight:600">Sleutelhangers 20 st '+sw(['#1a1a1a','#f57c00'])+'</div></div><div class="layerbar" aria-label="Voortgang 64 procent"><i style="width:64%"></i></div><div class="sub num">Laag 142 / 222 · nog 3u 05m · klaar rond 17:10</div>'+tele('220°','60°','86 W','0,39 kWh')+'</div>'+btns+'</div><div class="qhead">Wachtrij</div>'+wr('Bambu A1 Mini')+'</div>';
+  const ender='<div class="pcol"><div class="pcard"><div class="ph"><b>Ender 3 S1 Pro</b>'+(S.run===null?bdg('Bezig · niet gekoppeld','b-warn'):bdg('Bezig','b-accent'))+'</div><div class="pb"><div><div class="mono sub">run #89'+(g?' · '+g.po+' · '+g.dos:S.run==='intern'?' · intern':S.run==='nieuw'?' · PO-39':'')+'</div><div style="font-weight:600">'+(g?g.oms+' '+sw(g.kl):S.run==='intern'?'Kalibratie PETG Matte':'kabelhouder_x10.gcode')+'</div></div><div class="layerbar" aria-label="Voortgang 12 procent"><i style="width:12%"></i></div><div class="sub num">Laag 18 / 150 · nog 1u 40m</div>'+tele('240°','80°','164 W','0,04 kWh')+'</div>'+btns+'</div><div class="qhead">Wachtrij</div>'+wr('Ender 3 S1 Pro')+'</div>';
+  const kobra='<div class="pcol"><div class="pcard"><div class="ph"><b>AnyCubic Kobra S1 Pro</b>'+bdg('Vrij · manueel','b-neutral')+'</div><div class="pb"><div class="sub">Geen live meting (cloud). Start en stop registreer je zelf; de adapter komt na de keuze over LAN-modus.</div></div><div class="pf"><button type="button" class="btn" data-soon="Manueel starten">Manueel starten</button></div></div><div class="qhead">Wachtrij</div>'+wr('AnyCubic Kobra S1 Pro')+'</div>';
+  const spool=S.spoolOpen?'<div style="padding:14px 16px 0"><div class="pcard"><div class="ph"><b>Rol leegmelden</b><button type="button" class="btn ghost" data-t="spoolOpen" aria-label="Sluiten">'+I.x+'</button></div><div class="pb"><div class="sub">Tik op een rol: −1 van de oudste partij (FIFO).</div><div class="spool">'+
+    ART.filter(a=>a.soort==='filament'&&a.voorraad>0).map(a=>'<button type="button" data-soon="'+a.naam+': nu '+(a.voorraad-1)+' rollen'+(a.voorraad-1+(a.besteld||0)<a.min?' · komt op Te bestellen':'')+'"><span class="ring" style="border-color:'+a.kleur+'"></span><span><b>'+a.naam+'</b><span class="sub" style="display:block">'+a.groep.split(' · ')[0]+' · '+a.voorraad+' rollen</span></span></button>').join('')+'</div></div></div></div>':'';
+  return cp({crumbs:[['Printers']],pager:'3 printers · '+(GEPLAND.length-(g?1:0))+' in wachtrij'})+'<div class="appscroll">'+alert+spool+'<div class="pgrid">'+bambu+ender+kobra+'</div></div>';
+}
+function viewOpdrachten(){
+  let rows=PO.filter(p=>match(...p));
+  const grp=[];['Bambu A1 Mini','Ender 3 S1 Pro'].forEach(pr=>{const l=rows.filter(p=>p[3]===pr);if(l.length){grp.push({_grp:pr+' <span class="sub">('+l.length+')</span>'});l.forEach(p=>grp.push({p,_open:'dos:'+p[2],_t1:p[1],_t2:'',_t4:p[0]+' · '+p[2],_t5:bdg(p[4],POST[p[4]])}));}});
+  return cp({crumbs:[['Printopdrachten']],search:true,facets:[['Printer','x',I.layers]],actions:'<button type="button" class="btn primary" data-soon="Nieuwe printopdracht">Nieuw</button>',pager:'1–'+rows.length+' / '+rows.length})+'<div class="appscroll">'+listTable([['Opdracht',r=>'<span class="mono">'+r.p[0]+'</span>'],['Omschrijving',r=>r.p[1]],['Dossier',r=>'<span class="mono">'+r.p[2]+'</span>'],['Status',r=>bdg(r.p[4],POST[r.p[4]])],['Runs',r=>'<span class="sub">'+(r.p[5]||'—')+'</span>']],grp)+'</div>';
+}
+function viewRuns(){
+  const rows=RUNS.filter(r=>match(...r)).map(r=>{const onb=r[5]==='—'&&S.run===null;return {r,onb,_open:onb?'nav:productie/printers':null,_t1:'Run '+r[0]+' · '+r[1],_t2:r[4]+' kWh',_t3:r[2],_t4:onb?'':(r[5]==='—'?'gekoppeld':r[5]),_t5:onb?bdg('Te bevestigen','b-warn'):bdg(r[3],r[3]==='mislukt'?'b-crit':r[3]==='bezig'?'b-accent':'b-pos')};});
+  return cp({crumbs:[['Runs']],search:true,pager:'1–'+rows.length+' / '+rows.length})+'<div class="appscroll">'+listTable([['Run',x=>'<span class="mono">'+x.r[0]+'</span>'],['Printer',x=>x.r[1]],['Start',x=>x.r[2],'num'],['Uitkomst',x=>bdg(x.r[3],x.r[3]==='mislukt'?'b-crit':x.r[3]==='bezig'?'b-accent':'b-pos')],['kWh',x=>x.r[4],'r num'],['Gekoppeld aan',x=>x.onb?bdg('Te bevestigen','b-warn'):(x.r[5]==='—'?'<span class="sub">'+(S.run&&gp(S.run)?S.run:S.run==='intern'?'Intern':'Nieuwe opdracht')+'</span>':x.r[5])]],rows)+'<p class="note" style="padding:0 16px">Elke print wordt automatisch als run vastgelegd door de printerwachter. Jij bevestigt waaraan hij hoort.</p></div>';
+}
+
+/* ══════════ INKOOP ══════════ */
+function viewAankopen(){
+  const rows=AANKOPEN.filter(a=>match(a.nr,a.lev,a.bron)).map(a=>({a,_open:'ak:'+a.nr,_t1:a.lev,_t2:eur(a.bedrag),_t3:a.regels.length+' regels · '+a.bron,_t4:a.nr,_t5:bdg(AKST[a.status].l,AKST[a.status].c)}));
+  return cp({crumbs:[['Aankopen']],search:true,actions:'<button type="button" class="btn primary" data-soon="Nieuwe bestelling">Nieuw</button><button type="button" class="btn" data-nav="inkoop/inlezen">Factuur inlezen</button>',chips:'<button type="button" class="chip" data-soon="Filter Onderweg">Onderweg</button>',pager:'1–'+rows.length+' / '+rows.length})+'<div class="appscroll">'+
+   listTable([['Nummer',x=>'<span class="mono">'+x.a.nr+'</span>'],['Leverancier',x=>x.a.lev],['Datum',x=>x.a.datum,'num'],['Bron',x=>'<span class="sub">'+x.a.bron+'</span>'],['Status',x=>bdg(AKST[x.a.status].l,AKST[x.a.status].c)],['Bedrag',x=>eur(x.a.bedrag),'r num']],rows)+'</div>';
+}
+function viewAankoop(nr){
+  const a=AANKOPEN.find(x=>x.nr===nr);const steps=['Concept','Besteld','Deels ontvangen','Ontvangen'];const cur={concept:0,besteld:1,deels:2,ontvangen:3}[a.status];
+  const open=a.regels.filter(r=>r[3]<r[2]);
+  const recv=S.recv&&open.length?'<div class="recv"><h4>Ontvangst registreren</h4><table>'+open.map((r,i)=>'<tr><td>'+(r[0]==='ph'?'<b>'+r[1]+'</b><div class="sub">Plaatshouder: kies het merk dat geleverd werd</div>':'<b>'+r[1]+'</b>')+'</td><td>'+(r[0]==='ph'?'<label class="sub" for="rm'+i+'">Merk</label><select id="rm'+i+'" class="inp"><option value="">Kies merk…</option><option>eSUN</option><option>Sunlu</option><option>PolyMaker</option><option>+ nieuw merk</option></select>':'')+'</td><td><label class="sub" for="ra'+i+'">Ontvangen</label><input id="ra'+i+'" class="inp num" type="number" min="0" value="'+(r[2]-r[3])+'"></td></tr>').join('')+'</table><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button type="button" class="btn primary" data-soon="Ontvangst bevestigd: partijen + mutaties aangemaakt">Bevestigen</button><button type="button" class="btn" data-t="recv">Annuleren</button></div><p class="note" style="margin:8px 0 0">Elke ontvangen regel wordt een voorraadpartij (met aankoopprijs) en een +mutatie.</p></div>':'';
+  const lines='<div class="scroll-x"><table class="lines"><thead><tr><th>Artikel</th><th class="r">Besteld</th><th class="r">Ontvangen</th><th class="r">Prijs/eenh.</th><th class="r">Totaal</th></tr></thead><tbody>'+
+   a.regels.map(r=>'<tr><td>'+(r[0]&&r[0]!=='ph'?'<button type="button" class="linkish" data-open="art:'+r[0]+'">'+r[1]+'</button>':r[1]+(r[0]==='ph'?' '+bdg('Plaatshouder','b-warn'):''))+'</td><td class="r num">'+r[2]+'</td><td class="r num">'+r[3]+'</td><td class="r num">'+eur(r[4])+'</td><td class="r num">'+eur(r[2]*r[4])+'</td></tr>').join('')+'</tbody></table></div><div class="totals"><dl class="num"><dt class="grand">Totaal</dt><dd class="grand">'+eur(a.bedrag)+'</dd></dl></div>'+recv;
+  const acts=(open.length?'<button type="button" class="btn primary" data-t="recv">Ontvangst registreren</button>':'')+'<button type="button" class="btn" data-soon="Bijlage">Bijlage '+(a.bron==='Manueel'?'toevoegen':'openen')+'</button>';
+  return cp({crumbs:[['Aankopen','inkoop/aankopen'],[a.nr,'',1]]})+'<div class="appscroll"><div class="form-actions"><div class="btns">'+acts+'</div>'+statusbar(steps,cur)+'</div><div class="sheet-wrap">'+
+   sheet({nr:a.nr+' · bron: '+a.bron,titel:a.lev,fields:[[['Leverancier',a.lev],['Besteld op',a.datum+'/2026']],[['Intern factuurnr.','<span class="mono">'+(a.status==='ontvangen'?'[nr. leverancier]':'nog niet ontvangen')+'</span>'],['Uitgaven','geboekt in Accountable']]],tabs:[['regels','Regels']],panel:lines})+
+   chatterBox([{day:a.datum},{w:'Aankoop aangemaakt',t:'Bron: '+a.bron+'.'}])+'</div></div>';
+}
+function viewInlezen(){
+  const res=S.ocr?'<div class="panel"><h3>Herkend in bonnetje_hubo.jpg '+bdg('Controleer en bevestig','b-warn')+'</h3><div class="pbody"><div class="fgrid"><div><label for="o1">Leverancier</label><input id="o1" class="inp" value="Bouwmarkt (bonnetje)"></div><div><label for="o2">Datum</label><input id="o2" class="inp" value="23/09/2026"></div></div>'+
+    '<table class="mini" style="margin-top:12px"><thead><tr><th>Herkende regel</th><th>Koppelen aan</th><th class="r">Aantal</th><th class="r">Prijs</th></tr></thead><tbody><tr><td>INZETMOER M3 MESSING 50ST</td><td>'+bdg('Bestaand: Inzetmoer M3','b-pos')+'</td><td class="r num">50</td><td class="r num">€ 6,49</td></tr><tr><td>MAGNEET NEODYMIUM 10X2 20ST</td><td>'+bdg('Bestaand: Magneet 10×2 mm','b-pos')+'</td><td class="r num">20</td><td class="r num">€ 7,99</td></tr><tr><td>SPANBAND 25MM</td><td>'+bdg('Nieuw artikel: marge% invullen','b-warn')+'</td><td class="r num">1</td><td class="r num">€ 4,99</td></tr></tbody></table>'+
+    '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button type="button" class="btn primary" data-soon="Aankoop AK-2026-0022 aangemaakt en ontvangen">Aankoop aanmaken</button><button type="button" class="btn" data-t="ocr">Annuleren</button></div></div></div>':'';
+  return cp({crumbs:[['Factuur inlezen']]})+'<div class="appscroll"><div class="page"><div class="two"><div class="panel"><h3>Foto of PDF (OCR)</h3><div class="pbody"><div class="drop">'+I.doc+'<b>Sleep een bonnetje of factuur hierheen</b><span>JPG, PNG of PDF · herkenning via Gemini</span><button type="button" class="btn" data-t="ocr">Voorbeeld: bonnetje inlezen</button></div></div></div>'+
+   '<div class="panel"><h3>UBL uit Accountable</h3><div class="pbody"><div class="drop">'+I.receipt+'<b>Sleep de UBL-export (zip of XML) hierheen</b><span>Aankoopfacturen die via Peppol binnenkwamen · geen OCR nodig</span><button type="button" class="btn" data-nav="financien/import">Naar Accountable-import</button></div></div></div></div>'+res+'</div></div>';
+}
+function viewLeveranciers(){
+  const rows=LEVERANCIERS.filter(l=>match(...l)).map(l=>({l,_t1:l[0],_t3:l[1],_t4:l[2]}));
+  return cp({crumbs:[['Leveranciers']],search:true,actions:'<button type="button" class="btn primary" data-soon="Nieuwe leverancier">Nieuw</button>'})+'<div class="appscroll">'+listTable([['Naam',x=>x.l[0]],['Levert',x=>x.l[1]],['Aankopen',x=>x.l[2]]],rows)+'</div>';
+}
+
+/* ══════════ VOORRAAD ══════════ */
+function artRows(filterFn){
+  let r=ART.filter(a=>(filterFn?filterFn(a):true)&&match(a.naam,a.groep,a.soort));
+  const out=[];['filament','onderdeel','eindproduct','dienst'].forEach(s=>{const l=r.filter(a=>a.soort===s);if(l.length){out.push({_grp:SOORTL[s]+' <span class="sub">('+l.length+')</span>'});l.forEach(a=>out.push({a,_open:'art:'+a.id,_t1:(a.kleur?'<span class="ringsw" style="border-color:'+a.kleur+'"></span> ':'')+a.naam,_t2:a.voorraad==null?'':a.voorraad+' '+a.eenh,_t3:a.groep||SOORTL[a.soort],_t4:a.prijs,_t5:stockBadge(a)}));}});
+  return out;
+}
+const artCols=[['Artikel',x=>(x.a.kleur?'<span class="ringsw" style="border-color:'+x.a.kleur+'"></span> ':'')+'<b>'+x.a.naam+'</b>'+(x.a.groep?'<div class="sub">'+x.a.groep+'</div>':'')],['Op voorraad',x=>x.a.voorraad==null?'<span class="sub">—</span>':x.a.voorraad+' <span class="sub">'+x.a.eenh+'</span>','num'],['Besteld',x=>x.a.besteld?x.a.besteld:(x.a.inprod?'<span class="sub">'+x.a.inprod+' in productie</span>':'<span class="sub">—</span>'),'num'],['Minimum',x=>x.a.min==null?'<span class="sub">—</span>':x.a.min,'num'],['Prijs',x=>'<span class="sub">'+x.a.prijs+'</span>'],['Status',x=>stockBadge(x.a)]];
+function viewArtikelen(){
+  const rows=artRows();
+  let body;
+  if(S.view==='list') body=listTable(artCols,rows);
+  else body='<div class="cgrid">'+rows.filter(r=>!r._grp).map(r=>{const a=r.a;return '<button type="button" class="ccard" data-open="art:'+a.id+'">'+(a.kleur?'<span class="ring" style="width:44px;height:44px;border-width:10px;border-color:'+a.kleur+'"></span>':'<span class="avatar" style="background:var(--muted)">'+initials(a.naam)+'</span>')+'<span style="display:flex;flex-direction:column;gap:4px"><b>'+a.naam+'</b><span class="sub">'+(a.groep||SOORTL[a.soort])+'</span><span style="display:flex;justify-content:space-between;align-items:center;gap:6px"><span class="num">'+(a.voorraad==null?'':a.voorraad+' '+a.eenh)+'</span>'+stockBadge(a)+'</span></span></button>';}).join('')+'</div>';
+  return cp({crumbs:[['Artikelen']],search:true,facets:[['Soort','x',I.layers]],actions:'<button type="button" class="btn primary" data-soon="Nieuw artikel">Nieuw</button>',chips:'<button type="button" class="chip" data-nav="voorraad/tebestellen">Te bestellen</button>',pager:'1–'+rows.filter(r=>!r._grp).length+' / '+ART.length,views:true})+'<div class="appscroll">'+body+'</div>';
+}
+function viewArtikel(id){
+  const a=art(id);S.tab=S.tab||(a.soort==='dienst'?'info':'partijen');
+  const partijen=a.soort==='dienst'?[]:(id==='a8'?[['12/08','AK-2026-0014',100,48,'€ 0,18'],['30/08','manueel',20,20,'€ 0,19']]:id==='a2'?[['02/07','AK-2026-0009',2,1,'€ 19,99']]:[['0'+(3+id.length)+'/09',a.soort==='eindproduct'?'productie PO-29':'AK-2026-0018',a.voorraad||0,a.voorraad||0,a.soort==='eindproduct'?'€ 1,20 (kost)':'€ 19,99']]);
+  const mut=a.soort==='dienst'?[['—','',''],]:id==='a8'?[['21/09','−20','Levering D-2026-0012'],['30/08','+20','Manuele invoer'],['18/08','−32','Levering D-2026-0005'],['12/08','+100','Ontvangst AK-2026-0014']]:[[partijen[0][0],'+'+partijen[0][2],(a.soort==='eindproduct'?'Productie ':'Ontvangst ')+partijen[0][1]]].concat(partijen[0][3]<partijen[0][2]?[['23/09','−'+(partijen[0][2]-partijen[0][3]),'Rol leeggemeld']]:[]).reverse();
+  const tabs=a.soort==='dienst'?[['info','Prijs']]:[['partijen','Partijen'],['mutaties','Mutaties'],['info','Prijs']];
+  let panel='';
+  if(S.tab==='partijen') panel='<table class="mini"><thead><tr><th>Ontvangen</th><th>Herkomst</th><th class="r">Ontvangen</th><th class="r">Resterend</th><th class="r">Prijs/eenh.</th></tr></thead><tbody>'+partijen.map(p=>'<tr><td class="num">'+p[0]+'</td><td class="mono">'+p[1]+'</td><td class="r num">'+p[2]+'</td><td class="r num"><b>'+p[3]+'</b></td><td class="r num">'+p[4]+'</td></tr>').join('')+'</tbody></table><p class="note">UIT en leveringen nemen altijd eerst van de oudste partij (FIFO).</p>';
+  if(S.tab==='mutaties') panel='<table class="mini"><thead><tr><th>Datum</th><th class="r">Beweging</th><th>Reden</th></tr></thead><tbody>'+mut.map(m=>'<tr><td class="num">'+m[0]+'</td><td class="r num"><b>'+m[1]+'</b></td><td>'+m[2]+'</td></tr>').join('')+'</tbody></table>';
+  if(S.tab==='info') panel='<div class="fields" style="padding:0"><div>'+(a.soort==='filament'?'<div class="field"><span class="k">Prijsgroep</span><span>'+a.groep+' <button type="button" class="linkish" data-nav="instellingen/instellingen" data-sec="materiaal">(beheer)</button></span></div><div class="field"><span class="k">Verkoopprijs</span><span>'+a.prijs+'</span></div><div class="field"><span class="k">Faalfactor</span><span>10% (op materiaal)</span></div>':a.soort==='onderdeel'?'<div class="field"><span class="k">Inkoopprijs</span><span>€ 0,12</span></div><div class="field"><span class="k">Marge</span><span>50%</span></div><div class="field"><span class="k">Verkoopprijs</span><span>'+a.prijs+' <span class="sub">(voorstel, aanpasbaar)</span></span></div>':'<div class="field"><span class="k">Verkoopprijs</span><span>'+a.prijs+'</span></div>')+'</div></div>';
+  const smart=a.soort==='dienst'?'':smartBtn(I.box,a.voorraad,a.eenh+' op voorraad','data-t="tabPart"')+smartBtn(I.cart,a.besteld||0,'besteld','data-nav="inkoop/aankopen"');
+  return cp({crumbs:[['Artikelen','voorraad/artikelen'],[a.naam]]})+'<div class="appscroll"><div class="form-actions"><div class="btns">'+(a.soort==='dienst'?'':'<button type="button" class="btn primary" data-soon="Voorraad corrigeren (±)">Voorraad corrigeren</button>')+(a.soort==='filament'||a.soort==='onderdeel'?'<button type="button" class="btn" data-soon="Toegevoegd aan conceptbestelling">Bestellen</button>':'')+'<button type="button" class="btn" data-soon="Gearchiveerd">Archiveren</button></div><span>'+stockBadge(a)+'</span></div><div class="sheet-wrap">'+
+   sheet({nr:SOORTL[a.soort]+(a.groep?' · '+a.groep:''),titel:(a.kleur?'<span class="ringsw" style="border-color:'+a.kleur+'"></span> ':'')+a.naam,smart,fields:[[['Soort',SOORTL[a.soort]],['Eenheid',a.eenh||'—']],[['Minimumvoorraad',a.min==null?'—':a.min+' '+a.eenh],['Locatie','[rek / bak]']]],tabs,panel})+
+   chatterBox(a.soort==='dienst'?[{day:'Catalogus'},{w:'Dienst aangemaakt',i:I.pen}]:[{day:mut[0][0]},{c:mut[0][1][0]==='+'?'p':'',i:I.box,w:'Mutatie '+mut[0][1],t:mut[0][2]}])+'</div></div>';
+}
+function viewTeBestellen(){
+  const rows=artRows(tekort);
+  return cp({crumbs:[['Te bestellen']],search:true,actions:'<button type="button" class="btn primary" data-soon="Conceptbestellingen aangemaakt per leverancier">Bestelling maken</button>',pager:rows.filter(r=>!r._grp).length+' artikelen'})+'<div class="appscroll">'+listTable(artCols,rows)+'<p class="note" style="padding:0 16px">Te bestellen = op voorraad + al besteld + in productie &lt; minimum. PETG Matte zwart staat hier niet: er is 0 op voorraad, maar 2 zijn al besteld.</p></div>';
+}
+function viewMutaties(){
+  const m=[['23/09','PLA Matte zwart','−1','Rol leeggemeld (Bambu A1 Mini)'],['21/09','Sleutelring 25 mm','−20','Levering D-2026-0012'],['20/09','Kabelhouder','+6','Productie PO-30'],['16/09','Magneet 10×2 mm','+20','Ontvangst AK-2026-0020'],['11/09','Inzetmoer M3','+100','Ontvangst AK-2026-0019 (OCR)'],['02/09','PLA Basic wit','+2','Ontvangst AK-2026-0018 (UBL)']].filter(x=>match(...x));
+  return cp({crumbs:[['Mutaties']],search:true,pager:'1–'+m.length+' / '+m.length})+'<div class="appscroll">'+listTable([['Datum',x=>x.m[0],'num'],['Artikel',x=>x.m[1]],['Beweging',x=>'<b>'+x.m[2]+'</b>','num'],['Reden',x=>x.m[3]]],m.map(x=>({m:x,_t1:x[1],_t2:x[2],_t3:x[3],_t4:x[0]})))+'</div>';
+}
+
+/* ══════════ KLANTEN ══════════ */
+function viewKlanten(){
+  const rows=KLANTEN.filter(k=>match(k.naam,k.gem,k.type)).map(k=>{const n=DOSSIERS.filter(d=>d.k===k.id).length;return {k,n,_open:'kl:'+k.id,_t1:k.naam,_t2:n+' dossier'+(n===1?'':'s'),_t3:k.gem,_t4:k.type,_t5:k.peppol?bdg('Peppol','b-info'):''};});
+  let body;
+  if(S.view==='list') body=listTable([['Naam',x=>'<b>'+x.k.naam+'</b>'],['Type',x=>x.k.type],['Gemeente',x=>x.k.gem],['Peppol',x=>x.k.peppol?bdg('Ja','b-info'):'<span class="sub">—</span>'],['Dossiers',x=>x.n,'r num']],rows);
+  else body='<div class="cgrid">'+rows.map(x=>'<button type="button" class="ccard" data-open="kl:'+x.k.id+'"><span class="avatar" style="background:'+x.k.kleur+'">'+initials(x.k.naam)+'</span><span style="display:flex;flex-direction:column;gap:3px"><b>'+x.k.naam+'</b><span class="sub">'+x.k.type+' · '+x.k.gem+'</span><span style="display:flex;gap:6px;flex-wrap:wrap">'+bdg(x.n+' dossier'+(x.n===1?'':'s'),'b-neutral')+(x.k.peppol?bdg('Peppol','b-info'):'')+'</span></span></button>').join('')+'</div>';
+  return cp({crumbs:[['Klanten']],search:true,actions:'<button type="button" class="btn primary" data-soon="Nieuwe klant">Nieuw</button>',chips:'<button type="button" class="chip" data-soon="Filter Zakelijk">Zakelijk</button><button type="button" class="chip" data-soon="Filter Particulier">Particulier</button>',pager:'1–'+rows.length+' / '+rows.length,views:true})+'<div class="appscroll">'+body+'</div>';
+}
+function viewKlant(id){
+  const k=klant(id);const ds=DOSSIERS.filter(d=>d.k===id);const omzet=ds.filter(d=>d.fase==='afgerekend'||d.fase==='betaald').reduce((s,d)=>s+d.bedrag,0);
+  S.tab=S.tab||'dossiers';
+  const panel=S.tab==='dossiers'?'<table class="mini"><thead><tr><th>Dossier</th><th>Omschrijving</th><th>Fase</th><th class="r">Bedrag</th></tr></thead><tbody>'+ds.map(d=>'<tr class="clk" data-open="dos:'+d.nr+'"><td class="mono">'+d.nr+'</td><td>'+d.oms+'</td><td>'+bdg(FASE[d.fase].l,FASE[d.fase].c)+'</td><td class="r num">'+eur(d.bedrag)+'</td></tr>').join('')+'</tbody></table>':
+   '<div class="fields" style="padding:0"><div><div class="field"><span class="k">E-mail</span><span>[e-mail]</span></div><div class="field"><span class="k">Telefoon / gsm</span><span>[nummer]</span></div></div><div><div class="field"><span class="k">Adres</span><span>[straat nr], '+k.gem+'</span></div>'+(k.type==='Zakelijk'?'<div class="field"><span class="k">Ondernemingsnr.</span><span class="mono">[BE0XXX.XXX.XXX]</span></div><div class="field"><span class="k">Peppol-ID</span><span class="mono">'+(k.peppol?'0208:[ondernemingsnr.]':'niet op Peppol')+'</span></div>':'')+'</div></div>';
+  return cp({crumbs:[['Klanten','klanten/klanten'],[k.naam]]})+'<div class="appscroll"><div class="form-actions"><div class="btns"><button type="button" class="btn primary" data-t="newDos" data-kl="'+id+'">Nieuw dossier</button><button type="button" class="btn" data-soon="Gearchiveerd">Archiveren</button></div><span></span></div><div class="sheet-wrap">'+
+   sheet({nr:k.type+(k.peppol?' · Peppol':''),titel:k.naam,smart:smartBtn(I.folder.replace(/30/g,'20'),ds.length,'Dossiers','data-klf="'+id+'"')+smartBtn(I.euro.replace(/30/g,'20'),eur(omzet),'Afgerekend','data-nav="financien/overzicht"'),
+    fields:[[['Type',k.type],['Gemeente',k.gem]],[['Afrekening',k.type==='Zakelijk'?'Factuur'+(k.peppol?' via Peppol':''):'Bonnetje (standaard)'],['Klant sinds','2026']]],tabs:[['dossiers','Dossiers'],['contact','Contact & facturatie']],panel})+
+   chatterBox([{day:'Klant'},{w:'Klant aangemaakt',i:I.pen}])+'</div></div>';
+}
+
+/* ══════════ FINANCIËN ══════════ */
+const MAAND=[['jan',210],['feb',340],['mrt',280],['apr',520],['mei',610],['jun',450],['jul',380],['aug',720],['sep',872.5]];
+function barChart(){
+  const W=640,H=220,pl=44,pb=26,pt=10,max=1000,bw=(W-pl)/MAAND.length;
+  let s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Omzet per maand 2026">';
+  [0,250,500,750,1000].forEach(v=>{const y=pt+(H-pt-pb)*(1-v/max);s+='<line x1="'+pl+'" x2="'+W+'" y1="'+y+'" y2="'+y+'" stroke="var(--line)" stroke-width="1"/><text x="'+(pl-8)+'" y="'+(y+4)+'" text-anchor="end" font-size="11" fill="var(--muted)">€ '+v+'</text>';});
+  MAAND.forEach((m,i)=>{const h=(H-pt-pb)*m[1]/max,x=pl+i*bw+bw*0.22,w=bw*0.56,y=H-pb-h;
+    s+='<path d="M'+x+' '+(H-pb)+' V'+(y+4)+' Q'+x+' '+y+' '+(x+4)+' '+y+' H'+(x+w-4)+' Q'+(x+w)+' '+y+' '+(x+w)+' '+(y+4)+' V'+(H-pb)+' Z" fill="'+(i===MAAND.length-1?'var(--accent)':'var(--accent-deep)')+'" opacity="'+(i===MAAND.length-1?1:.55)+'"/>'+
+    '<rect x="'+(pl+i*bw)+'" y="'+pt+'" width="'+bw+'" height="'+(H-pt-pb)+'" fill="transparent" data-tip="'+m[0]+' · '+eur(m[1]).replace('€ ','€&#160;')+'" data-x="'+((pl+i*bw+bw/2)/W*100)+'" data-y="'+(y/H*100)+'"/>'+
+    '<text x="'+(pl+i*bw+bw/2)+'" y="'+(H-8)+'" text-anchor="middle" font-size="11" fill="var(--muted)">'+m[0]+'</text>';});
+  s+='<line x1="'+pl+'" x2="'+W+'" y1="'+(H-pb)+'" y2="'+(H-pb)+'" stroke="var(--line-strong)"/></svg>';
+  return '<div class="chart" id="chart">'+s+'<div class="tip" id="tip" hidden></div></div>';
+}
+function viewFinancien(){
+  const omzet=4382.5,grens=25000,pct=omzet/grens*100;
+  return cp({crumbs:[['Overzicht']],chips:'<button type="button" class="chip" aria-pressed="true">2026</button><button type="button" class="chip" data-soon="Kwartaal">Dit kwartaal</button>'})+'<div class="appscroll"><div class="page">'+
+   '<div class="kpis"><div class="kpi"><span class="k">Omzet 2026</span><span class="v">'+eur(omzet)+'</span><span class="s">afgerekend in Accountable</span></div><button type="button" class="kpi" data-nav="dossiers/dossiers"><span class="k">Af te rekenen</span><span class="v">'+eur(12)+'</span><span class="s">1 dossier · nog in te voeren in Accountable</span></button><div class="kpi"><span class="k">Openstaand</span><span class="v">'+eur(86.40)+'</span><span class="s">1 factuur · 19 dagen</span></div><div class="kpi"><span class="k">Gem. marge</span><span class="v">38%</span><span class="s">verkoopprijs t.o.v. gemeten kost</span></div></div>'+
+   '<div class="panel"><h3>Vrijstellingsregeling kleine ondernemingen <span class="sub" style="font-weight:400">grens instelbaar</span></h3><div class="pbody"><div class="num"><b>'+eur(omzet)+'</b> van '+eur(grens)+' · '+pct.toFixed(1).replace('.',',')+'%</div><div class="meter" role="meter" aria-valuenow="'+omzet+'" aria-valuemin="0" aria-valuemax="'+grens+'" aria-label="Omzet ten opzichte van de grens"><i style="width:'+pct+'%"></i></div><div class="meter-scale num"><span>€ 0</span><span>€ 25.000</span></div></div></div>'+
+   '<div class="two"><div class="panel"><h3>Omzet per maand</h3><div class="pbody">'+barChart()+'<details style="margin-top:8px"><summary class="note">Als tabel</summary><table class="mini">'+MAAND.map(m=>'<tr><td>'+m[0]+'</td><td class="r num">'+eur(m[1])+'</td></tr>').join('')+'</table></details></div></div>'+
+   '<div style="display:flex;flex-direction:column;gap:16px"><div class="panel"><h3>Af te rekenen in Accountable</h3><div class="pbody"><table class="mini"><tbody><tr class="clk" data-open="dos:D-2026-0010"><td class="mono">D-2026-0010</td><td>Tom Peeters</td><td>'+bdg('Bonnetje','b-neutral')+'</td><td class="r num">€ 12,00</td></tr></tbody></table></div></div>'+
+   '<div class="panel"><h3>Openstaande facturen</h3><div class="pbody"><table class="mini"><tbody><tr class="clk" data-open="dos:D-2026-0009"><td class="mono">F-2026-0031</td><td>Atelier Verbeke bv</td><td>'+bdg('19 dagen','b-warn')+'</td><td class="r num">€ 86,40</td></tr></tbody></table></div></div></div></div>'+
+   '<p class="note">Voorbeeldcijfers. Facturen, bonnetjes en dagontvangsten blijven in Accountable; dit overzicht leest de nummers en betaalstatus die je in de dossiers registreert of via de Accountable-import binnenhaalt.</p></div></div>';
+}
+function viewImport(){
+  const res=S.imp?'<div class="panel"><h3>Resultaat import · export 01/07–30/09/2026</h3><div class="pbody"><table class="mini"><thead><tr><th>Document in Accountable</th><th>Gevonden dossier</th><th>Actie</th></tr></thead><tbody><tr><td class="mono">F-2026-0029 · € 57,60</td><td class="mono">D-2026-0007</td><td>'+bdg('Betaald gezet','b-pos')+'</td></tr><tr><td class="mono">B-2026-0112 · € 24,00</td><td class="mono">D-2026-0008</td><td>'+bdg('Al in orde','b-neutral')+'</td></tr><tr><td class="mono">F-2026-0031 · € 86,40</td><td class="mono">D-2026-0009</td><td>'+bdg('Nog openstaand','b-warn')+'</td></tr><tr><td class="mono">B-2026-0108 · € 15,00</td><td class="sub">geen dossier gevonden</td><td><button type="button" class="linkish" data-soon="Handmatig koppelen">Koppelen…</button></td></tr><tr><td class="mono">Aankoop · Bambu Lab Store · € 85,95 (UBL)</td><td class="mono">AK-2026-0018</td><td>'+bdg('Al ingelezen','b-neutral')+'</td></tr></tbody></table></div></div>':'';
+  return cp({crumbs:[['Accountable-import']]})+'<div class="appscroll"><div class="page"><p class="note" style="margin:0">Accountable heeft geen koppeling (API). Met de export die je daar maakt (Exporteer je gegevens), haal je de stand terug naar het ERP.</p><div class="two"><div class="panel"><h3>Excel-export: inkomsten</h3><div class="pbody"><div class="drop">'+I.doc+'<b>Sleep de Excel-export hierheen</b><span>Koppelt facturen en bonnetjes aan dossiers en zet de betaalstatus</span><button type="button" class="btn" data-t="imp">Voorbeeld inlezen</button></div></div></div>'+
+   '<div class="panel"><h3>UBL-export: aankoopfacturen</h3><div class="pbody"><div class="drop">'+I.receipt+'<b>Sleep de UBL-zip hierheen</b><span>Maakt aankopen aan zonder OCR (Peppol-facturen)</span><button type="button" class="btn" data-t="imp">Voorbeeld inlezen</button></div></div></div></div>'+res+'</div></div>';
+}
+
+/* ══════════ INSTELLINGEN ══════════ */
+function viewInstellingen(){
+  const secs=[['tarieven','Tarieven'],['materiaal','Materiaalprijzen'],['printers','Printers'],['bedrijf','Bedrijfsgegevens'],['integraties','Integraties']];
+  const f=(id,l,v,u)=>'<div><label for="'+id+'">'+l+'</label><div class="unit"><input id="'+id+'" class="inp num" value="'+v+'"><span>'+u+'</span></div></div>';
+  let c='';
+  if(S.setSec==='tarieven') c='<div class="panel"><h3>Tarieven <span class="sub" style="font-weight:400">gebruikt door de rekenmotor</span></h3><div class="pbody"><div class="fgrid"><div class="fgroup">Energie &amp; machine</div>'+f('t1','Elektriciteitsprijs','0,35','€/kWh')+f('t2','Machinekost (globaal, terugval)','0,13','€/u')+f('t3','BMCU-slijtage per multicolor print','0,10','€')+'<div class="fgroup">Marge &amp; faalfactor</div>'+f('t4','Grens klein/groot (printtijd)','3','u')+f('t5','Marge klein','18','%')+f('t6','Marge groot','10','%')+f('t7','Faalfactor (enkel op materiaal)','10','%')+'<div class="fgroup">Arbeid</div>'+f('t8','Vaste voorbereiding per print','10','min')+f('t9','Vaste nabewerking per print','5','min')+f('t10','Arbeid (regie)','15,00','€/u')+f('t11','Ontwerp op maat (regie)','25,00','€/u')+f('t12','Uitgebreide nabewerking (regie)','20,00','€/u')+'</div><div style="margin-top:14px"><button type="button" class="btn primary" data-soon="Opgeslagen">Opslaan</button></div></div></div>';
+  if(S.setSec==='materiaal'){const g={};ART.filter(a=>a.soort==='filament').forEach(a=>{g[a.groep]=g[a.groep]||{p:a.prijs,min:a.min,k:[]};g[a.groep].k.push(a.kleur);});
+    c='<div class="panel"><h3>Materiaalprijzen <button type="button" class="btn" data-soon="Nieuwe prijsgroep">Nieuw</button></h3><div class="pbody"><table class="mini"><thead><tr><th>Merk · type</th><th>Kleuren</th><th class="r">Verkoopprijs</th><th class="r">Min. rollen per kleur</th></tr></thead><tbody>'+Object.entries(g).map(([n,v])=>'<tr class="clk" data-soon="'+n+' bewerken"><td><b>'+n+'</b></td><td>'+sw(v.k)+'</td><td class="r num">'+v.p+'</td><td class="r num">'+v.min+'</td></tr>').join('')+'</tbody></table><p class="note">Materiaalkost = gewicht × verkoopprijs/kg × faalfactor. Geen aparte marge op materiaal.</p></div></div>';}
+  if(S.setSec==='printers') c='<div class="panel"><h3>Printers <button type="button" class="btn" data-soon="Nieuwe printer">Nieuw</button></h3><div class="pbody"><table class="mini"><thead><tr><th>Printer</th><th>Adapter</th><th class="r">Machinekost</th><th class="r">Gem. verbruik</th><th>BMCU</th><th>Auto-runs</th></tr></thead><tbody>'+
+    [['Bambu A1 Mini','Bambu via Home Assistant','€ 0,13/u','95 W','Ja','Aan'],['Ender 3 S1 Pro','Klipper via Moonraker','€ 0,13/u','150 W','Nee','Aan'],['AnyCubic Kobra S1 Pro','Manueel (cloud)','€ 0,15/u','110 W','Ace Pro','—']].map(p=>'<tr class="clk" data-soon="'+p[0]+' bewerken"><td><b>'+p[0]+'</b></td><td>'+p[1]+'</td><td class="r num">'+p[2]+'</td><td class="r num">'+p[3]+'</td><td>'+p[4]+'</td><td>'+p[5]+'</td></tr>').join('')+'</tbody></table><p class="note">Per adapter kies je de entiteiten uit een lijst, met een test per entiteit.</p></div></div>';
+  if(S.setSec==='bedrijf') c='<div class="panel"><h3>Bedrijfsgegevens <span class="sub" style="font-weight:400">op offerte, werkbon en pakbon</span></h3><div class="pbody"><div class="fgrid">'+[['b1','Naam','3Dplezier'],['b2','Ondernemingsnr.','[BE0XXX.XXX.XXX]'],['b3','Adres','[straat nr, postcode gemeente]'],['b4','E-mail','[e-mail]'],['b5','IBAN','[BE.. .... .... ....]'],['b6','Vermelding btw','Bijzondere vrijstellingsregeling kleine ondernemingen']].map(x=>'<div><label for="'+x[0]+'">'+x[1]+'</label><input id="'+x[0]+'" class="inp" value="'+x[2]+'"></div>').join('')+'</div><div style="margin-top:14px"><button type="button" class="btn primary" data-soon="Opgeslagen">Opslaan</button></div></div></div>';
+  if(S.setSec==='integraties') c='<div class="panel"><h3>Integraties</h3><div class="pbody"><table class="mini"><tbody><tr><td><b>Home Assistant</b><div class="sub">printers, wattage, kWh</div></td><td>'+bdg('Verbonden','b-pos')+'</td><td class="sub">token via add-on-configuratie</td><td><button type="button" class="btn" data-soon="Verbinding OK">Testen</button></td></tr><tr><td><b>Moonraker</b><div class="sub">Ender 3 S1 Pro</div></td><td>'+bdg('Verbonden','b-pos')+'</td><td class="sub">adres in printerinstellingen</td><td><button type="button" class="btn" data-soon="Verbinding OK">Testen</button></td></tr><tr><td><b>Gemini</b><div class="sub">OCR van bonnetjes</div></td><td>'+bdg('Ingesteld','b-pos')+'</td><td class="sub">sleutel via add-on-configuratie</td><td></td></tr><tr><td><b>Accountable</b><div class="sub">facturen, bonnetjes, Peppol</div></td><td>'+bdg('Via export','b-neutral')+'</td><td class="sub">geen API · import onder Financiën</td><td><button type="button" class="btn" data-nav="financien/import">Openen</button></td></tr></tbody></table></div></div>';
+  return cp({crumbs:[['Instellingen']]})+'<div class="appscroll"><div class="settings"><nav class="snav" aria-label="Onderdelen">'+secs.map(s=>'<button type="button" data-sec="'+s[0]+'" aria-current="'+(S.setSec===s[0])+'">'+s[1]+'</button>').join('')+'</nav><div>'+c+'</div></div></div>';
+}
+
+/* ══════════ router ══════════ */
+function view(){
+  if(S.app==='home')return viewHome();
+  const [t,id]=(S.rec||'').split(':');
+  if(S.app==='dossiers'){ if(S.newDos)return viewNieuwDossier(); if(t==='dos')return viewDossier(id); return {dossiers:viewDossiers,leveringen:viewLeveringen,offertes:viewOffertes}[S.page](); }
+  if(S.app==='productie')return {printers:viewPrinters,opdrachten:viewOpdrachten,runs:viewRuns}[S.page]();
+  if(S.app==='inkoop'){ if(t==='ak')return viewAankoop(id); return {aankopen:viewAankopen,inlezen:viewInlezen,leveranciers:viewLeveranciers}[S.page](); }
+  if(S.app==='voorraad'){ if(t==='art')return viewArtikel(id); return {artikelen:viewArtikelen,tebestellen:viewTeBestellen,mutaties:viewMutaties}[S.page](); }
+  if(S.app==='klanten'){ if(t==='kl')return viewKlant(id); return viewKlanten(); }
+  if(S.app==='financien')return {overzicht:viewFinancien,import:viewImport}[S.page]();
+  if(S.app==='instellingen')return viewInstellingen();
+}
+const app=document.getElementById('app');
+function render(keepFocus){
+  app.innerHTML=topbar()+view();
+  const q=document.getElementById('q');
+  if(q){q.addEventListener('input',()=>{S.q=q.value;render(true);});if(keepFocus){q.focus();q.setSelectionRange(q.value.length,q.value.length);}}
+  const ch=document.getElementById('chart');
+  if(ch){const tip=document.getElementById('tip');ch.addEventListener('mousemove',e=>{const r=e.target.closest('[data-tip]');if(!r){tip.hidden=true;return;}tip.innerHTML=r.dataset.tip;tip.style.left=r.dataset.x+'%';tip.style.top=r.dataset.y+'%';tip.hidden=false;});ch.addEventListener('mouseleave',()=>tip.hidden=true);}
+}
+function scrollTop(){const s=app.querySelector('.appscroll');if(s)s.scrollTop=0;}
+let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,2600);}
+function openRec(v){
+  const [t,id]=v.split(':');
+  if(t==='nav'){const [a,p]=id.split('/');go(a,p);return;}
+  if(t==='dos'){if(DOSSIERS.find(d=>d.nr===id)){go('dossiers','dossiers','dos:'+id);}return;}
+  if(t==='kl'){go('klanten','klanten','kl:'+id);return;}
+  if(t==='art'){go('voorraad','artikelen','art:'+id);return;}
+  if(t==='ak'){go('inkoop','aankopen','ak:'+id);return;}
+}
+app.addEventListener('click',e=>{
+  const b=e.target.closest('[data-nav],[data-view],[data-t],[data-open],[data-tab],[data-run],[data-soon],[data-sec],[data-klf],#copyFiche');
+  if(!b||b.disabled)return;
+  if(b.dataset.sec&&!b.dataset.nav){S.setSec=b.dataset.sec;render();return;}
+  if(b.dataset.nav){if(b.dataset.nav==='home'){S.app='home';S.rec=null;}else{const [a,p]=b.dataset.nav.split('/');go(a,p);if(b.dataset.sec)S.setSec=b.dataset.sec;}render();scrollTop();return;}
+  if(b.dataset.klf){go('dossiers','dossiers');S.klantF=b.dataset.klf;S.open=false;render();return;}
+  if(b.dataset.view){S.view=b.dataset.view;render();return;}
+  if(b.dataset.t){const k=b.dataset.t;
+    if(k==='goAfr'){toast('Opent de overnamefiche. Uitgewerkt in D-2026-0012, tab Afrekening.');return;}
+    if(k==='tabPart'){S.tab='partijen';render();return;}
+    if(k==='newDos'){if(b.dataset.kl){go('dossiers','dossiers');S.newDos=true;render();setTimeout(()=>{const s=document.getElementById('nd-klant');if(s)s.value=klant(b.dataset.kl).naam;},0);return;}S.newDos=!S.newDos;render();scrollTop();return;}
+    if(k==='klantF'){S.klantF=null;render();return;}
+    if(k==='x'){toast('Facet · niet uitgewerkt in deze mockup.');return;}
+    S[k]=!S[k];render();return;}
+  if(b.dataset.open){openRec(b.dataset.open);render();scrollTop();return;}
+  if(b.dataset.tab){S.tab=b.dataset.tab;render();return;}
+  if(b.dataset.run){S.run=b.dataset.run==='reset'?null:b.dataset.run;S.pick=false;render();toast(S.run?'Run #89 gekoppeld.':'Koppeling ongedaan gemaakt.');return;}
+  if(b.id==='copyFiche'){const txt='Jeugdhuis De Sleutel vzw\n50 sleutelhangers met logo (D-2026-0012)\nTotaal: € 114,70';
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>toast('Overnamefiche gekopieerd.'),()=>toast('Kopiëren lukt hier niet; in het echte ERP wel.'));}else toast('Kopiëren lukt hier niet; in het echte ERP wel.');return;}
+  if(b.dataset.soon)toast(b.dataset.soon+' · niet uitgewerkt in deze mockup.');
+});
+function setMode(g){S.gsm=g;document.getElementById('stage').classList.toggle('gsm',g);document.getElementById('mDesk').setAttribute('aria-pressed',!g);document.getElementById('mGsm').setAttribute('aria-pressed',g);}
+document.getElementById('mDesk').addEventListener('click',()=>setMode(false));
+document.getElementById('mGsm').addEventListener('click',()=>setMode(true));
+render();
+})();
+</script>
+</body></html>

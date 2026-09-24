@@ -1,0 +1,11 @@
+node_modules/
+# gebouwde frontend enkel in de add-on-map committen (addon/frontend/dist)
+/frontend/dist/
+# databank, bijlagen en backups horen NOOIT in git (privégegevens)
+*.db
+*.db-wal
+*.db-shm
+bijlagen/
+backups/
+# facturen/testbestanden in de hoofdmap niet mee naar GitHub
+/*.pdf
