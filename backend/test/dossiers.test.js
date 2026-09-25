@@ -88,14 +88,13 @@ test('E4. afrekenen (factuur) → vast → betaald → ongedaan', async () => {
   const d = (await vraag('GET', '/dossiers')).data[0];
   let r = await vraag('POST', `/dossiers/${d.id}/betaald`, { datum: '2026-09-25' });
   assert.equal(r.status, 400, 'betaald kan pas na afrekenen');
-  r = await vraag('POST', `/dossiers/${d.id}/afrekenen`, { soort: 'factuur', nummer: 'F2026-014', datum: '2026-09-25' });
-  assert.match(r.data.error, /Maak eerst een werkbon/, 'afrekenen kan pas met een werkbon (5b)');
-  assert.equal((await vraag('POST', `/dossiers/${d.id}/werkbon`)).status, 201);
   r = await vraag('POST', `/dossiers/${d.id}/afrekenen`, { soort: 'factuur', nummer: '', datum: '2026-09-25' });
   assert.match(r.data.error, /nummer van de factuur/);
+  assert.equal((await vraag('GET', `/dossiers/${d.id}`)).data.werkbon, null, 'fout → ook geen werkbon (transactie)');
   r = await vraag('POST', `/dossiers/${d.id}/afrekenen`, { soort: 'factuur', nummer: 'F2026-014', datum: '2026-09-25' });
   assert.equal(r.status, 200);
   assert.equal(r.data.fase, 'afgerekend');
+  assert.ok(r.data.werkbon?.definitief_op, 'zonder werkbon maakt afrekenen hem zelf (25-09)');
   assert.equal(r.data.afgerekend_bedrag, d.totaal, 'bedrag = totaal als je niets invult');
   // vast: regels/titel wijzigen geweigerd, notities mag
   r = await vraag('PUT', `/dossiers/${d.id}`, { soort: 'klant', klant_id: klant, titel: 'Andere titel' });

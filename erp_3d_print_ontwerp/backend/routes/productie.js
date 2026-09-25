@@ -11,7 +11,7 @@ import { haStaten, haDienst, haCameraBeeld, haIngesteld, HaFout, meterOp } from 
 import { leesPrinter, entiteitenVan, KOPPELINGEN } from '../productie/adapters.js';
 import { liveCache, openRun, kwhVanRun, startRun, sluitRun, tik, INTERVAL_MS, vulAan } from '../productie/wachter.js';
 import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wijzigOpdracht, verschuif, bevestig, heropen, annuleer, verwijder,
-  voorstelVoorRun, koppelRun, ontkoppelRun } from '../productie/opdrachten.js';
+  voorstelVoorRun, koppelRun, ontkoppelRun, synchroniseer } from '../productie/opdrachten.js';
 import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct } from '../productie/materiaal.js';
 
 const r = Router();
@@ -167,13 +167,19 @@ r.get('/opdrachten', metFouten((req, res) => {
 r.get('/opdrachten/:id', metFouten((req, res) => res.json(opdracht(getDb(), req.params.id))));
 r.post('/opdrachten', metFouten((req, res) => {
   const db = getDb();
-  const id = db.transaction(() => maakOpdracht(db, req.body || {}))();
+  const id = db.transaction(() => {
+    const n = maakOpdracht(db, req.body || {});
+    const dId = leesOpdracht(db, n).dossier_id;
+    if (dId) synchroniseer(db, dId, { behoud: n });     // gestart dossier: de rest past zich aan
+    if (!leesOpdracht(db, n)) throw new DomeinFout('Voor deze regel is al genoeg geprint of gepland. Verhoog eerst het aantal op de regel van het dossier.');
+    return n;
+  })();
   res.status(201).json(leesOpdracht(db, id));
 }));
 r.put('/opdrachten/:id', metFouten((req, res) => {
   const db = getDb();
   const o = opdracht(db, req.params.id);
-  db.transaction(() => wijzigOpdracht(db, o, req.body || {}))();
+  db.transaction(() => { wijzigOpdracht(db, o, req.body || {}); if (o.dossier_id) synchroniseer(db, o.dossier_id, { behoud: o.id }); })();
   res.json(leesOpdracht(db, o.id));
 }));
 r.post('/opdrachten/:id/:richting(op|neer)', metFouten((req, res) => {
@@ -185,19 +191,19 @@ r.post('/opdrachten/:id/:richting(op|neer)', metFouten((req, res) => {
 r.post('/opdrachten/:id/bevestig', metFouten((req, res) => {
   const db = getDb();
   const o = opdracht(db, req.params.id);
-  db.transaction(() => bevestig(db, o, req.body?.aantal_goed))();
+  db.transaction(() => { bevestig(db, o, req.body?.aantal_goed); if (o.dossier_id) synchroniseer(db, o.dossier_id); })();
   res.json(leesOpdracht(db, o.id));
 }));
 r.post('/opdrachten/:id/heropen', metFouten((req, res) => {
   const db = getDb();
   const o = opdracht(db, req.params.id);
-  db.transaction(() => heropen(db, o))();
+  db.transaction(() => { heropen(db, o); if (o.dossier_id) synchroniseer(db, o.dossier_id); })();
   res.json(leesOpdracht(db, o.id));
 }));
 r.post('/opdrachten/:id/annuleer', metFouten((req, res) => {
   const db = getDb();
   const o = opdracht(db, req.params.id);
-  db.transaction(() => annuleer(db, o))();
+  db.transaction(() => { annuleer(db, o); if (o.dossier_id) synchroniseer(db, o.dossier_id); })();
   res.json(leesOpdracht(db, o.id));
 }));
 r.delete('/opdrachten/:id', metFouten((req, res) => {

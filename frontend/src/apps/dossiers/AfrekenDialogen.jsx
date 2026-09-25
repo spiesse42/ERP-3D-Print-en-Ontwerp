@@ -7,7 +7,8 @@ import { klantNaam } from '../klanten/klant.js';
 // nummert zelf geen facturen of bonnetjes.
 export function AfrekenDialoog({ dossier, onSluit, onBevestig }) {
   // Standaardbedrag = bedrag van de werkbon (offerteprijs bij een aanvaarde offerte, anders volgens de metingen).
-  const totaal = dossier.werkbon?.bedrag ?? dossier.berekening.totaal;
+  // Nog geen werkbon: die wordt bij het afrekenen gemaakt (zonder_werkbon = wat hij zou tonen).
+  const totaal = dossier.werkbon?.bedrag ?? dossier.zonder_werkbon?.bedrag ?? dossier.berekening.totaal;
   const [f, setF] = useState({ soort: 'factuur', nummer: '', datum: vandaag(), bedrag: naarInvoer(totaal) });
   const [bezig, setBezig] = useState(false);
   const zet = (k, w) => setF(x => ({ ...x, [k]: w }));
@@ -18,7 +19,7 @@ export function AfrekenDialoog({ dossier, onSluit, onBevestig }) {
         <button type="button" className="btn" onClick={onSluit}>Annuleren</button>
         <button type="button" className="btn primary" disabled={bezig || !f.nummer.trim()} onClick={ok}>Afgerekend</button>
       </>}>
-      <p className="note" style={{ marginTop: 0 }}>Maak de {f.soort === 'factuur' ? 'factuur' : 'het bonnetje'} in Accountable (gebruik de overnamefiche) en vul hier het nummer in dat Accountable gaf. De werkbon {dossier.werkbon?.weergave} wordt daarmee definitief.</p>
+      <p className="note" style={{ marginTop: 0 }}>Maak de {f.soort === 'factuur' ? 'factuur' : 'het bonnetje'} in Accountable (gebruik de overnamefiche) en vul hier het nummer in dat Accountable gaf. {dossier.werkbon ? ` De werkbon ${dossier.werkbon.weergave} wordt daarmee definitief.` : ' Er wordt meteen een werkbon gemaakt en definitief gezet.'}</p>
       {(dossier.lever_status === 'geen' || dossier.lever_status === 'deels') && (
         <div className="waarschuwing" style={{ margin: '0 0 12px' }}>Nog niet alles geleverd{dossier.lever_status === 'deels' ? ' (deels geleverd)' : ''}. Afrekenen kan, bv. als de klant al betaald heeft; lever daarna verder via het tabblad Leveringen.</div>
       )}

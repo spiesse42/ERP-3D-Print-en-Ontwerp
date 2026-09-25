@@ -66,7 +66,7 @@ test('F1. offerte: concept volgt de regels, versturen bevriest', async () => {
   assert.match((await vraag('DELETE', `/dossiers/${dos.id}`)).data.error, /offerte verstuurd/);
 });
 
-test('F2. nieuwe versie: zelfde nummer v2, vorige = vervangen; aanvaard → akkoord', async () => {
+test('F2. nieuwe versie: zelfde nummer v2, vorige = vervangen; aanvaard → start (werkbon + printopdracht)', async () => {
   let d = (await vraag('POST', `/dossiers/${dos.id}/offertes`)).data;
   const v2 = d.offertes.find(o => o.versie === 2);
   assert.equal(v2.weergave, `OFF-${jaar}-001 v2`);
@@ -76,13 +76,18 @@ test('F2. nieuwe versie: zelfde nummer v2, vorige = vervangen; aanvaard → akko
   const v1 = d.offertes.find(o => o.versie === 1);
   assert.match((await vraag('POST', `/offertes/${v1.id}/aanvaard`)).data.error, /nieuwere versie/);
   d = (await vraag('POST', `/offertes/${v2.id}/aanvaard`, { datum: vandaag })).data;
-  assert.equal(d.fase, 'akkoord');
+  // automatische flow (25-09): aanvaard = uitvoering start
+  assert.ok(d.gestart_op);
+  assert.equal(d.werkbon.nummer, `WB-${jaar}-0001`);
+  assert.equal(d.productie.aantal_opdrachten, 1);
+  assert.equal(d.productie.regels[0].opdrachten[0].aantal, 2);
+  assert.equal(d.fase, 'productie', 'printopdracht gepland → in productie');
   assert.equal(d.acties.offerte, false, 'geen nieuwe versie na akkoord');
   assert.equal(d.wijkt_af_van_offerte, false);
   const h = (await vraag('GET', `/historiek/dossier/${dos.id}`)).data.map(x => x.tekst);
   assert.ok(h.some(t => /Offerte OFF-\d+-001 v2 aanvaard door de klant/.test(t)));
   // lijst: fase akkoord
-  assert.equal((await vraag('GET', '/dossiers')).data.find(x => x.id === dos.id).fase, 'akkoord');
+  assert.equal((await vraag('GET', '/dossiers')).data.find(x => x.id === dos.id).fase, 'productie');
   assert.equal((await vraag('GET', '/offertes')).data.length, 2);
 });
 
@@ -114,7 +119,7 @@ test('F3. geweigerd / verlopen / antwoord ongedaan', async () => {
 test('F4. werkbon: werkelijk verbruik, regels terugzetten, definitief bij afrekenen', async () => {
   let d = (await vraag('GET', `/dossiers/${dos.id}`)).data;
   assert.equal(d.wijkt_af_van_offerte, false);
-  d = (await vraag('POST', `/dossiers/${dos.id}/werkbon`)).data;
+  assert.match((await vraag('POST', `/dossiers/${dos.id}/werkbon`)).data.error, /al een werkbon/, 'aangemaakt bij aanvaard');
   assert.equal(d.werkbon.nummer, `WB-${jaar}-0001`);
   assert.equal(d.werkbon.berekening.totaal, d.berekening.totaal, 'zonder werkelijke waarden = schatting');
   const pr = d.regels.find(x => x.type === 'printen');
@@ -128,8 +133,10 @@ test('F4. werkbon: werkelijk verbruik, regels terugzetten, definitief bij afreke
   d = (await vraag('PUT', `/dossiers/${dos.id}`, { soort: 'klant', klant_id: klant, titel: 'Naamplaatje', regels: d.regels.map(({ werkelijk: _w, ...x }) => ({ ...x, aantal: 3 })) })).data;
   assert.equal(d.regels.find(x => x.id === pr.id).werkelijk.kwh, 0.3);
   assert.equal(d.wijkt_af_van_offerte, true);
+  assert.equal(d.productie.regels[0].opdrachten[0].aantal, 3, 'geplande printopdracht volgt de regel');
   d = (await vraag('POST', `/dossiers/${dos.id}/regels-uit-offerte`)).data;
   assert.equal(d.wijkt_af_van_offerte, false);
+  assert.equal(d.productie.regels[0].opdrachten[0].aantal, 2, 'en terug na terugzetten');
   assert.equal(d.regels.find(x => x.id === pr.id).werkelijk.kwh, 0.3, 'werkelijk blijft na terugzetten');
   // Domeinmodel (bevestigd 23-09): met aanvaarde offerte blijft de offerteprijs staan;
   // de metingen dienen enkel voor de marge-analyse.

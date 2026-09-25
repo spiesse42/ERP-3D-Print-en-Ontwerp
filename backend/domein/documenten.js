@@ -6,6 +6,8 @@
 // bewaard: precies wat de klant kreeg, ook als het dossier nadien wijzigt.
 import { getBedrijfsgegevens } from './hulp.js';
 import { offerteStatus } from './status/offerte.js';
+import { volgendNummer } from './nummering.js';
+import { logGebeurtenis } from './historiek.js';
 
 export function offertesVan(db, dossierId) {
   const rijen = db.prepare('SELECT * FROM offertes WHERE dossier_id = ? ORDER BY versie').all(dossierId);
@@ -22,6 +24,15 @@ export const nummerMetVersie = d => (d.versie > 1 ? `${d.nummer} v${d.versie}` :
 // De laatst verstuurde versie bepaalt de fase van het dossier.
 export function laatsteVerstuurde(offertes) {
   return [...offertes].filter(o => o.verstuurd_op).sort((a, b) => b.versie - a.versie)[0] || null;
+}
+
+// Nieuwe werkbon (knop, Starten, offerte aanvaard of afrekenen zonder werkbon).
+export function maakWerkbon(db, dossierId, { waarom = null } = {}) {
+  if (db.prepare('SELECT 1 FROM werkbonnen WHERE dossier_id = ?').get(dossierId)) return null;
+  const nummer = volgendNummer(db, 'WB');
+  db.prepare('INSERT INTO werkbonnen (dossier_id, nummer) VALUES (?, ?)').run(dossierId, nummer);
+  logGebeurtenis(db, 'dossier', dossierId, 'status', `Werkbon ${nummer} aangemaakt${waarom ? ` (${waarom})` : ''}`);
+  return nummer;
 }
 
 export function werkbonVan(db, dossierId) {

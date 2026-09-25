@@ -32,6 +32,8 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit, onKlaar
   const { data: printers } = useData('/printers');
   const o = opdracht;
   const afgesloten = o && (o.status === 'voltooid' || o.status === 'geannuleerd');
+  // gestart dossier, nog niets geprint: de opdracht volgt de regel (25-09)
+  const volgtRegel = !!o?.dossier_gestart_op && o.runs.length === 0 && !afgesloten;
   const [f, setF] = useState(() => ({
     printer_id: String(o?.printer_id ?? vast?.printer_id ?? ''), naam: o?.naam ?? vast?.naam ?? '', aantal: naarInvoer(o?.aantal ?? vast?.aantal ?? 1),
     soort: o?.soort ?? 'eigen', notities: o?.notities ?? '',
@@ -54,7 +56,7 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit, onKlaar
   return (
     <Dialoog titel={titel} onSluit={onSluit} breed
       voet={<>
-        {o && o.runs.length === 0 && <button type="button" className="btn ghost" disabled={bezig} onClick={actie('delete', 'Printopdracht verwijderd.', { titel: 'Printopdracht verwijderen', tekst: `"${o.naam}" verwijderen?`, bevestigLabel: 'Verwijderen', gevaarlijk: true })}>Verwijderen</button>}
+        {o && o.runs.length === 0 && !volgtRegel && <button type="button" className="btn ghost" disabled={bezig} onClick={actie('delete', 'Printopdracht verwijderd.', { titel: 'Printopdracht verwijderen', tekst: `"${o.naam}" verwijderen?`, bevestigLabel: 'Verwijderen', gevaarlijk: true })}>Verwijderen</button>}
         {o && !afgesloten && o.status !== 'bezig' && o.runs.length > 0 && <button type="button" className="btn ghost" disabled={bezig} onClick={actie('annuleer', 'Printopdracht geannuleerd.', { titel: 'Printopdracht annuleren', tekst: `"${o.naam}" annuleren? De gekoppelde runs blijven bewaard.`, bevestigLabel: 'Annuleren', annuleerLabel: 'Terug' })}>Opdracht annuleren</button>}
         {o && afgesloten && <button type="button" className="btn" disabled={bezig} onClick={actie('heropen', 'Printopdracht heropend.')}>Heropenen</button>}
         <span style={{ flex: 1 }} />
@@ -67,6 +69,7 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit, onKlaar
           {o.status === 'voltooid' && <> · <b>{aantal(o.aantal_goed)}</b> goede stuks</>}
           {o.eindproduct && <> · naar voorraad: {o.eindproduct}</>}</p>
       )}
+      {volgtRegel && <p className="note" style={{ marginTop: 0 }}>Deze opdracht volgt de regel van dossier {o.dossier_nummer}: het totaal aantal komt van die regel. Verlaag je hier het aantal, dan komt de rest in een aparte opdracht (bv. om over twee printers te spreiden). Niet meer nodig? Pas de regel aan.</p>}
       <div className="fgrid">
         <div><label htmlFor="po-naam">Naam</label><input id="po-naam" className="inp" disabled={afgesloten} value={f.naam} onChange={zet('naam')} placeholder="bv. Sleutelhanger" /></div>
         <div><label htmlFor="po-aantal">Aantal stuks</label><input id="po-aantal" className="inp num" inputMode="decimal" disabled={afgesloten} value={f.aantal} onChange={zet('aantal')} /></div>

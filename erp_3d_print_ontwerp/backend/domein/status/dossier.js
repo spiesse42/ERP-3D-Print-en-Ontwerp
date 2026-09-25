@@ -54,7 +54,10 @@ export function actiesVan(d, { aantalRegels = 0, offerte = null, werkbon = null,
     // nieuwe offerte(versie); ook als er al geprint wordt zonder akkoord
     offerte: klant && (fase === 'nieuw' || fase === 'offerte' || ((fase === 'productie' || fase === 'klaar') && !offerte?.aanvaard_op)),
     werkbon: open && !werkbon,
-    afrekenen: klant && open && aantalRegels > 0 && !!werkbon, // regel: pas met een werkbon
+    // Starten (25-09): werkbon (klant) + printopdrachten; eenmalig
+    starten: open && !d.gestart_op && aantalRegels > 0 && (klant || prod != null),
+    // zonder werkbon maakt afrekenen hem eerst zelf aan (25-09)
+    afrekenen: klant && open && aantalRegels > 0,
     betaald: fase === 'afgerekend',
     betaling_ongedaan: fase === 'betaald' && d.afgerekend_soort === 'factuur',
     afrekening_ongedaan: fase === 'afgerekend' || fase === 'betaald',

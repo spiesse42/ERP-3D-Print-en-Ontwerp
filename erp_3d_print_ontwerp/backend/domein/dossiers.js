@@ -7,7 +7,7 @@ import { berekenMetDb } from './berekening.js';
 import { faseVan, actiesVan, stappenVan } from './status/dossier.js';
 import { offertesVan, laatsteVerstuurde, werkbonVan, documentInhoud } from './documenten.js';
 import { leverbaar, leverStatus, leverStatusVan, leveringenVan, controleerGeleverd } from './leveringen.js';
-import { productieVan, productieOverzicht, metingenPerRegel, controleerPrintopdrachten } from '../productie/opdrachten.js';
+import { productieVan, productieOverzicht, metingenPerRegel, controleerPrintopdrachten, wisOpdrachtenVanRegels } from '../productie/opdrachten.js';
 
 export const SOORTEN = { klant: 'Klantopdracht', eigen: 'Eigen product', intern: 'Intern' };
 export const REGELTYPES = ['printen', 'ontwerp', 'aanpassing', 'artikel', 'extra'];
@@ -83,7 +83,8 @@ export function bewaarRegels(db, dossierId, regels) {
     if (!a || a.type !== 'artikel' || !a.zelf_geprint) throw new DomeinFout(`Regel ${i + 1}: kies als eindproduct een artikel dat we zelf printen`);
   }
   controleerGeleverd(db, dossierId, regels);
-  controleerPrintopdrachten(db, dossierId, regels);
+  const opdrachtenWeg = controleerPrintopdrachten(db, dossierId, regels);
+  wisOpdrachtenVanRegels(db, opdrachtenWeg);
   const bestaand = new Set(db.prepare('SELECT id FROM dossier_regels WHERE dossier_id = ?').all(dossierId).map(r => r.id));
   const behouden = new Set();
   const upd = db.prepare(`UPDATE dossier_regels SET volgorde = ?, ${KOL.map(k => `${k} = ?`).join(', ')} WHERE id = ?`);
@@ -163,6 +164,11 @@ export function leesDossier(db, dossierId) {
   } else if (werkbon) {
     Object.assign(werkbon, { bedrag: werkbon.totaal, volledig: true });
   }
+  // Nog geen werkbon: afrekenen maakt hem zelf (25-09). Wat hij dan zou
+  // tonen, voor het standaardbedrag in het afrekenvenster.
+  const zonder_werkbon = werkbon || d.soort !== 'klant' || d.afgerekend_op ? null
+    : aanvaardeOfferte ? { bedrag: aanvaardeOfferte.totaal, volledig: true }
+    : (m => ({ bedrag: m.totaal, volledig: !!m.volledig }))(berekenDossier(db, regelsWerkelijk, 'werkelijk'));
   // Overnamefiche: wat er afgerekend wordt = de werkbon (definitief of concept), anders de schatting.
   const overname = werkbon?.document || werkbon?.concept_document
     || (berekening.regels?.length ? documentInhoud(db, basis, berekening) : null);
@@ -179,7 +185,7 @@ export function leesDossier(db, dossierId) {
     prod, printopdrachten: productie.aantal_opdrachten };
   return { ...d, klant_gegevens, fase: faseVan(d, { offerte, lever, prod }), stappen: stappenVan(d, { lever, prod }), acties: actiesVan(d, opts),
     leverbaar: lever_lijst, lever_status: lever, leveringen, productie,
-    regels, berekening, offertes: offertes.map(({ regels_api: _r, document: _doc, ...o }) => o), werkbon, wijkt_af_van_offerte, overname };
+    regels, berekening, offertes: offertes.map(({ regels_api: _r, document: _doc, ...o }) => o), werkbon, zonder_werkbon, wijkt_af_van_offerte, overname };
 }
 
 export function leesDossiers(db, { archief = '0', klant_id = null } = {}) {

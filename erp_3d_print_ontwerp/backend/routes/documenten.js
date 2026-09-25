@@ -7,7 +7,9 @@ import { DomeinFout } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { volgendNummer } from '../domein/nummering.js';
 import { leesDossier, leesRegelsVan, berekenDossier, datumOk, bewaarRegels, leesRegels } from '../domein/dossiers.js';
-import { offertesVan, nummerMetVersie, documentInhoud, geldigheidDagen, plusDagen } from '../domein/documenten.js';
+import { offertesVan, nummerMetVersie, documentInhoud, geldigheidDagen, plusDagen, maakWerkbon } from '../domein/documenten.js';
+import { start } from '../domein/uitvoering.js';
+import { synchroniseer } from '../productie/opdrachten.js';
 import { OFFERTE_STATUS, vandaag } from '../domein/status/offerte.js';
 import { documentHtml, dmjDatum } from '../documenten/sjabloon.js';
 import { htmlNaarPdf } from '../documenten/pdf.js';
@@ -137,6 +139,8 @@ function antwoord(soort) {
     db.transaction(() => {
       db.prepare(`UPDATE offertes SET ${soort === 'aanvaard' ? 'aanvaard_op' : 'geweigerd_op'} = ? WHERE id = ?`).run(datum, o.id);
       log(db, d.id, `Offerte ${nummerMetVersie(o)} ${soort === 'aanvaard' ? 'aanvaard door de klant' : 'geweigerd door de klant'} (${dmjDatum(datum)})`);
+      // aanvaard = uitvoering start: werkbon + printopdrachten (25-09)
+      if (soort === 'aanvaard' && d.acties.bewerken) start(db, d.id, { waarom: `offerte ${nummerMetVersie(o)} aanvaard` });
     })();
     res.json(leesDossier(db, d.id));
   });
@@ -195,11 +199,7 @@ r.post('/dossiers/:id/werkbon', metFouten((req, res) => {
   const db = getDb();
   const d = dossier(db, idVan(req.params.id));
   if (!d.acties.werkbon) throw new DomeinFout(d.werkbon ? 'Dit dossier heeft al een werkbon.' : 'Dit dossier is afgerekend of geannuleerd.');
-  db.transaction(() => {
-    const nummer = volgendNummer(db, 'WB');
-    db.prepare('INSERT INTO werkbonnen (dossier_id, nummer) VALUES (?, ?)').run(d.id, nummer);
-    log(db, d.id, `Werkbon ${nummer} aangemaakt`);
-  })();
+  db.transaction(() => maakWerkbon(db, d.id))();
   res.status(201).json(leesDossier(db, d.id));
 }));
 r.put('/werkbonnen/:id', metFouten((req, res) => {
@@ -261,6 +261,7 @@ r.post('/dossiers/:id/regels-uit-offerte', metFouten((req, res) => {
   const { regels_api } = JSON.parse(o.momentopname);
   db.transaction(() => {
     bewaarRegels(db, d.id, leesRegels(regels_api));
+    synchroniseer(db, d.id, { oudeRegels: d.regels });
     logGebeurtenis(db, 'dossier', d.id, 'gewijzigd', `Regels teruggezet naar offerte ${nummerMetVersie(o)} (${euro(o.totaal)})`);
   })();
   res.json(leesDossier(db, d.id));

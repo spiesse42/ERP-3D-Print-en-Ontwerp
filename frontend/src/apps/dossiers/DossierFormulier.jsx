@@ -116,15 +116,19 @@ export default function DossierFormulier() {
   const afrekenReden = nieuw || d.soort !== 'klant' || !voorAfrekening ? null
     : vuil ? 'Sla eerst je wijzigingen op.'
     : d.regels.length === 0 ? 'Voeg eerst regels toe.'
-    : !d.werkbon ? 'Maak eerst een werkbon (tabblad Werkbon).'
-    : !d.werkbon.volledig ? 'Eerst moeten alle regels berekend kunnen worden.'
+    : !(d.werkbon || d.zonder_werkbon)?.volledig ? 'Eerst moeten alle regels berekend kunnen worden.'
     : null;
   const toonAfrekenen = !nieuw && d.soort === 'klant' && voorAfrekening;
   const afrekenKnop = toonAfrekenen && (
-    <button type="button" className="btn primary" disabled={!!afrekenReden} title={afrekenReden || 'Factuur of bonnetje uit Accountable koppelen'}
+    <button type="button" className={`btn${acties.starten ? '' : ' primary'}`} disabled={!!afrekenReden} title={afrekenReden || 'Factuur of bonnetje uit Accountable koppelen'}
       onClick={() => open('afrekenen')}>Afrekenen</button>
   );
+  // Starten (25-09): werkbon (klantopdracht) + printopdracht per printregel met printer
+  const heeftPrint = !nieuw && d.regels.some(r => r.type === 'printen');
+  const startTekst = d?.soort === 'klant' ? (heeftPrint ? 'Gestart: werkbon en printopdrachten aangemaakt.' : 'Gestart: werkbon aangemaakt.') : 'Gestart: printopdrachten aangemaakt.';
+  const startUitleg = d?.soort === 'klant' ? `Maakt de werkbon${heeftPrint ? ' en een printopdracht per printregel' : ''}. Met een offerte gebeurt dit vanzelf zodra de klant akkoord gaat.` : 'Maakt een printopdracht per printregel.';
   const workflow = nieuw ? null : <>
+    {acties.starten && <button type="button" className="btn primary" disabled={vuil} title={vuil ? 'Sla eerst je wijzigingen op.' : startUitleg} onClick={() => actie('starten', startTekst)}><Icoon naam="start" maat={14} /> Starten</button>}
     {afrekenKnop}
     {acties.betaald && <button type="button" className="btn primary" onClick={() => open('betaald')}>Betaald</button>}
     {d.soort === 'klant' && d.regels.length > 0 && fase !== 'geannuleerd' && <button type="button" className="btn" onClick={() => open('overname')}>Overnamefiche</button>}

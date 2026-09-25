@@ -8,7 +8,9 @@ import { getDb, bijlagenMap } from '../db/index.js';
 import { DomeinFout, isFkFout } from '../domein/hulp.js';
 import { logGebeurtenis, beschrijfWijzigingen, wisHistoriek } from '../domein/historiek.js';
 import { volgendNummer } from '../domein/nummering.js';
-import { annuleerVoorDossier } from '../productie/opdrachten.js';
+import { annuleerVoorDossier, synchroniseer } from '../productie/opdrachten.js';
+import { start } from '../domein/uitvoering.js';
+import { maakWerkbon } from '../domein/documenten.js';
 import { SOORTEN, leesKop, leesRegels, bewaarRegels, leesDossier, leesDossiers, leesAfrekening, datumOk, leesRegelsVan } from '../domein/dossiers.js';
 
 const r = Router();
@@ -92,6 +94,8 @@ r.put('/:id', (req, res) => {
       if (regels !== undefined) {
         const voor = JSON.stringify(oud.regels.map(({ id: _i, ...x }) => x));
         bewaarRegels(db, id, regels);
+        // gestart dossier: printopdrachten volgen de regels (25-09)
+        synchroniseer(db, id, { oudeRegels: oud.regels });
         const na = leesDossier(db, id);
         if (JSON.stringify(na.regels.map(({ id: _i, ...x }) => x)) !== voor) {
           const tv = oud.berekening.totaal, tn = na.berekening.totaal;
@@ -123,7 +127,10 @@ function actie(naam, fn) {
 const NIET_TOEGELATEN = {
   afrekenen: d => (d.soort !== 'klant' ? 'Enkel een klantopdracht wordt afgerekend.'
     : ['afgerekend', 'betaald', 'geannuleerd'].includes(d.fase) ? 'Dit dossier is al afgerekend of geannuleerd.'
-    : !d.regels.length ? 'Voeg eerst regels toe.' : 'Maak eerst een werkbon (afrekenen kan pas met een werkbon).'),
+    : 'Voeg eerst regels toe.'),
+  starten: d => (d.gestart_op ? 'Dit dossier is al gestart.'
+    : !d.acties.bewerken ? 'Dit dossier is afgerekend of geannuleerd.'
+    : !d.regels.length ? 'Voeg eerst regels toe.' : 'Er is niets te starten: geen printregels.'),
   betaald: () => 'Enkel een afgerekend dossier kan als betaald gemarkeerd worden.',
   betaling_ongedaan: () => 'Er is geen betaling om ongedaan te maken (een bonnetje is altijd meteen betaald).',
   afrekening_ongedaan: () => 'Dit dossier is niet afgerekend.',
@@ -133,7 +140,11 @@ const NIET_TOEGELATEN = {
 
 // Afrekenen maakt de werkbon definitief (momentopname): met aanvaarde offerte
 // het offertebedrag, anders het bedrag volgens de metingen.
-r.post('/:id/afrekenen', actie('afrekenen', (db, d, body) => {
+r.post('/:id/starten', actie('starten', (db, d) => start(db, d.id)));
+
+r.post('/:id/afrekenen', actie('afrekenen', (db, d0, body) => {
+  // nog geen werkbon → eerst automatisch aanmaken (25-09)
+  const d = !d0.werkbon && maakWerkbon(db, d0.id, { waarom: 'bij het afrekenen' }) ? leesDossier(db, d0.id) : d0;
   const wb = d.werkbon;
   if (!wb.volledig || !wb.concept_document) throw new DomeinFout('Niet alle regels van de werkbon kunnen berekend worden. Los dat eerst op (zie de regels).');
   const a = leesAfrekening(body, wb.bedrag);
@@ -169,6 +180,7 @@ r.post('/:id/annuleren', actie('annuleren', (db, d) => {
 r.post('/:id/heropenen', actie('heropenen', (db, d) => {
   db.prepare('UPDATE dossiers SET geannuleerd_op = NULL WHERE id = ?').run(d.id);
   logGebeurtenis(db, 'dossier', d.id, 'status', 'Heropend');
+  synchroniseer(db, d.id);
 }));
 
 r.patch('/:id/archief', metFouten((req, res) => {

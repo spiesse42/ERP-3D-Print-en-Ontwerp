@@ -80,13 +80,12 @@ test('P1. printopdracht maken: validatie, standaardwaarden uit de regel, wachtri
   await vraag('POST', `/productie/opdrachten/${los.id}/neer`);
   lijst = (await vraag('GET', `/productie/opdrachten?printer_id=${mini}&open=1`)).data.lijst;
   assert.deepEqual(lijst.map(o => o.naam), ['Sleutelhanger', 'Demo-vaas']);
-  // dossier = in productie; regel kan niet meer weg, dossier niet verwijderen
+  // dossier = in productie; dossier niet verwijderen
   const d = (await vraag('GET', `/dossiers/${dos.id}`)).data;
   assert.equal(d.fase, 'productie');
   assert.equal(d.acties.verwijderen, false);
   assert.equal(d.productie.regels[0].gepland, 4);
-  const zonder = d.regels.filter(x => x.id !== regelId);
-  assert.match((await vraag('PUT', `/dossiers/${dos.id}`, { soort: 'klant', klant_id: klant, titel: 'Sleutelhangers', regels: zonder })).data.error, /printopdrachten en kan niet weg/);
+  // (regel weg met enkel geplande opdrachten: zie flow.test.js)
   assert.match((await vraag('DELETE', `/dossiers/${dos.id}`)).data.error, /printopdrachten/);
   // losse opdracht zonder runs mag weg
   assert.equal((await vraag('DELETE', `/productie/opdrachten/${los.id}`)).status, 200);

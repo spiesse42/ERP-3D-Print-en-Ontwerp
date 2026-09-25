@@ -35,7 +35,7 @@ export function statusVan(o, runs) {
 // eindproduct: het artikel (zelf geprint) waar de goede stuks naartoe gaan —
 // enkel bij een printregel van een dossier "Eigen product" (stap 6c)
 const SELECT = `SELECT o.*, p.naam AS printer, r.dossier_id, r.omschrijving AS regel_omschrijving, d.nummer AS dossier_nummer, d.titel AS dossier_titel,
-    d.soort AS dossier_soort, CASE WHEN d.soort = 'eigen' THEN ea.id END AS eindproduct_id, CASE WHEN d.soort = 'eigen' THEN ea.naam END AS eindproduct
+    d.soort AS dossier_soort, d.gestart_op AS dossier_gestart_op, CASE WHEN d.soort = 'eigen' THEN ea.id END AS eindproduct_id, CASE WHEN d.soort = 'eigen' THEN ea.naam END AS eindproduct
   FROM printopdrachten o JOIN printers p ON p.id = o.printer_id
   LEFT JOIN dossier_regels r ON r.id = o.dossier_regel_id LEFT JOIN dossiers d ON d.id = r.dossier_id
   LEFT JOIN artikelen ea ON ea.id = r.artikel_id AND r.type = 'printen'`;
@@ -172,13 +172,24 @@ export function heropen(db, o) {
   db.prepare('UPDATE printopdrachten SET aantal_goed = NULL, voltooid_op = NULL, geannuleerd_op = NULL, productiekost_stuk = NULL, arbeid_stuk = NULL, kost_onvolledig = 0, volgorde = ? WHERE id = ?')
     .run(volgendeVolgorde(db, o.printer_id), o.id);
 }
+// Een geplande opdracht (nog niets geprint) van een gestart dossier volgt de
+// regel: annuleren of verwijderen zou ze meteen terug laten komen.
+function volgtRegel(db, o) {
+  if (!o.dossier_id || o.runs.length || o.voltooid_op) return;
+  const d = db.prepare('SELECT gestart_op FROM dossiers WHERE id = ?').get(o.dossier_id);
+  if (d?.gestart_op) {
+    throw new DomeinFout(`Deze printopdracht volgt de regel van dossier ${o.dossier_nummer}. Verlaag het aantal op die regel of verwijder de regel; de printopdracht past zich dan aan.`);
+  }
+}
 export function annuleer(db, o) {
   if (o.status === 'voltooid' || o.status === 'geannuleerd') throw new DomeinFout('Deze printopdracht is al afgesloten');
+  volgtRegel(db, o);
   if (o.status === 'bezig') throw new DomeinFout('De print loopt nog. Annuleer eerst de print op de printer.');
   db.prepare(`UPDATE printopdrachten SET geannuleerd_op = datetime('now') WHERE id = ?`).run(o.id);
   if (o.dossier_id) logGebeurtenis(db, 'dossier', o.dossier_id, 'status', `Printopdracht "${o.naam}" geannuleerd`);
 }
 export function verwijder(db, o) {
+  volgtRegel(db, o);
   if (o.runs.length) throw new DomeinFout('Er zijn al runs aan gekoppeld: annuleer de opdracht in plaats van ze te verwijderen.');
   db.prepare('DELETE FROM printopdrachten WHERE id = ?').run(o.id);
 }
@@ -284,22 +295,37 @@ export function productieOverzicht(db, dossierId, regels) {
       const eigen = ops.filter(o => o.dossier_regel_id === r.id);
       const open = eigen.filter(o => !o.voltooid_op && !o.geannuleerd_op);
       const eindproduct = r.artikel_id ? db.prepare('SELECT id, naam FROM artikelen WHERE id = ?').get(r.artikel_id) : null;
+      // automatische flow: nog te plannen (regel zonder printer) of te veel geprint
+      const v = verdeling(r, ops);
+      const teVeel = Math.max(0, v.bijdrage - v.besteld);
       return { regel_id: r.id, omschrijving: r.omschrijving, printer_id: r.printer_id, besteld: Number(r.aantal ?? 1), eindproduct,
-        goed: goed.get(r.id) || 0, gepland: open.reduce((t, o) => t + o.aantal, 0), opdrachten: eigen };
+        goed: goed.get(r.id) || 0, gepland: open.reduce((t, o) => t + o.aantal, 0), opdrachten: eigen,
+        te_plannen: v.tekort > EPS ? Math.round(v.tekort * 1000) / 1000 : 0, te_veel: teVeel > EPS ? Math.round(teVeel * 1000) / 1000 : 0 };
     }),
   };
 }
 
-// Een printregel met printopdrachten mag niet weg en niet van soort wisselen
-// (gebruikt door bewaarRegels, zoals controleerGeleverd).
+// Een printregel met printopdrachten: weg of van soort wisselen kan enkel
+// als er op geen enkele opdracht al geprint is (runs) en geen voltooid is;
+// die opdrachten verdwijnen dan mee (automatische flow, 25-09). Geeft de
+// regel-id's terug waarvan de opdrachten gewist moeten worden.
+// (gebruikt door bewaarRegels, zoals controleerGeleverd)
 export function controleerPrintopdrachten(db, dossierId, nieuweRegels) {
-  const rijen = db.prepare(`SELECT r.id, r.omschrijving, COUNT(o.id) n FROM dossier_regels r JOIN printopdrachten o ON o.dossier_regel_id = r.id
+  const rijen = db.prepare(`SELECT r.id, r.omschrijving, COUNT(o.id) n,
+      SUM(CASE WHEN o.voltooid_op IS NOT NULL OR EXISTS (SELECT 1 FROM printruns x WHERE x.printopdracht_id = o.id) THEN 1 ELSE 0 END) AS geprint
+    FROM dossier_regels r JOIN printopdrachten o ON o.dossier_regel_id = r.id
     WHERE r.dossier_id = ? GROUP BY r.id`).all(dossierId);
+  const wissen = [];
   for (const x of rijen) {
     const nieuw = nieuweRegels.find(r => r.id === x.id);
     const naam = `"${x.omschrijving || 'Printwerk'}"`;
-    if (!nieuw) throw new DomeinFout(`Regel ${naam} heeft printopdrachten en kan niet weg. Annuleer of verwijder eerst de printopdrachten (Productie).`);
-    if (nieuw.type !== 'printen') throw new DomeinFout(`Regel ${naam} heeft printopdrachten: het blijft een printregel.`);
+    if (!nieuw || nieuw.type !== 'printen') {
+      if (x.geprint) throw new DomeinFout(!nieuw
+        ? `Regel ${naam} is al (deels) geprint en kan niet weg. Annuleer eerst de printopdrachten (Productie).`
+        : `Regel ${naam} is al (deels) geprint: het blijft een printregel.`);
+      wissen.push(x.id);
+      continue;
+    }
     const oud = db.prepare('SELECT artikel_id FROM dossier_regels WHERE id = ?').get(x.id).artikel_id;
     const geboektIets = db.prepare(`SELECT 1 FROM voorraad_mutaties m JOIN printopdrachten o ON o.id = m.bron_id
       WHERE m.bron_type = 'printopdracht' AND o.dossier_regel_id = ? GROUP BY m.bron_id HAVING SUM(m.aantal) > 0`).get(x.id);
@@ -307,6 +333,7 @@ export function controleerPrintopdrachten(db, dossierId, nieuweRegels) {
       throw new DomeinFout(`Regel ${naam}: er staan al stuks in voorraad van dit eindproduct. Het artikel kan niet meer wijzigen (heropen eerst de printopdracht).`);
     }
   }
+  return wissen;
 }
 
 // Dossier geannuleerd → open printopdrachten mee annuleren (niet als er een
@@ -318,4 +345,92 @@ export function annuleerVoorDossier(db, dossierId) {
   const upd = db.prepare(`UPDATE printopdrachten SET geannuleerd_op = datetime('now') WHERE id = ?`);
   for (const o of open) upd.run(o.id);
   return open.length;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// AUTOMATISCHE FLOW (25-09): printopdrachten volgen de regels
+// ═══════════════════════════════════════════════════════════════════════
+// Enkel voor een GESTART dossier (knop Starten of offerte aanvaard). Per
+// printregel:
+// - "vast" = opdrachten waar al op geprint is (runs) of die voltooid zijn:
+//   die raakt de flow nooit aan. Ze tellen mee voor hun aantal (voltooid:
+//   het aantal goede stuks).
+// - "gepland" = open opdrachten zonder runs: die volgen de regel (aantal;
+//   printer en naam enkel als jij ze niet zelf veranderd hebt).
+// - te weinig → de eerste geplande opdracht wordt groter, of er komt een
+//   extra opdracht voor het verschil (op de printer van de regel)
+// - te veel → geplande opdrachten worden kleiner of verdwijnen; is er al
+//   meer geprint dan nodig, dan enkel een melding (productieOverzicht)
+// - printregel zonder printer → geen nieuwe opdracht (melding)
+const EPS = 1e-9;
+const naamVanRegel = (r, nummer) => String(r.omschrijving || '').trim() || `Printwerk ${nummer}`;
+
+// Verdeling van de opdrachten van één printregel (ook voor het overzicht).
+export function verdeling(r, ops) {
+  const eigen = ops.filter(o => o.dossier_regel_id === r.id);
+  const heeftRuns = o => (o.aantal_runs ?? o.runs?.length ?? 0) > 0;
+  const vast = eigen.filter(o => !o.geannuleerd_op && (o.voltooid_op || heeftRuns(o)));
+  const gepland = eigen.filter(o => !o.geannuleerd_op && !o.voltooid_op && !heeftRuns(o));
+  const bijdrage = vast.reduce((t, o) => t + (o.voltooid_op ? Number(o.aantal_goed || 0) : Number(o.aantal)), 0);
+  const inGepland = gepland.reduce((t, o) => t + Number(o.aantal), 0);
+  const besteld = Number(r.aantal ?? 1);
+  return { vast, gepland, bijdrage, inGepland, besteld, tekort: besteld - bijdrage - inGepland };
+}
+
+// behoud = een opdracht die je net zelf maakte of wijzigde: die blijft zoals
+// ze is zolang het kan (de andere geplande opdrachten passen zich aan).
+export function synchroniseer(db, dossierId, { oudeRegels = null, behoud = null } = {}) {
+  const d = db.prepare('SELECT id, nummer, gestart_op, geannuleerd_op FROM dossiers WHERE id = ?').get(dossierId);
+  if (!d?.gestart_op || d.geannuleerd_op) return;
+  const regels = db.prepare(`SELECT id, omschrijving, aantal, printer_id FROM dossier_regels WHERE dossier_id = ? AND type = 'printen' ORDER BY volgorde, id`).all(dossierId);
+  const ops = db.prepare(`SELECT o.*, (SELECT COUNT(*) FROM printruns x WHERE x.printopdracht_id = o.id) AS aantal_runs
+    FROM printopdrachten o JOIN dossier_regels r ON r.id = o.dossier_regel_id WHERE r.dossier_id = ? ORDER BY o.volgorde, o.id`).all(dossierId);
+  const oud = new Map((oudeRegels || []).map(r => [r.id, r]));
+  const zetAantal = db.prepare('UPDATE printopdrachten SET aantal = ? WHERE id = ?');
+  const wis = db.prepare('DELETE FROM printopdrachten WHERE id = ?');
+  const nl = v => String(Math.round(v * 1000) / 1000).replace('.', ',');
+  const logboek = [];
+  for (const r of regels) {
+    const v = verdeling(r, ops);
+    const o0 = oud.get(r.id);
+    // printer / naam van geplande opdrachten volgen een wijziging op de regel,
+    // tenzij je die opdracht zelf anders zette
+    for (const o of v.gepland) {
+      if (o0 && r.printer_id && o0.printer_id !== r.printer_id && o.printer_id === o0.printer_id
+        && db.prepare('SELECT 1 FROM printers WHERE id = ? AND actief = 1').get(r.printer_id)) {
+        db.prepare('UPDATE printopdrachten SET printer_id = ?, volgorde = ? WHERE id = ?').run(r.printer_id, volgendeVolgorde(db, r.printer_id), o.id);
+      }
+      if (o0 && naamVanRegel(o0, d.nummer) !== naamVanRegel(r, d.nummer) && o.naam === naamVanRegel(o0, d.nummer)) {
+        db.prepare('UPDATE printopdrachten SET naam = ? WHERE id = ?').run(naamVanRegel(r, d.nummer), o.id);
+      }
+    }
+    if (v.tekort > EPS) {
+      const groei = v.gepland.find(o => o.id !== behoud);
+      if (groei) {
+        zetAantal.run(Number(groei.aantal) + v.tekort, groei.id);
+      } else if (r.printer_id && db.prepare('SELECT 1 FROM printers WHERE id = ? AND actief = 1').get(r.printer_id)) {
+        const extra = v.vast.length > 0;
+        maakOpdracht(db, { printer_id: r.printer_id, dossier_regel_id: r.id, aantal: v.tekort, naam: naamVanRegel(r, d.nummer) });
+        if (extra) logboek.push(`extra printopdracht voor ${nl(v.tekort)} stuk${v.tekort === 1 ? '' : 's'} van "${naamVanRegel(r, d.nummer)}"`);
+      }
+    } else if (v.tekort < -EPS) {
+      let teVeel = -v.tekort;
+      const volgorde = [...v.gepland.filter(o => o.id !== behoud).reverse(), ...v.gepland.filter(o => o.id === behoud)];
+      for (const o of volgorde) {
+        if (teVeel <= EPS) break;
+        const af = Math.min(teVeel, Number(o.aantal));
+        if (Number(o.aantal) - af <= EPS) { wis.run(o.id); logboek.push(`printopdracht "${o.naam}" vervallen`); }
+        else zetAantal.run(Number(o.aantal) - af, o.id);
+        teVeel -= af;
+      }
+    }
+  }
+  if (logboek.length) logGebeurtenis(db, 'dossier', dossierId, 'status', `Automatisch: ${logboek.join('; ')}`);
+}
+
+// Opdrachten die bij een regel horen die weg gaat (of geen printregel meer
+// is): enkel toegelaten als er nog niets op geprint is — die verdwijnen mee.
+export function wisOpdrachtenVanRegels(db, regelIds) {
+  const del = db.prepare('DELETE FROM printopdrachten WHERE dossier_regel_id = ?');
+  for (const id of regelIds) del.run(id);
 }

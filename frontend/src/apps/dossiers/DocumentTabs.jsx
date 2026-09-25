@@ -56,7 +56,7 @@ function OfferteKaart({ d, o, doe, vuil, onMail }) {
         {(concept || kanAntwoorden) && <button type="button" className="btn" disabled={gewijzigd || vuil} onClick={() => onMail(o)}>Mailen</button>}
         {concept && <button type="button" className="btn" disabled={gewijzigd} onClick={() => doe('post', `/offertes/${o.id}/versturen`, 'Offerte verstuurd en vastgelegd.', { vraag: { titel: 'Offerte versturen', tekst: `${o.weergave} wordt vastgelegd zoals ze nu is (${euro(d.berekening.totaal)}). Gebruik dit als je de offerte zelf doorstuurt (bv. via Vinted of WhatsApp). Wijzigen kan daarna enkel met een nieuwe versie.`, bevestigLabel: 'Versturen', annuleerLabel: 'Terug' } })}>Markeren als verstuurd</button>}
         {kanAntwoorden && <>
-          <button type="button" className="btn primary" onClick={() => doe('post', `/offertes/${o.id}/aanvaard`, 'Offerte aanvaard.')}>Aanvaard</button>
+          <button type="button" className="btn primary" onClick={() => doe('post', `/offertes/${o.id}/aanvaard`, d.acties.starten ? `Offerte aanvaard: ${d.regels.some(r => r.type === 'printen') ? 'werkbon en printopdrachten aangemaakt' : 'werkbon aangemaakt'}.` : 'Offerte aanvaard.')}>Aanvaard</button>
           <button type="button" className="btn ghost" onClick={() => doe('post', `/offertes/${o.id}/geweigerd`, 'Offerte geweigerd.', { vraag: { titel: 'Offerte geweigerd', tekst: `De klant weigerde ${o.weergave}? Je kunt daarna een nieuwe versie maken.`, bevestigLabel: 'Geweigerd', annuleerLabel: 'Terug' } })}>Geweigerd</button>
         </>}
         {(o.status === 'aanvaard' || o.status === 'geweigerd') && !afgerekend && (
@@ -111,7 +111,7 @@ export function WerkbonTab({ d, vuil, herlaad, bedrijf }) {
     return (
       <div className="leeg" style={{ padding: '18px 8px' }}>
         <b>Nog geen werkbon.</b>
-        De werkbon toont wat er echt gedaan is: de regels van het dossier met de werkelijke printtijd en het gemeten verbruik.{d.soort === 'klant' && ' Afrekenen kan pas met een werkbon.'}
+        De werkbon toont wat er echt gedaan is: de regels van het dossier met de werkelijke printtijd en het gemeten verbruik.{d.soort === 'klant' && ' Hij wordt vanzelf gemaakt bij Starten, als de klant de offerte aanvaardt, of bij het afrekenen.'}
         {d.acties.werkbon && <div style={{ marginTop: 12 }}><button type="button" className="btn primary" disabled={vuil} onClick={() => doe('post', `/dossiers/${d.id}/werkbon`, 'Werkbon aangemaakt.')}><Icoon naam="plus" maat={14} /> Werkbon maken</button></div>}
       </div>
     );

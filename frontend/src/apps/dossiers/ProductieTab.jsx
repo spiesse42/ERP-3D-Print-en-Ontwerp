@@ -36,6 +36,12 @@ export default function ProductieTab({ d, vuil, herlaad }) {
                 {' '}{tekort === 0 ? <span className="badge b-pos">klaar</span> : x.opdrachten.length ? <span className="badge b-info">nog {aantal(tekort)}</span> : null}</span>
               {kan && <button type="button" className="btn klein" onClick={() => plan(x)}><Icoon naam="plus" maat={12} /> Printopdracht</button>}
             </div>
+            {x.te_plannen > 0 && d.gestart_op && !x.printer_id && (
+              <div className="waarschuwing" style={{ margin: '8px 0 0' }} role="status">Nog {aantal(x.te_plannen)} te plannen: kies een printer op de regel (tabblad Regels), dan komt de printopdracht vanzelf.</div>
+            )}
+            {x.te_veel > 0 && (
+              <div className="waarschuwing" style={{ margin: '8px 0 0' }} role="status">{aantal(x.te_veel)} stuk{x.te_veel === 1 ? '' : 's'} meer geprint of in de maak dan besteld.</div>
+            )}
             {x.opdrachten.length > 0 && (
               <div className="tabelvak" style={{ marginTop: 8 }}>
                 <table className="mini">
@@ -64,6 +70,7 @@ export default function ProductieTab({ d, vuil, herlaad }) {
           </section>
         );
       })}
+      {d.gestart_op && <p className="note"><b>Automatisch:</b> de printopdrachten volgen de regels. Pas je het aantal, de printer of de omschrijving van een regel aan, dan volgen de opdrachten waarop nog niets geprint is. Is er al geprint en is er meer nodig, dan komt er een extra opdracht bij. Wil je een regel over twee printers spreiden, maak dan zelf een extra opdracht voor een deel: de andere wordt kleiner.</p>}
       <p className="note">Plan een printopdracht per printregel; ze komt in de wachtrij van de printer (<Link naar="/productie/opdrachten">Productie → Printopdrachten</Link>). Start je de print, koppel dan de run op de printerkaart. Tijd en verbruik van de <b>geslaagde</b> runs komen op de werkbon; mislukte pogingen zijn een kost voor jou (elektriciteit + machinetarief; verloren filament niet meegerekend).</p>
       {dialoog?.soort === 'nieuw' && <OpdrachtDialoog vast={dialoog.regel} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'open' && <OpdrachtDialoog opdracht={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
