@@ -1,6 +1,6 @@
 {
   "name": "erp-3d-print-en-ontwerp-backend",
-  "version": "0.14.6",
+  "version": "0.14.7",
   "type": "module",
   "main": "server.js",
   "scripts": {

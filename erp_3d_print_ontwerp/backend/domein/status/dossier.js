@@ -19,6 +19,7 @@ export const FASES = {
   geleverd:    'Geleverd',
   afgerekend:  'Afgerekend',
   betaald:     'Betaald',
+  gratis:      'Gratis geleverd',
   geannuleerd: 'Geannuleerd',
 };
 const VOOR_AFREKENING = ['nieuw', 'offerte', 'akkoord', 'productie', 'klaar', 'deels', 'geleverd'];
@@ -26,6 +27,7 @@ const VOOR_AFREKENING = ['nieuw', 'offerte', 'akkoord', 'productie', 'klaar', 'd
 export function faseVan(d, { offerte = null, lever = null, prod = null } = {}) {
   if (d.geannuleerd_op) return 'geannuleerd';
   if (d.betaald_op) return 'betaald';
+  if (d.gratis_op) return 'gratis';
   if (d.afgerekend_op) return 'afgerekend';
   if (lever === 'geleverd') return 'geleverd';
   if (lever === 'deels') return 'deels';
@@ -40,7 +42,8 @@ export function faseVan(d, { offerte = null, lever = null, prod = null } = {}) {
 // niet afgerekend en krijgen geen offerte.
 export function stappenVan(d, { lever = null, prod = null } = {}) {
   const print = prod ? ['productie', 'klaar'] : [];
-  return d.soort === 'klant' ? ['nieuw', 'offerte', 'akkoord', ...print, lever === 'deels' ? 'deels' : 'geleverd', 'afgerekend', 'betaald'] : ['nieuw', ...print];
+  const einde = d.gratis_op ? ['gratis'] : ['afgerekend', 'betaald'];
+  return d.soort === 'klant' ? ['nieuw', 'offerte', 'akkoord', ...print, lever === 'deels' ? 'deels' : 'geleverd', ...einde] : ['nieuw', ...print];
 }
 
 // Welke acties nu toegelaten zijn; de backend controleert ze, de frontend
@@ -58,6 +61,9 @@ export function actiesVan(d, { aantalRegels = 0, offerte = null, werkbon = null,
     starten: open && !d.gestart_op && aantalRegels > 0 && (klant || prod != null),
     // zonder werkbon maakt afrekenen hem eerst zelf aan (25-09)
     afrekenen: klant && open && aantalRegels > 0,
+    // gratis geleverd (25-09): klant betaalt niets; geen omzet, wel kost in Marges
+    gratis: klant && open && aantalRegels > 0,
+    gratis_ongedaan: fase === 'gratis',
     betaald: fase === 'afgerekend',
     betaling_ongedaan: fase === 'betaald' && d.afgerekend_soort === 'factuur',
     afrekening_ongedaan: fase === 'afgerekend' || fase === 'betaald',

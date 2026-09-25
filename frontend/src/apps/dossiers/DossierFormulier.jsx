@@ -13,7 +13,7 @@ import RegelEditor, { Totalen, TYPES, nieuweRegel, naarApi, vanApi, useBerekenin
 import { euro, datum } from '../../lib/formaat.js';
 import { klantNaam } from '../klanten/klant.js';
 import { FASE, SOORT, FaseBadge, VOOR_AFREKENING } from './dossier.jsx';
-import { AfrekenDialoog, BetaaldDialoog, Overnamefiche } from './AfrekenDialogen.jsx';
+import { AfrekenDialoog, BetaaldDialoog, GratisDialoog, Overnamefiche } from './AfrekenDialogen.jsx';
 import { OffertesTab, WerkbonTab } from './DocumentTabs.jsx';
 import LeveringenTab from './LeveringenTab.jsx';
 import ProductieTab from './ProductieTab.jsx';
@@ -136,6 +136,8 @@ export default function DossierFormulier() {
     {acties.starten && <button type="button" className="btn" disabled={vuil} title={vuil ? 'Sla eerst je wijzigingen op.' : startUitleg} onClick={starten}><Icoon naam="start" maat={14} /> Starten</button>}
     {afrekenKnop}
     {acties.betaald && <button type="button" className="btn" onClick={() => open('betaald')}>Betaald</button>}
+    {acties.gratis && <button type="button" className="btn ghost" title="De klant betaalt niets: geen omzet, wel je kost in Marges" onClick={() => open('gratis')}>Gratis geleverd</button>}
+    {acties.gratis_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('gratis-ongedaan', '"Gratis geleverd" ongedaan gemaakt.', { vraag: { titel: 'Gratis geleverd ongedaan maken', tekst: 'Het dossier gaat terug en kan weer gewijzigd en afgerekend worden. De werkbon wordt weer een concept (nieuwe versie).', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Gratis ongedaan</button>}
     {d.soort === 'klant' && d.regels.length > 0 && fase !== 'geannuleerd' && <button type="button" className="btn" onClick={() => open('overname')}>Overnamefiche</button>}
     {acties.betaling_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('betaling-ongedaan', 'Betaling ongedaan gemaakt.', { vraag: { titel: 'Betaling ongedaan maken', tekst: 'Het dossier gaat terug naar afgerekend.', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Betaling ongedaan</button>}
     {acties.afrekening_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('afrekening-ongedaan', 'Afrekening ongedaan gemaakt.', { vraag: { titel: 'Afrekening ongedaan maken', tekst: `De verwijzing naar ${d.afgerekend_soort} ${d.afgerekend_nummer} wordt gewist en het dossier kan weer gewijzigd worden. Pas dit ook aan in Accountable (bv. een creditnota).`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug', gevaarlijk: true } })}>Afrekening ongedaan</button>}
@@ -161,7 +163,7 @@ export default function DossierFormulier() {
             </div>
           )}
           {!nieuw && <VolgendeStap d={d} vuil={vuil} afrekenReden={afrekenReden} onStarten={starten} onAfrekenen={() => open('afrekenen')}
-            onBetaald={() => open('betaald')} onHeropenen={() => actie('heropenen', 'Dossier heropend.')}
+            onBetaald={() => open('betaald')} onGratis={() => open('gratis')} onHeropenen={() => actie('heropenen', 'Dossier heropend.')}
             naarTab={t => { setTab(t); document.querySelector('.tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
             herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} />}
           <div className="sheet-head">
@@ -196,6 +198,7 @@ export default function DossierFormulier() {
                 </Veld>
               )}
               {!nieuw && d.betaald_op && <Veld label="Betaald op"><span className="num">{datum(d.betaald_op)}</span></Veld>}
+              {!nieuw && d.gratis_op && <Veld label="Gratis geleverd"><span><span className="num">{datum(d.gratis_op)}</span>{d.gratis_waarde != null && <> · waarde <span className="num">{euro(d.gratis_waarde)}</span></>}</span></Veld>}
             </div>
           </div>
 
@@ -238,6 +241,8 @@ export default function DossierFormulier() {
       {dialoog === 'betaald' && <BetaaldDialoog onSluit={() => setDialoog(null)}
         onBevestig={async datum => { if (await actie('betaald', 'Betaald.', { body: { datum } })) setDialoog(null); }} />}
       {dialoog === 'overname' && <Overnamefiche dossier={d} onSluit={() => setDialoog(null)} />}
+      {dialoog === 'gratis' && <GratisDialoog dossier={d} onSluit={() => setDialoog(null)}
+        onBevestig={async datum => { if (await actie('gratis', 'Gratis geleverd: niets af te rekenen.', { body: { datum } })) setDialoog(null); }} />}
     </>
   );
 }

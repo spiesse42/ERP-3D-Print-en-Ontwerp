@@ -44,7 +44,7 @@ test('X0. voorbereiding', async () => {
   await vraag('PUT', `/printers/${mini}`, { naam: 'Bambu Lab A1 Mini', machine_per_uur: 0.2, verbruik_watt: 95 });
   pg = (await vraag('POST', '/filament/types', { merk_id: 1, materiaal_id: 1, verkoopprijs_per_kg: 25 })).data.id;
   klant = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'Sofie', naam: 'Maes' })).data.id;
-  assert.equal(db.pragma('user_version', { simple: true }), 12);
+  assert.equal(db.pragma('user_version', { simple: true }), 13);
 });
 
 let dos;
@@ -276,4 +276,44 @@ test('X13. volgende stap: van regels tot afgerond', async () => {
   od = (await vraag('POST', `/offertes/${od.offertes[0].id}/versturen`)).data;
   assert.equal(od.volgende_stap.soort, 'offerte_wacht');
   assert.equal((await vraag('POST', `/dossiers/${e.id}/annuleren`)).data.volgende_stap.soort, 'geannuleerd');
+});
+
+test('X14. gratis geleverd: geen omzet, werkbon definitief, kost in Marges, ongedaan maken', async () => {
+  getDb().prepare(`UPDATE printruns SET intern = 'test' WHERE printopdracht_id IS NULL AND intern IS NULL`).run();
+  const jaar = new Date().getFullYear();
+  const vandaag = new Date().toISOString().slice(0, 10);
+  const omzetVoor = (await vraag('GET', `/financien/overzicht?jaar=${jaar}`)).data.totaal.omzet;
+  const d0 = (await vraag('POST', '/dossiers', { titel: 'Voetjes', klant_id: klant, regels: [
+    { type: 'printen', omschrijving: 'Voetjes', printer_id: mini, aantal: 5, tijd_min: 35, materialen: [{ filament_type_id: pg, gram: 10 }] }] })).data;
+  let d = (await vraag('POST', `/dossiers/${d0.id}/starten`)).data;
+  const o = d.productie.regels[0].opdrachten[0];
+  const x = (await vraag('POST', '/productie/runs', { printer_id: mini, gestart_op: new Date(Date.now() - 30 * 3600e3).toISOString(), geeindigd_op: new Date(Date.now() - 29.4 * 3600e3).toISOString(), uitkomst: 'klaar', kwh: 0.06 })).data;
+  await vraag('POST', `/productie/runs/${x.id}/koppel`, { printopdracht_id: o.id });
+  await vraag('POST', `/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: 5 });
+  d = (await vraag('GET', `/dossiers/${d0.id}`)).data;
+  assert.equal(d.acties.gratis, true);
+  const wbBedrag = d.werkbon.bedrag;
+  d = (await vraag('POST', `/dossiers/${d0.id}/gratis`, { datum: vandaag })).data;
+  assert.equal(d.fase, 'gratis');
+  assert.deepEqual(d.stappen.slice(-1), ['gratis']);
+  assert.equal(d.gratis_waarde, wbBedrag);
+  assert.ok(d.werkbon.definitief_op);
+  assert.equal(d.acties.bewerken, false); assert.equal(d.acties.afrekenen, false); assert.equal(d.acties.annuleren, false);
+  assert.equal(d.volgende_stap.soort, 'afgerond'); assert.match(d.volgende_stap.tekst, /Gratis geleverd/);
+  assert.equal((await vraag('POST', `/dossiers/${d0.id}/afrekenen`, { soort: 'bonnetje', nummer: 'B', datum: vandaag })).status, 400);
+  // Financiën: geen omzet, wel in Marges en in het overzicht
+  const ov = (await vraag('GET', `/financien/overzicht?jaar=${jaar}`)).data;
+  assert.equal(ov.totaal.omzet, omzetVoor);
+  assert.equal(ov.gratis.aantal, 1); assert.equal(ov.gratis.waarde, wbBedrag); assert.ok(ov.gratis.kost > 0);
+  const m = (await vraag('GET', `/financien/marges?jaar=${jaar}`)).data.rijen.find(r => r.id === d0.id);
+  assert.equal(m.afgerekend_soort, 'gratis'); assert.equal(m.afgerekend_bedrag, 0); assert.ok(m.kost > 0); assert.equal(m.marge, -m.kost);
+  // opvolging: niet bij onbetaald of nog af te rekenen
+  const op = (await vraag('GET', '/financien/opvolging')).data;
+  assert.ok(!JSON.stringify(op).includes(`"id":${d0.id},`));
+  // ongedaan
+  d = (await vraag('POST', `/dossiers/${d0.id}/gratis-ongedaan`)).data;
+  assert.equal(d.fase, 'klaar'); assert.equal(d.werkbon.definitief_op, null); assert.equal(d.werkbon.versie, 2);
+  // eigen product: niet
+  const e = (await vraag('POST', '/dossiers', { titel: 'Eigen', soort: 'eigen', regels: [{ type: 'extra', bedrag: 1 }] })).data;
+  assert.match((await vraag('POST', `/dossiers/${e.id}/gratis`, {})).data.error, /Enkel een klantopdracht/);
 });

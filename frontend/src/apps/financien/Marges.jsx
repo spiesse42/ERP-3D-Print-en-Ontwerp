@@ -28,7 +28,7 @@ export default function Marges() {
           <div className="panel">
             <Lijst sleutel={d => d.id} onOpen={d => navigeer(`/dossiers/${d.id}`)} groepen={[{ titel: null, rijen: m.rijen }]}
               kolommen={[
-                { kop: 'Dossier', cel: d => <><span className="mono">{d.nummer}</span> · {d.titel}{d.onvolledig && <span className="badge b-warn" style={{ marginLeft: 6 }} title={d.redenen.join(', ')}>onvolledig</span>}</> },
+                { kop: 'Dossier', cel: d => <><span className="mono">{d.nummer}</span> · {d.titel}{d.afgerekend_soort === 'gratis' && <span className="badge b-info" style={{ marginLeft: 6 }} title={d.waarde != null ? `Waarde ${euro(d.waarde)}` : undefined}>gratis</span>}{d.onvolledig && <span className="badge b-warn" style={{ marginLeft: 6 }} title={d.redenen.join(', ')}>onvolledig</span>}</> },
                 { kop: 'Klant', cel: d => d.klant || '—' },
                 { kop: 'Afgerekend', cel: d => <span className="num">{datum(d.afgerekend_op)}</span> },
                 { kop: 'Bedrag', klasse: 'r', cel: d => <span className="num">{euro(d.afgerekend_bedrag)}</span> },
@@ -37,7 +37,7 @@ export default function Marges() {
                 { kop: 'Marge', klasse: 'r', cel: d => <span className={`num${d.marge < 0 ? ' neg' : ''}`}>{euro(d.marge)} <span className="sub">{pct(d.marge_pct)}</span></span> },
                 { kop: 'Na arbeid', klasse: 'r', cel: d => <span className={`num${d.marge_met_arbeid < 0 ? ' neg' : ''}`}>{euro(d.marge_met_arbeid)}</span> },
               ]}
-              kaart={d => ({ titel: d.titel, rechts: <b className="num">{euro(d.marge)}</b>, regel: `${d.nummer} · ${d.klant || ''}`, onder: `${euro(d.afgerekend_bedrag)} − kost ${euro(d.kost)}`, badge: d.onvolledig ? <span className="badge b-warn">onvolledig</span> : null })}
+              kaart={d => ({ titel: d.titel, rechts: <b className="num">{euro(d.marge)}</b>, regel: `${d.nummer} · ${d.klant || ''}`, onder: `${euro(d.afgerekend_bedrag)} − kost ${euro(d.kost)}`, badge: d.afgerekend_soort === 'gratis' ? <span className="badge b-info">gratis</span> : d.onvolledig ? <span className="badge b-warn">onvolledig</span> : null })}
               leeg={<><b>Nog niets afgerekend in {jaar}.</b>Afgerekende klantopdrachten verschijnen hier met hun marge.</>} />
           </div>
           <p className="note" style={{ margin: 0 }}>Kost = printwerk aan productiekost (filament aan inkoopprijs, gemeten elektriciteit, machinetarief, BMCU, mislukte pogingen; vastgelegd bij het bevestigen van de printopdracht) + geleverde artikelen uit voorraad aan hun inkoopprijs. Diensten (ontwerp, verzending) hebben geen kost. "Onvolledig": printwerk zonder bevestigde printopdracht, of een artikel zonder inkoopprijs.</p>

@@ -48,6 +48,10 @@ export default function Overzicht() {
             <div className="kpi"><div className="l">Ontvangen</div><div className="w">{euro(o.totaal.ontvangen)}</div><div className="s">op de betaaldatum</div></div>
             <div className="kpi"><div className="l">Aankopen</div><div className="w">{euro(o.totaal.aankopen)}</div><div className="s">incl. btw, bestelde/ontvangen aankopen</div></div>
             <div className="kpi"><div className="l">Winst (richtwaarde)</div><div className="w">{euro(o.totaal.winst)}</div><div className="s">omzet − aankopen</div></div>
+            {o.gratis?.aantal > 0 && (
+              <div className="kpi"><div className="l">Gratis geleverd</div><div className="w">{euro(o.gratis.kost)}</div>
+                <div className="s">kost{o.gratis.onvolledig ? ' (onvolledig)' : ''} · {aantal(o.gratis.aantal)} dossier{o.gratis.aantal === 1 ? '' : 's'} · waarde {euro(o.gratis.waarde)} · <Link naar="/financien/marges">details</Link></div></div>
+            )}
           </div>
           <div className="panel"><h3>Drempels bijberoep {o.jaar}</h3>
             <div className="pbody" style={{ display: 'grid', gap: 14 }}>

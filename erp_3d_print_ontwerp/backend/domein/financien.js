@@ -66,7 +66,11 @@ export function jaarOverzicht(db, jaar) {
   const som = k => r2(rijen.reduce((t, m) => t + m[k], 0));
   const totaal = { omzet: som('omzet'), ontvangen: som('ontvangen'), aankopen: som('aankopen'), saldo: som('saldo'), facturen: som('facturen'), bonnetjes: som('bonnetjes') };
   const winst = r2(totaal.omzet - totaal.aankopen);
-  return { jaar: Number(jaar), jaren: beschikbareJaren(db), maanden: rijen, totaal: { ...totaal, winst }, drempels: drempels(db, Number(jaar), { omzet: totaal.omzet, winst }) };
+  // gratis geleverd (25-09): geen omzet; aantal, waarde en echte kost apart
+  const gr = marges(db, jaar).rijen.filter(x => x.afgerekend_soort === 'gratis');
+  const gratis = { aantal: gr.length, waarde: r2(gr.reduce((t, x) => t + (x.waarde || 0), 0)), kost: r2(gr.reduce((t, x) => t + x.kost, 0)),
+    arbeid: r2(gr.reduce((t, x) => t + x.arbeid, 0)), onvolledig: gr.some(x => x.onvolledig) };
+  return { jaar: Number(jaar), jaren: beschikbareJaren(db), maanden: rijen, totaal: { ...totaal, winst }, gratis, drempels: drempels(db, Number(jaar), { omzet: totaal.omzet, winst }) };
 }
 
 const KLANTNAAM = `CASE WHEN k.type = 'zakelijk' AND NULLIF(k.bedrijfsnaam,'') IS NOT NULL THEN k.bedrijfsnaam
@@ -96,9 +100,13 @@ export function opvolging(db, leesDossiers) {
 // Onvolledig = een printregel zonder gemeten productiekost, of een geleverd
 // artikel zonder partijprijs.
 export function marges(db, jaar) {
-  const dossiers = db.prepare(`SELECT d.id, d.nummer, d.titel, d.afgerekend_op, d.afgerekend_bedrag, d.afgerekend_soort, ${KLANTNAAM} klant
+  // ook "gratis geleverd" (25-09): bedrag € 0, soort 'gratis', waarde = werkbon
+  const dossiers = db.prepare(`SELECT d.id, d.nummer, d.titel, COALESCE(d.afgerekend_op, d.gratis_op) AS afgerekend_op,
+      CASE WHEN d.gratis_op IS NOT NULL THEN 0 ELSE d.afgerekend_bedrag END AS afgerekend_bedrag,
+      CASE WHEN d.gratis_op IS NOT NULL THEN 'gratis' ELSE d.afgerekend_soort END AS afgerekend_soort, d.gratis_waarde AS waarde, ${KLANTNAAM} klant
     FROM dossiers d LEFT JOIN klanten k ON k.id = d.klant_id
-    WHERE d.afgerekend_op IS NOT NULL AND substr(d.afgerekend_op, 1, 4) = ? ORDER BY d.afgerekend_op DESC, d.id DESC`).all(String(jaar));
+    WHERE (d.afgerekend_op IS NOT NULL OR d.gratis_op IS NOT NULL) AND substr(COALESCE(d.afgerekend_op, d.gratis_op), 1, 4) = ?
+    ORDER BY COALESCE(d.afgerekend_op, d.gratis_op) DESC, d.id DESC`).all(String(jaar));
   const printregels = db.prepare(`SELECT id, aantal FROM dossier_regels WHERE dossier_id = ? AND type = 'printen'`);
   const opdrachten = db.prepare(`SELECT productiekost_stuk, arbeid_stuk, aantal_goed, kost_onvolledig FROM printopdrachten
     WHERE dossier_regel_id = ? AND voltooid_op IS NOT NULL`);

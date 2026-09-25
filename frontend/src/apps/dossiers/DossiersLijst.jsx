@@ -58,7 +58,7 @@ export default function DossiersLijst() {
     titel: d.titel,
     rechts: <span className="num">{d.volledig ? euro(d.totaal) : '—'}</span>,
     regel: [d.nummer, d.klant || SOORT[d.soort]].filter(Boolean).join(' · '),
-    badges: <>{!d.volledig && <span className="badge b-warn">onvolledig</span>}{(d.fase === 'afgerekend' || d.fase === 'betaald') && (d.lever_status === 'geen' || d.lever_status === 'deels') && <span className="badge b-warn">nog te leveren</span>}{(d.fase === 'afgerekend' || d.fase === 'betaald') && (d.prod_status === 'geen' || d.prod_status === 'productie') && <span className="badge b-info">nog te printen</span>}{d.afgerekend_nummer && <span className="badge b-neutral">{d.afgerekend_soort} {d.afgerekend_nummer}</span>}</>,
+    badges: <>{!d.volledig && <span className="badge b-warn">onvolledig</span>}{['afgerekend', 'betaald', 'gratis'].includes(d.fase) && (d.lever_status === 'geen' || d.lever_status === 'deels') && <span className="badge b-warn">nog te leveren</span>}{['afgerekend', 'betaald', 'gratis'].includes(d.fase) && (d.prod_status === 'geen' || d.prod_status === 'productie') && <span className="badge b-info">nog te printen</span>}{d.afgerekend_nummer && <span className="badge b-neutral">{d.afgerekend_soort} {d.afgerekend_nummer}</span>}</>,
   });
 
   return (

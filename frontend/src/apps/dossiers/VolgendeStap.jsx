@@ -7,7 +7,7 @@ import { BevestigDialoog } from '../productie/opdracht.jsx';
 // "Volgende stap" bovenaan een dossier (25-09): één zin met wat er nu moet
 // gebeuren en de knop erbij. De zin komt uit de backend (volgende_stap);
 // hier enkel de knop per soort. Plus de uitleg "Hoe werkt een dossier?".
-export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBetaald, onHeropenen, naarTab, herlaad }) {
+export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBetaald, onGratis, onHeropenen, naarTab, herlaad }) {
   const { melding } = useOmgeving();
   const [bevestig, setBevestig] = useState(null);
   const [uitleg, setUitleg] = useState(false);
@@ -35,7 +35,7 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
     bezig: () => knop('Naar Productie', () => naarTab('productie'), { primair: false }),
     wachtrij: () => knop('Naar Productie', () => naarTab('productie'), { primair: false }),
     plannen: () => knop('Naar Productie', () => naarTab('productie')),
-    afrekenen: () => knop('Afrekenen', onAfrekenen, { uit: !!afrekenReden }),
+    afrekenen: () => <>{knop('Afrekenen', onAfrekenen, { uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>,
     betaling: () => knop('Betaald', onBetaald),
     geannuleerd: () => knop('Heropenen', onHeropenen, { primair: false }),
   };
@@ -81,7 +81,8 @@ export function DossierUitleg({ onSluit }) {
         <ul>
           <li><b>Print mislukt of zelf gestopt?</b> Koppel die run gewoon aan de opdracht. Staat hij verkeerd op "geslaagd", klik de run aan → <i>Uitkomst of starttijd corrigeren</i>. Mislukte pogingen komen niet op de werkbon, wel als kost voor jou. De herprint koppel je aan dezelfde opdracht.</li>
           <li><b>Minder goede stuks dan besteld?</b> Na het bevestigen plant het ERP het tekort vanzelf bij (gestart dossier).</li>
-          <li><b>Moet de klant niets betalen</b> (opdracht gaat niet door)? <b>Dossier annuleren</b>. Heropenen kan later nog.</li>
+          <li><b>Krijgt de klant het zonder te betalen</b> (goodwill, test)? <b>Gratis geleverd</b>: geen afrekening en geen omzet, maar je kost blijft zichtbaar in Financiën → Marges.</li>
+          <li><b>Gaat de opdracht helemaal niet door?</b> <b>Dossier annuleren</b>. Heropenen kan later nog.</li>
           <li><b>Printopdracht annuleren</b> stopt enkel die ene opdracht (bv. een stuk dat niet meer nodig is), niet het dossier.</li>
           <li><b>Eigen product</b> (soort "Eigen product"): geen offerte, werkbon of afrekening; de goede stuks gaan bij het bevestigen in voorraad.</li>
         </ul>

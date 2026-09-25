@@ -128,6 +128,9 @@ const NIET_TOEGELATEN = {
   afrekenen: d => (d.soort !== 'klant' ? 'Enkel een klantopdracht wordt afgerekend.'
     : ['afgerekend', 'betaald', 'geannuleerd'].includes(d.fase) ? 'Dit dossier is al afgerekend of geannuleerd.'
     : 'Voeg eerst regels toe.'),
+  gratis: d => (d.soort !== 'klant' ? 'Enkel een klantopdracht kan gratis geleverd worden.'
+    : !d.regels.length ? 'Voeg eerst regels toe.' : 'Dit dossier is al afgerekend, gratis geleverd of geannuleerd.'),
+  gratis_ongedaan: () => 'Dit dossier is niet als gratis geleverd afgesloten.',
   starten: d => (d.gestart_op ? 'Dit dossier is al gestart.'
     : !d.acties.bewerken ? 'Dit dossier is afgerekend of geannuleerd.'
     : !d.regels.length ? 'Voeg eerst regels toe.' : 'Er is niets te starten: geen printregels.'),
@@ -156,6 +159,29 @@ r.post('/:id/afrekenen', actie('afrekenen', (db, d0, body) => {
   db.prepare(`UPDATE dossiers SET afgerekend_soort=?, afgerekend_nummer=?, afgerekend_op=?, afgerekend_bedrag=?, betaald_op=? WHERE id=?`)
     .run(a.soort, a.nummer, a.datum, a.bedrag, betaald, d.id);
   logGebeurtenis(db, 'dossier', d.id, 'status', `Afgerekend in Accountable: ${a.soort} ${a.nummer} van ${dmj(a.datum)}, ${euro(a.bedrag)}${betaald ? ' (meteen betaald)' : ''}`);
+}));
+// Gratis geleverd (25-09): de klant krijgt het zonder te betalen. Geen
+// afrekening in Accountable en geen omzet; de werkbon wordt definitief (als
+// hij volledig berekend is) en zijn bedrag bewaard als "waarde". De kost staat
+// in Financiën → Marges tegenover € 0.
+r.post('/:id/gratis', actie('gratis', (db, d0, body) => {
+  const datum = body.datum || new Date().toISOString().slice(0, 10);
+  if (!datumOk(datum)) throw new DomeinFout('Vul een geldige datum in');
+  const d = !d0.werkbon && maakWerkbon(db, d0.id, { waarom: 'gratis geleverd' }) ? leesDossier(db, d0.id) : d0;
+  const wb = d.werkbon;
+  let waarde = d.berekening.volledig ? d.berekening.totaal : null;
+  if (wb && !wb.definitief_op && wb.volledig && wb.concept_document) {
+    const momentopname = { regels_api: leesRegelsVan(db, d.id), document: wb.concept_document, basis: wb.basis, metingen_totaal: wb.berekening?.totaal ?? null, gratis: true };
+    db.prepare('UPDATE werkbonnen SET definitief_op = ?, momentopname = ?, totaal = ? WHERE id = ?').run(datum, JSON.stringify(momentopname), wb.bedrag, wb.id);
+    waarde = wb.bedrag;
+  }
+  db.prepare('UPDATE dossiers SET gratis_op = ?, gratis_waarde = ? WHERE id = ?').run(datum, waarde, d.id);
+  logGebeurtenis(db, 'dossier', d.id, 'status', `Gratis geleverd op ${dmj(datum)}${waarde != null ? ` (waarde ${euro(waarde)})` : ''}: niets af te rekenen`);
+}));
+r.post('/:id/gratis-ongedaan', actie('gratis_ongedaan', (db, d) => {
+  db.prepare('UPDATE dossiers SET gratis_op = NULL, gratis_waarde = NULL WHERE id = ?').run(d.id);
+  if (d.werkbon?.definitief_op) db.prepare('UPDATE werkbonnen SET definitief_op = NULL, momentopname = NULL, totaal = NULL, versie = versie + 1 WHERE id = ?').run(d.werkbon.id);
+  logGebeurtenis(db, 'dossier', d.id, 'status', '"Gratis geleverd" ongedaan gemaakt');
 }));
 r.post('/:id/betaald', actie('betaald', (db, d, body) => {
   if (!datumOk(body.datum)) throw new DomeinFout('Vul een geldige datum in');

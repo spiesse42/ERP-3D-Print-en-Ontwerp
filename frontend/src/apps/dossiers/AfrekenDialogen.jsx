@@ -40,6 +40,24 @@ export function AfrekenDialoog({ dossier, onSluit, onBevestig }) {
   );
 }
 
+// Gratis geleverd (25-09): de klant betaalt niets. Geen afrekening in
+// Accountable, geen omzet; de kost blijft zichtbaar in Financiën → Marges.
+export function GratisDialoog({ dossier, onSluit, onBevestig }) {
+  const [d, setD] = useState(vandaag());
+  const waarde = dossier.werkbon?.bedrag ?? dossier.zonder_werkbon?.bedrag ?? dossier.berekening.totaal;
+  return (
+    <Dialoog titel="Gratis geleverd" onSluit={onSluit}
+      voet={<><button type="button" className="btn" onClick={onSluit}>Terug</button><button type="button" className="btn primary" onClick={() => onBevestig(d)}>Gratis geleverd</button></>}>
+      <p className="note" style={{ marginTop: 0 }}>De klant krijgt dit zonder te betalen (bv. goodwill of een test). Er komt <b>geen</b> factuur of bonnetje in Accountable en het telt <b>niet</b> als omzet.
+        Je kost blijft zichtbaar in Financiën → Marges en in het overzicht. {dossier.werkbon ? `De werkbon ${dossier.werkbon.weergave} wordt definitief.` : 'Er wordt een werkbon gemaakt en definitief gezet.'}</p>
+      {waarde != null && <p style={{ margin: '0 0 10px' }}>Waarde volgens de werkbon: <b className="num">{euro(waarde)}</b></p>}
+      <label className="lbl" htmlFor="gr-datum">Datum</label>
+      <input id="gr-datum" type="date" className="inp" value={d} onChange={e => setD(e.target.value)} />
+      <p className="sub" style={{ marginBottom: 0 }}>Gaat de opdracht helemaal niet door? Gebruik dan "Dossier annuleren".</p>
+    </Dialoog>
+  );
+}
+
 export function BetaaldDialoog({ onSluit, onBevestig }) {
   const [d, setD] = useState(vandaag());
   return (

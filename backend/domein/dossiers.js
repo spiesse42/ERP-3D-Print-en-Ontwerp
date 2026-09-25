@@ -194,6 +194,7 @@ export function leesDossier(db, dossierId) {
 // niet hoeft te zoeken wat er nu moet gebeuren. Afgeleid uit het dossier
 // zoals leesDossier het teruggeeft. `soort` bepaalt de knop in de frontend;
 // `extra` zijn optionele tips (bv. leveren).
+const euro2 = n => `€ ${Number(n).toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const nlGetal = v => String(Math.round(Number(v) * 1000) / 1000).replace('.', ',');
 export function volgendeStap(d) {
   const klant = d.soort === 'klant';
@@ -201,6 +202,9 @@ export function volgendeStap(d) {
   if (klant && ['geen', 'deels'].includes(d.lever_status) && d.fase !== 'geannuleerd') extra.push('Leveren (pakbon) kan nog, maar is niet verplicht.');
   if (d.fase === 'geannuleerd') return { soort: 'geannuleerd', tekst: 'Dit dossier is geannuleerd: niets af te rekenen of te leveren.', extra: [] };
   if (d.fase === 'betaald') return { soort: 'afgerond', tekst: 'Afgerond: afgerekend en betaald.', extra };
+  if (d.fase === 'gratis') {
+    return { soort: 'afgerond', tekst: `Gratis geleverd${d.gratis_waarde != null ? ` (waarde ${euro2(d.gratis_waarde)})` : ''}: niets af te rekenen. Telt niet als omzet; je kost staat in Financiën → Marges.`, extra };
+  }
   if (d.fase === 'afgerekend') {
     return { soort: 'betaling', tekst: `Afgerekend met ${d.afgerekend_soort} ${d.afgerekend_nummer}. Nog te doen: als betaald markeren zodra het geld binnen is (of via de Accountable-import).`, extra };
   }
@@ -236,7 +240,7 @@ export function volgendeStap(d) {
   if (klant) {
     const reden = !(d.werkbon || d.zonder_werkbon)?.volledig ? ' Eerst moeten alle regels berekend kunnen worden.' : '';
     return { soort: 'afrekenen', tekst: `${p?.status === 'klaar' ? 'Alles is geprint. ' : ''}Nog af te rekenen in Accountable: maak daar de factuur of het bonnetje en vul het nummer hier in.${reden}`,
-      kan: !reden, extra: [...extra, 'Moet de klant niets betalen? Gebruik dan "Dossier annuleren".'] };
+      kan: !reden, extra: [...extra, 'Krijgt de klant het zonder te betalen? Kies "Gratis geleverd". Gaat de opdracht niet door? "Dossier annuleren".'] };
   }
   return { soort: 'klaar', tekst: d.soort === 'eigen' ? 'Alles is geprint; de goede stuks staan in voorraad.' : 'Alles is geprint.', extra: [] };
 }
