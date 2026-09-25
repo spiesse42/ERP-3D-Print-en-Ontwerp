@@ -1,5 +1,5 @@
-# ERP 3D Print & Ontwerp — add-on (stap 8)
-# Bouwt in Home Assistant uit de map addon/ (build_deploy.bat kopieert de
+# ERP 3D Print & Ontwerp - add-on (stap 8)
+# Bouwt in Home Assistant uit de map erp_3d_print_ontwerp/ (build_deploy.bat kopieert de
 # backend en de gebouwde frontend hierin).
 FROM node:22-alpine
 

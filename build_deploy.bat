@@ -1,5 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
+rem map van de add-on (= slug)
+set ADDON=erp_3d_print_ontwerp
 echo === ERP 3D Print ^& Ontwerp - Build ^& Deploy (add-on) ===
 echo.
 
@@ -26,23 +28,19 @@ if %errorlevel% neq 0 ( echo FOUT bij npm run build & pause & exit /b 1 )
 cd ..
 
 echo.
-echo [3/5] Bestanden naar de add-on-map kopieren (zonder databank, bijlagen, backups en node_modules)...
-robocopy backend addon\backend /MIR /XD node_modules bijlagen backups test /XF *.db *.db-wal *.db-shm package-lock.json /NFL /NDL /NJH /NJS /NP >nul
+echo [3/5] Bestanden naar de add-on-map (%ADDON%) kopieren (zonder databank, bijlagen, backups en node_modules)...
+robocopy backend %ADDON%\backend /MIR /XD node_modules bijlagen backups test /XF *.db *.db-wal *.db-shm package-lock.json /NFL /NDL /NJH /NJS /NP >nul
 if %errorlevel% geq 8 ( echo FOUT bij kopieren backend & pause & exit /b 1 )
-robocopy frontend\dist addon\frontend\dist /MIR /NFL /NDL /NJH /NJS /NP >nul
+robocopy frontend\dist %ADDON%\frontend\dist /MIR /NFL /NDL /NJH /NJS /NP >nul
 if %errorlevel% geq 8 ( echo FOUT bij kopieren frontend & pause & exit /b 1 )
-if exist addon\backend\erp.db ( echo FOUT: databank in de add-on-map gevonden, gestopt. & pause & exit /b 1 )
+if exist %ADDON%\backend\erp.db ( echo FOUT: databank in de add-on-map gevonden, gestopt. & pause & exit /b 1 )
 
 echo.
 echo [4/5] Add-on-versie verhogen...
-for /f "tokens=2 delims=: " %%a in ('findstr /b "version:" addon\config.yaml') do set VERSIE=%%~a
-set VERSIE=%VERSIE:"=%
-for /f "tokens=1,2,3 delims=." %%a in ("%VERSIE%") do ( set MAJOR=%%a & set MINOR=%%b & set /a PATCH=%%c+1 )
-set MAJOR=%MAJOR: =%
-set MINOR=%MINOR: =%
-set NIEUW=%MAJOR%.%MINOR%.%PATCH%
-powershell -NoProfile -Command "(Get-Content addon\config.yaml) -replace '^version: \"%VERSIE%\"', 'version: \"%NIEUW%\"' | Set-Content -Encoding utf8 addon\config.yaml"
-echo Versie: %VERSIE% ^> %NIEUW%
+set NIEUW=
+for /f %%v in ('node tools\versie.mjs %ADDON%\config.yaml') do set NIEUW=%%v
+if "%NIEUW%"=="" ( echo FOUT bij het verhogen van de versie & pause & exit /b 1 )
+echo Nieuwe versie: %NIEUW%
 
 echo.
 echo [5/5] Commit en push...

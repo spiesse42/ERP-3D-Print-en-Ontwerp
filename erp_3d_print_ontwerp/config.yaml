@@ -1,13 +1,13 @@
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# Home Assistant add-on â€” ERP 3D Print & Ontwerp (stap 8)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Home Assistant add-on - ERP 3D Print & Ontwerp (stap 8)
+# LET OP: dit bestand enkel ASCII-tekens (geen accenten, geen speciale
+# lijnen). De versie wordt verhoogd door tools/versie.mjs (build_deploy.bat).
 # Draait NAAST het oude pakket ("3D Print ERP", slug 3d_print_erp, poort
 # 3000): andere slug, andere poort (3010), eigen /data (eigen databank).
 # Geheimen (Gemini, SMTP) enkel hier, nooit in de databank. Home Assistant
 # zelf wordt bereikt via de Supervisor (homeassistant_api), zonder token.
 name: "ERP 3D Print & Ontwerp"
-description: "Dossiers, offertes, werkbonnen, productie, voorraad en financiÃ«n voor 3D-print en ontwerp"
-version: "0.13.1"
+description: "Dossiers, offertes, werkbonnen, productie, voorraad en financien voor 3D-print en ontwerp"
+version: "0.13.3"
 slug: "erp_3d_print_ontwerp"
 url: "https://github.com/spiesse42/ERP-3D-Print-en-Ontwerp"
 init: false
