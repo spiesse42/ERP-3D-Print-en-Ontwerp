@@ -133,3 +133,24 @@ test('K6. uitkomst en starttijd corrigeren; verbruik opnieuw uit HA; niet na bev
   assert.equal((await vraag('POST', `/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: 1 })).status, 200);
   assert.match((await vraag('PUT', `/productie/runs/${c.id}`, { uitkomst: 'mislukt' })).data.error, /al bevestigd/);
 });
+
+test('K7. opdracht op "te bevestigen": geen voorstel en geen "volgende"; na een mislukte poging wel', async () => {
+  const db = getDb();
+  const o = (await vraag('POST', '/productie/opdrachten', { printer_id: kobra, naam: 'Draakje', soort: 'eigen' })).data;
+  let live = (await vraag('GET', '/productie/live')).data.printers.find(p => p.id === kobra);
+  assert.equal(live.volgende?.id, o.id);
+  zet('busy', 'printing', { [`${K}print_filename`]: 'draak.gcode.3mf' }); await tik();
+  let run = runs().at(-1);
+  await vraag('POST', `/productie/runs/${run.id}/koppel`, { printopdracht_id: o.id });
+  zet('free', 'finished'); await tik(); await wacht(250); await tik();
+  assert.equal((await vraag('GET', `/productie/opdrachten/${o.id}`)).data.status, 'te_bevestigen');
+  live = (await vraag('GET', '/productie/live')).data.printers.find(p => p.id === kobra);
+  assert.equal(live.volgende, null, 'te bevestigen = niet de volgende');
+  zet('busy', 'printing', { [`${K}print_filename`]: 'iets-anders.gcode.3mf' }); await tik();
+  run = runs().at(-1);
+  assert.equal((await vraag('GET', `/productie/runs/${run.id}`)).data.voorstel, null);
+  // laatste poging mislukt → wel weer voorgesteld (herprint)
+  db.prepare(`UPDATE printruns SET uitkomst = 'mislukt' WHERE printopdracht_id = ?`).run(o.id);
+  assert.equal((await vraag('GET', `/productie/runs/${run.id}`)).data.voorstel?.id, o.id);
+  zet('free', 'finished'); await tik(); await wacht(250); await tik();
+});

@@ -195,10 +195,18 @@ export function verwijder(db, o) {
 }
 
 // ── runs koppelen ───────────────────────────────────────────────────────
+// Een opdracht die op "te bevestigen" staat (laatste run geslaagd) is klaar
+// om te bevestigen, niet om opnieuw te printen: geen voorstel en geen
+// "volgende" (25-09). Na een MISLUKTE poging blijft ze wel voorgesteld.
+export const NIET_TE_BEVESTIGEN = `COALESCE((SELECT x.uitkomst FROM printruns x WHERE x.printopdracht_id = o.id ORDER BY x.gestart_op DESC, x.id DESC LIMIT 1), '') <> 'klaar'`;
+export function volgendeOpdracht(db, printerId) {
+  return db.prepare(`SELECT o.id, o.naam FROM printopdrachten o WHERE o.printer_id = ? AND o.voltooid_op IS NULL AND o.geannuleerd_op IS NULL
+    AND ${NIET_TE_BEVESTIGEN} ORDER BY o.volgorde, o.id LIMIT 1`).get(printerId) || null;
+}
 export function voorstelVoorRun(db, run) {
   return db.prepare(`SELECT o.id, o.naam FROM printopdrachten o WHERE o.printer_id = ? AND o.voltooid_op IS NULL AND o.geannuleerd_op IS NULL
     AND NOT EXISTS (SELECT 1 FROM printruns r WHERE r.printopdracht_id = o.id AND r.uitkomst = 'bezig' AND r.id <> ?)
-    ORDER BY o.volgorde, o.id LIMIT 1`).get(run.printer_id, run.id) || null;
+    AND ${NIET_TE_BEVESTIGEN} ORDER BY o.volgorde, o.id LIMIT 1`).get(run.printer_id, run.id) || null;
 }
 
 // keuze: { printopdracht_id } | { nieuw: { naam, aantal, soort } } | { intern: 'kalibratie'|'test'|'overig' }
@@ -319,7 +327,7 @@ export function teKoppelenVoorDossier(db, dossierId, ops) {
     WHERE r.printopdracht_id IS NULL AND r.intern IS NULL AND r.gestart_op >= ? AND r.printer_id IN (${printers.map(() => '?').join(',')})
     ORDER BY r.gestart_op`).all(grens, ...printers);
   return runs.map(r => {
-    const kandidaat = open.find(o => o.printer_id === r.printer_id && !o.runs.some(x => x.uitkomst === 'bezig'));
+    const kandidaat = open.find(o => o.printer_id === r.printer_id && !o.runs.some(x => x.uitkomst === 'bezig') && o.status !== 'te_bevestigen');
     const einde = r.geeindigd_op ? Date.parse(r.geeindigd_op) : Date.now();
     return { id: r.id, printer_id: r.printer_id, printer: r.printer, bestand: r.bestand, gestart_op: r.gestart_op, geeindigd_op: r.geeindigd_op,
       uitkomst: r.uitkomst, duur_min: Math.round((einde - Date.parse(r.gestart_op)) / 60000),

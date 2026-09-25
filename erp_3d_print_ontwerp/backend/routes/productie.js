@@ -11,7 +11,7 @@ import { haStaten, haDienst, haCameraBeeld, haIngesteld, HaFout, meterOp } from 
 import { leesPrinter, entiteitenVan, KOPPELINGEN } from '../productie/adapters.js';
 import { liveCache, openRun, kwhVanRun, kwhUitMetingen, startRun, sluitRun, tik, INTERVAL_MS, vulAan } from '../productie/wachter.js';
 import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wijzigOpdracht, verschuif, bevestig, heropen, annuleer, verwijder,
-  voorstelVoorRun, koppelRun, ontkoppelRun, synchroniseer } from '../productie/opdrachten.js';
+  voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer } from '../productie/opdrachten.js';
 import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct } from '../productie/materiaal.js';
 
 const r = Router();
@@ -71,7 +71,7 @@ r.get('/live', metFouten((req, res) => {
         lezing: c.lezing || null, bijgewerkt_op: c.bijgewerkt_op || null, fout: c.fout || null,
         run: runInfo(db, run, c.lezing), vorige_run: runInfo(db, laatste, null),
         te_koppelen: db.prepare(`SELECT COUNT(*) n FROM printruns WHERE printer_id = ? AND printopdracht_id IS NULL AND intern IS NULL`).get(p.id).n,
-        volgende: db.prepare(`SELECT id, naam FROM printopdrachten WHERE printer_id = ? AND voltooid_op IS NULL AND geannuleerd_op IS NULL ORDER BY volgorde, id LIMIT 1`).get(p.id) || null };
+        volgende: volgendeOpdracht(db, p.id) };
     }),
   });
 }));
