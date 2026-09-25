@@ -19,18 +19,28 @@ import { leesPrinter } from './adapters.js';
 
 export const INTERVAL_MS = () => Number(process.env.PRINTERWACHTER_MS) || 15000;
 const MAX_GAT_S = 120;
-const HERSTEL_MIN = 15;
+// Valse annulatie herstellen: enkel als de printer binnen enkele minuten
+// hetzelfde bestand weer print. Langer = een echte herprint (bv. na een
+// mislukte poging), en die hoort een eigen run te krijgen (25-09).
+const HERSTEL_MIN = 5;
 const EINDE_NA = 2;
+// Een einde telt pas als de printer zo lang (en minstens EINDE_NA metingen)
+// niet meer print: korte wissels van de status (multicolor, opwarmen)
+// breken een run niet meer in tweeën (25-09, Kobra S1).
+const EINDE_MS = () => (process.env.PRINTERWACHTER_EINDE_S != null ? Number(process.env.PRINTERWACHTER_EINDE_S) : 120) * 1000;
 
 const cache = new Map();      // printer_id → { lezing, bijgewerkt_op, fout }
-const eindTeller = new Map(); // printer_id → aantal opeenvolgende "einde"-metingen
+const eindTeller = new Map(); // printer_id → { n, sinds, reden } opeenvolgende "einde"-metingen
+const laatstVrij = new Map(); // printer_id → laatste tijdstip waarop de printer NIET printte
 const aanTeVullen = new Set(); // onvolledige runs: kWh aanvullen uit de HA-geschiedenis
 export const liveCache = () => cache;
 
 const nu = () => new Date().toISOString();
 
 export function kwhUitMetingen(db, runId) {
-  const m = db.prepare('SELECT watt, tijdstip FROM wattmetingen WHERE run_id = ? ORDER BY tijdstip').all(runId);
+  // enkel metingen vanaf de (eventueel gecorrigeerde) starttijd
+  const m = db.prepare(`SELECT watt, tijdstip FROM wattmetingen WHERE run_id = ?
+    AND julianday(tijdstip) >= COALESCE((SELECT julianday(gestart_op) FROM printruns WHERE id = ?), 0) - 1e-8 ORDER BY tijdstip`).all(runId, runId);
   let joule = 0;
   for (let i = 1; i < m.length; i++) {
     const dt = Math.min((Date.parse(m[i].tijdstip) - Date.parse(m[i - 1].tijdstip)) / 1000, MAX_GAT_S);
@@ -82,14 +92,29 @@ export function sluitRun(db, run, uitkomst, kwhMeter = null) {
     .run(uitkomst, nu(), kwhEind, Math.round(kwh * 10000) / 10000, run.id);
 }
 
+const RANG = { vrij: 0, klaar: 1, geannuleerd: 2, mislukt: 3 };
+
+// Starttijd van een run die al liep toen de wachter hem zag: nooit vóór het
+// laatste moment waarop de printer vrij was, en nooit vóór het einde van de
+// vorige run op die printer (25-09: de Kobra gaf bij een nieuwe print nog
+// de verstreken tijd van de vorige → overlappende runs, kWh dubbel geteld).
+export function begrensStart(db, printerId, gestart) {
+  if (!gestart) return null;
+  const vorige = db.prepare(`SELECT MAX(geeindigd_op) t FROM printruns WHERE printer_id = ? AND geeindigd_op IS NOT NULL`).get(printerId)?.t;
+  const grenzen = [laatstVrij.get(printerId), vorige].filter(Boolean).map(Date.parse);
+  const t = Math.max(Date.parse(gestart), ...grenzen);
+  return new Date(Math.min(t, Date.now())).toISOString();
+}
+
 function verwerk(db, printer, lezing) {
   const run = openRun(db, printer.id);
   const actief = lezing.status === 'bezig' || lezing.status === 'pauze';
   const einde = ['klaar', 'vrij', 'mislukt', 'geannuleerd'].includes(lezing.status);
   let runId = run?.id ?? null;
 
+  if (!actief && lezing.status !== 'offline' && lezing.status !== 'onbekend') laatstVrij.set(printer.id, nu());
   if (actief) {
-    eindTeller.set(printer.id, 0);
+    eindTeller.delete(printer.id);
     if (!run) {
       // valse annulatie? zelfde bestand kort na een mislukte/geannuleerde run
       const vorige = db.prepare(`SELECT * FROM printruns WHERE printer_id = ? ORDER BY id DESC LIMIT 1`).get(printer.id);
@@ -103,6 +128,7 @@ function verwerk(db, printer, lezing) {
         let gestart = null;
         if (lezing.gestart_op && Date.parse(lezing.gestart_op) < Date.now() && Date.now() - Date.parse(lezing.gestart_op) < 48 * 3600e3) gestart = lezing.gestart_op;
         else if (lezing.verstreken_min > 0) gestart = new Date(Date.now() - lezing.verstreken_min * 60000).toISOString();
+        gestart = begrensStart(db, printer.id, gestart);
         const gemist = gestart && Date.now() - Date.parse(gestart) > 3 * INTERVAL_MS();
         runId = startRun(db, printer, { bestand: lezing.bestand, kwh: lezing.kwh_meter, gestart_op: gestart, onvolledig: gemist });
         if (gemist && printer.kwh_entity) aanTeVullen.add(runId);
@@ -111,13 +137,17 @@ function verwerk(db, printer, lezing) {
     if (lezing.bestand) db.prepare('UPDATE printruns SET bestand = COALESCE(bestand, ?) WHERE id = ?').run(lezing.bestand, runId);
     if (lezing.gewicht_g != null) db.prepare('UPDATE printruns SET gewicht_g = ? WHERE id = ?').run(lezing.gewicht_g, runId);
   } else if (einde && run) {
-    const n = (eindTeller.get(printer.id) || 0) + 1;
-    eindTeller.set(printer.id, n);
-    if (n >= EINDE_NA) {
-      const uitkomst = lezing.status === 'mislukt' || lezing.status === 'geannuleerd' ? lezing.status : 'klaar';
+    // De sterkste reden die we tijdens het einde zagen telt: mislukt >
+    // geannuleerd > klaar > vrij (bv. Kobra: Stopping → Done → Stoped).
+    const e = eindTeller.get(printer.id) || { n: 0, sinds: Date.now(), reden: null };
+    e.n += 1;
+    if (RANG[lezing.status] > (RANG[e.reden] ?? -1)) e.reden = lezing.status;
+    eindTeller.set(printer.id, e);
+    if (e.n >= EINDE_NA && Date.now() - e.sinds >= EINDE_MS()) {
+      const uitkomst = e.reden === 'mislukt' || e.reden === 'geannuleerd' ? e.reden : 'klaar';
       if (lezing.gewicht_g != null) db.prepare('UPDATE printruns SET gewicht_g = ? WHERE id = ?').run(lezing.gewicht_g, run.id);
       sluitRun(db, run, uitkomst, lezing.kwh_meter);
-      eindTeller.set(printer.id, 0);
+      eindTeller.delete(printer.id);
       runId = null;
     }
   }
@@ -172,4 +202,4 @@ export function startWachter() {
   timer = setInterval(lus, INTERVAL_MS());
   console.log(`Printerwachter gestart (elke ${INTERVAL_MS() / 1000} s)`);
 }
-export function stopWachter() { if (timer) clearInterval(timer); timer = null; cache.clear(); eindTeller.clear(); }
+export function stopWachter() { if (timer) clearInterval(timer); timer = null; cache.clear(); eindTeller.clear(); laatstVrij.clear(); }

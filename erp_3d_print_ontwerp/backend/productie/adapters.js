@@ -96,13 +96,21 @@ export function leesPrinter(p, staten) {
   } else if (p.koppeling === 'anycubic_ha') {
     uit.ruwe_status = w('status') ?? null;
     const hoofd = String(uit.ruwe_status ?? '').toLowerCase();
-    const fout = String(w('fout') ?? '').toLowerCase();
-    // busy/free is stabiel; mislukt/geannuleerd komt uit print_state
-    if (fout === 'failed') uit.status = 'mislukt';
-    else if (fout === 'cancelled' || fout === 'canceled') uit.status = 'geannuleerd';
-    else if (hoofd === 'busy') uit.status = PAUZE.includes(fout) ? 'pauze' : 'bezig';
-    else if (hoofd === 'free') uit.status = ['finished', 'finish', 'done'].includes(fout) ? 'klaar' : 'vrij';
-    else uit.status = normaalStatus(hoofd);
+    const fout = String(w('fout') ?? '').toLowerCase().trim();
+    // busy/free is stabiel; HOE een print eindigde komt uit print_state.
+    // Live vastgesteld 25-09-2026 (Kobra S1, multicolor):
+    // - "Finished" = echt klaar
+    // - "Stopping" → "Done" → "Stoped" = door jou gestopt
+    // - "Done" komt OOK tussendoor (bv. bij het laden van kleuren) en is dus
+    //   nooit op zichzelf een einde
+    // - na een stop blijft "Stoped" staan tot de volgende print: bij "busy"
+    //   telt een oude "Stoped"/"Finished" dus niet
+    const GESTOPT = ['stopping', 'stoped', 'stopped', 'cancelled', 'canceled', 'cancel'];
+    if (hoofd === 'busy') {
+      uit.status = fout === 'failed' ? 'mislukt' : ['stopping', 'cancelled', 'canceled', 'cancel'].includes(fout) ? 'geannuleerd' : PAUZE.includes(fout) ? 'pauze' : 'bezig';
+    } else if (hoofd === 'free') {
+      uit.status = fout === 'failed' ? 'mislukt' : GESTOPT.includes(fout) ? 'geannuleerd' : ['finished', 'finish'].includes(fout) ? 'klaar' : 'vrij';
+    } else uit.status = normaalStatus(hoofd);
     uit.voortgang = getal(w('voortgang'));
     uit.bestand = w('bestand') && !OFFLINE.includes(String(w('bestand')).toLowerCase()) ? w('bestand') : null;
     uit.resterend_min = getal(w('resterend'));

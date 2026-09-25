@@ -1,6 +1,7 @@
 // Stap 6a: printerkoppeling, printerwachter (runs, debounce, zelfherstel,
 // kWh), live, bediening. Home Assistant wordt nagebootst.
 process.env.HA_URL = 'http://ha.test'; process.env.HA_TOKEN = 'nep';
+process.env.PRINTERWACHTER_EINDE_S = '0';   // tests: einde na 2 metingen, zonder wachttijd
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { initDb, sluitDb, getDb } from '../db/index.js';
@@ -102,7 +103,13 @@ test('H5. Kobra (Anycubic S1 MQTT Bridge): printer_state is leidend', () => {
   assert.equal(leesPrinter(p, s({ printer_state: 'busy', print_state: 'done' })).status, 'bezig', 'wisselvallige print_state negeren');
   assert.equal(leesPrinter(p, s({ printer_state: 'free', print_state: 'finished' })).status, 'klaar');
   assert.equal(leesPrinter(p, s({ printer_state: 'free', print_state: 'failed' })).status, 'mislukt');
-  assert.equal(leesPrinter(p, s({ printer_state: 'free', print_state: 'stoped' })).status, 'vrij');
+  // 25-09 (live vastgesteld): Stopping/Stoped = gestopt; Done is geen einde; oude Stoped bij busy negeren
+  assert.equal(leesPrinter(p, s({ printer_state: 'free', print_state: 'stoped' })).status, 'geannuleerd');
+  assert.equal(leesPrinter(p, s({ printer_state: 'busy', print_state: 'stopping' })).status, 'geannuleerd');
+  assert.equal(leesPrinter(p, s({ printer_state: 'free', print_state: 'done' })).status, 'vrij');
+  assert.equal(leesPrinter(p, s({ printer_state: 'busy', print_state: 'stoped' })).status, 'bezig');
+  assert.equal(leesPrinter(p, s({ printer_state: 'busy', print_state: 'finished' })).status, 'bezig');
+  assert.equal(leesPrinter(p, s({ printer_state: 'busy', print_state: 'preheating' })).status, 'bezig');
   const l = leesPrinter(p, s({ printer_state: 'busy', print_layer: '120 / 300', print_time_elapsed: '45' }));
   assert.equal(l.laag, 120); assert.equal(l.lagen, 300); assert.equal(l.verstreken_min, 45);
 });

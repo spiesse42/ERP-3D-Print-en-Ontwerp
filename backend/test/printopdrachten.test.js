@@ -2,6 +2,7 @@
 // in productie/klaar, werkbon met gemeten tijd/kWh (enkel geslaagde runs,
 // optie A), kWh aanvullen uit de HA-geschiedenis, gemiste run, foutmeldingen.
 process.env.HA_URL = 'http://ha.test'; process.env.HA_TOKEN = 'nep';
+process.env.PRINTERWACHTER_EINDE_S = '0';   // tests: einde na 2 metingen, zonder wachttijd
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { initDb, sluitDb, getDb } from '../db/index.js';
@@ -212,6 +213,9 @@ test('P5. kWh: watt-terugval zolang de meter niet verspringt', () => {
 
 test('P6. onvolledige run: kWh aangevuld uit de geschiedenis van Home Assistant', async () => {
   zet({ [`${A1}printstatus`]: 'finish' }); await tik(); await tik();
+  // de backend lag even stil (wachter kent geen "laatst vrij"), vorige run al lang voorbij
+  stopWachter();
+  getDb().prepare(`UPDATE printruns SET geeindigd_op = ? WHERE printer_id = ? AND geeindigd_op > ?`).run(iso(60 * 60e3), mini, iso(60 * 60e3));
   // de printer print al 40 minuten als de wachter hem ziet
   const start = iso(40 * 60e3);
   geschiedenis['sensor.stekker_energy'] = [

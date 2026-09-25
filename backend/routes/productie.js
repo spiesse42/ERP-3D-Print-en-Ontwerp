@@ -9,7 +9,7 @@ import { getDb } from '../db/index.js';
 import { DomeinFout } from '../domein/hulp.js';
 import { haStaten, haDienst, haCameraBeeld, haIngesteld, HaFout, meterOp } from '../integraties/homeassistant.js';
 import { leesPrinter, entiteitenVan, KOPPELINGEN } from '../productie/adapters.js';
-import { liveCache, openRun, kwhVanRun, startRun, sluitRun, tik, INTERVAL_MS, vulAan } from '../productie/wachter.js';
+import { liveCache, openRun, kwhVanRun, kwhUitMetingen, startRun, sluitRun, tik, INTERVAL_MS, vulAan } from '../productie/wachter.js';
 import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wijzigOpdracht, verschuif, bevestig, heropen, annuleer, verwijder,
   voorstelVoorRun, koppelRun, ontkoppelRun, synchroniseer } from '../productie/opdrachten.js';
 import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct } from '../productie/materiaal.js';
@@ -33,7 +33,7 @@ const r4 = x => (x == null ? null : Math.round(x * 10000) / 10000);
 
 // Een run is "te koppelen" zolang hij niet aan een printopdracht hangt en
 // niet als intern gemarkeerd is.
-const OPDRACHT_VAN_RUN = `SELECT o.id, o.naam, d.nummer AS dossier_nummer, d.id AS dossier_id FROM printopdrachten o
+const OPDRACHT_VAN_RUN = `SELECT o.id, o.naam, o.voltooid_op, d.nummer AS dossier_nummer, d.id AS dossier_id FROM printopdrachten o
   LEFT JOIN dossier_regels r ON r.id = o.dossier_regel_id LEFT JOIN dossiers d ON d.id = r.dossier_id WHERE o.id = ?`;
 function runInfo(db, run, lezing) {
   if (!run) return null;
@@ -100,6 +100,50 @@ r.post('/runs/:id/ontkoppel', metFouten((req, res) => {
   const x = run(db, req.params.id);
   db.transaction(() => ontkoppelRun(db, x))();
   res.json(runInfo(db, run(db, x.id), null));
+}));
+
+// Uitkomst en/of starttijd van een run corrigeren (25-09): de printer meldt
+// niet altijd juist hoe een print eindigde, en een al lopende print kan een
+// verkeerde starttijd krijgen. Niet meer als de printopdracht bevestigd is.
+r.put('/runs/:id', metFouten(async (req, res) => {
+  const db = getDb();
+  const x = run(db, req.params.id);
+  const b = req.body || {};
+  if (x.printopdracht_id && db.prepare('SELECT voltooid_op FROM printopdrachten WHERE id = ?').get(x.printopdracht_id)?.voltooid_op) {
+    throw new DomeinFout('De printopdracht van deze run is al bevestigd. Heropen ze eerst (Productie → Printopdrachten).');
+  }
+  const wijz = {};
+  if (b.uitkomst !== undefined && b.uitkomst !== x.uitkomst) {
+    if (!['klaar', 'mislukt', 'geannuleerd'].includes(b.uitkomst)) throw new DomeinFout('Kies geslaagd, mislukt of geannuleerd');
+    if (x.uitkomst === 'bezig') throw new DomeinFout('Deze print loopt nog: de uitkomst kan pas na het einde.');
+    wijz.uitkomst = b.uitkomst;
+  }
+  if (b.gestart_op !== undefined) {
+    const van = isoOf(b.gestart_op, 'het starttijdstip');
+    if (van !== new Date(x.gestart_op).toISOString()) {
+      const tot = x.geeindigd_op || new Date().toISOString();
+      if (van >= tot) throw new DomeinFout(x.geeindigd_op ? 'De start moet vóór het einde van de run liggen' : 'De start ligt in de toekomst');
+      const overlap = db.prepare(`SELECT id FROM printruns WHERE printer_id = ? AND id <> ? AND gestart_op < ? AND COALESCE(geeindigd_op, '9999') > ?`).get(x.printer_id, x.id, tot, van);
+      if (overlap) throw new DomeinFout('Met deze starttijd overlapt de run met een andere run op dezelfde printer.');
+      wijz.gestart_op = van;
+    }
+  }
+  if (!Object.keys(wijz).length) return res.json(runInfo(db, x, liveCache().get(x.printer_id)?.lezing));
+  db.prepare(`UPDATE printruns SET ${Object.keys(wijz).map(k => `${k} = ?`).join(', ')} WHERE id = ?`).run(...Object.values(wijz), x.id);
+  let melding = null;
+  if (wijz.gestart_op) {
+    // verbruik opnieuw: meterstand op de nieuwe start uit HA, anders de wattmetingen vanaf de nieuwe start
+    const p = printer(db, x.printer_id);
+    let gelukt = false;
+    if (p.kwh_entity && haIngesteld()) {
+      try { const u = await vulAan(db, x.id); gelukt = u.ok; if (!u.ok) melding = `Verbruik niet aangevuld: ${u.reden}`; }
+      catch (e) { melding = `Verbruik niet aangevuld: ${e.message}`; }
+    }
+    if (!gelukt && x.geeindigd_op) {
+      db.prepare('UPDATE printruns SET kwh = ? WHERE id = ?').run(r4(kwhUitMetingen(db, x.id)), x.id);
+    }
+  }
+  res.json({ ...runInfo(db, run(db, x.id), liveCache().get(x.printer_id)?.lezing), melding });
 }));
 
 // kWh van een onvolledige of gemiste run aanvullen uit de geschiedenis van de

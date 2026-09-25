@@ -67,6 +67,9 @@ function RunDialoog({ run, onSluit, onKlaar }) {
   const { melding, bevestig } = useOmgeving();
   const [koppelen, setKoppelen] = useState(false);
   const [bezig, setBezig] = useState(false);
+  // corrigeren (25-09): uitkomst en starttijd, zolang de printopdracht niet bevestigd is
+  const [corr, setCorr] = useState(null);
+  const vast = !!run.opdracht?.voltooid_op;
   async function doe(fn, tekst) {
     setBezig(true);
     try { await fn(); melding(tekst); await onKlaar(); } catch (e) { melding(e.message, 'fout'); setBezig(false); }
@@ -93,6 +96,35 @@ function RunDialoog({ run, onSluit, onKlaar }) {
         <dt>Hoort bij</dt><dd><Koppeling r={run} /></dd>
       </dl>
       {run.te_koppelen && run.voorstel && <p className="sub">Voorstel: {run.voorstel.naam}</p>}
+      {!corr && (vast
+        ? <p className="sub" style={{ marginBottom: 0 }}>De printopdracht is bevestigd: heropen ze om deze run nog te corrigeren.</p>
+        : <button type="button" className="btn klein" onClick={() => setCorr({ uitkomst: run.uitkomst, gestart_op: lokaal(run.gestart_op) })}><Icoon naam="pen" maat={12} /> Uitkomst of starttijd corrigeren</button>)}
+      {corr && (
+        <div className="panel" style={{ marginTop: 8 }}><div className="pbody">
+          <div className="fgrid">
+            <div><label htmlFor="rc-uitkomst">Uitkomst</label>
+              <select id="rc-uitkomst" className="inp" value={corr.uitkomst} disabled={run.uitkomst === 'bezig'} onChange={e => setCorr(c => ({ ...c, uitkomst: e.target.value }))}>
+                {run.uitkomst === 'bezig' && <option value="bezig">Bezig</option>}
+                <option value="klaar">Geslaagd</option><option value="mislukt">Mislukt</option><option value="geannuleerd">Geannuleerd</option>
+              </select></div>
+            <div><label htmlFor="rc-van">Gestart</label><input id="rc-van" type="datetime-local" className="inp" value={corr.gestart_op} onChange={e => setCorr(c => ({ ...c, gestart_op: e.target.value }))} /></div>
+          </div>
+          <p className="sub">Gestopt of mislukt telt niet op de werkbon, maar wel als kost voor jou. Een andere starttijd haalt het verbruik opnieuw uit Home Assistant.</p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn" onClick={() => setCorr(null)}>Terug</button>
+            <button type="button" className="btn primary" disabled={bezig} onClick={async () => {
+              setBezig(true);
+              try {
+                const body = { ...(run.uitkomst !== 'bezig' ? { uitkomst: corr.uitkomst } : {}),
+                  ...(corr.gestart_op !== lokaal(run.gestart_op) ? { gestart_op: new Date(corr.gestart_op).toISOString() } : {}) };
+                const r = await api.put(`/productie/runs/${run.id}`, body);
+                melding(r.melding || (body.gestart_op && r.aangevuld ? `Run gecorrigeerd; verbruik opnieuw uit Home Assistant: ${naarInvoer(r.kwh)} kWh.` : 'Run gecorrigeerd.'), r.melding ? 'fout' : undefined);
+                await onKlaar();
+              } catch (e) { melding(e.message, 'fout'); setBezig(false); }
+            }}>Bewaren</button>
+          </div>
+        </div></div>
+      )}
     </Dialoog>
   );
 }
