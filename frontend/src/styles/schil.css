@@ -483,6 +483,8 @@ label.keuze input { margin-top:3px; }
 .te-koppelen .run { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; padding:6px 0; border-top:1px solid var(--line); }
 .te-koppelen .run:first-of-type { border-top:0; }
 .te-koppelen .run .wat { flex:1 1 240px; min-width:0; overflow-wrap:anywhere; }
+.te-koppelen .run .wat.klikbaar { cursor:pointer; border-radius:4px; }
+.te-koppelen .run .wat.klikbaar:hover b, .te-koppelen .run .wat.klikbaar:focus-visible b { text-decoration:underline; }
 .te-koppelen .run .knoppen { display:flex; gap:6px; flex-wrap:wrap; }
 .tab-stip { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--warn); margin-left:6px; vertical-align:middle; }
 @media (max-width: 700px) {

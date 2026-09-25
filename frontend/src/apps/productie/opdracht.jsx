@@ -4,6 +4,7 @@ import { useData } from '../../schil/useData.js';
 import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
 import { Link } from '../../schil/Schil.jsx';
 import { aantal, naarInvoer, datumTijd, euro } from '../../lib/formaat.js';
+import { RunVenster } from './RunDialoog.jsx';
 
 // Printopdrachten en runs koppelen (stap 6b) — gedeelde stukken voor
 // Productie → Printopdrachten, Productie → Runs, de printerkaarten en het
@@ -27,10 +28,19 @@ export function Herkomst({ o }) {
 
 // ── Nieuwe printopdracht of bestaande bekijken/bewerken ─────────────────
 // vast: { dossier_regel_id, naam, aantal, printer_id, label } bij een printregel van een dossier.
-export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit, onKlaar }) {
+export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit: sluit, onKlaar }) {
   const { melding, bevestig } = useOmgeving();
   const { data: printers } = useData('/printers');
-  const o = opdracht;
+  // 25-09: een run openen vanuit de opdracht; daarna terug met verse gegevens
+  const [vers, setVers] = useState(null);
+  const [runOpen, setRunOpen] = useState(null);
+  const [gewijzigd, setGewijzigd] = useState(false);
+  const o = vers || opdracht;
+  const onSluit = () => (gewijzigd ? onKlaar() : sluit());
+  async function naRun() {
+    setRunOpen(null); setGewijzigd(true);
+    try { setVers(await api.get(`/productie/opdrachten/${opdracht.id}`)); } catch (e) { melding(e.message, 'fout'); }
+  }
   const afgesloten = o && (o.status === 'voltooid' || o.status === 'geannuleerd');
   // gestart dossier, nog niets geprint: de opdracht volgt de regel (25-09)
   const volgtRegel = !!o?.dossier_gestart_op && o.runs.length === 0 && !afgesloten;
@@ -52,6 +62,7 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit, onKlaar
       ...(vast ? { dossier_regel_id: vast.dossier_regel_id } : { soort: f.soort }) })), o ? 'Printopdracht bewaard.' : 'Printopdracht gepland.');
   const actie = (pad, tekst, vraag) => async () => { if (vraag && !await bevestig(vraag)) return; await doe(() => (pad === 'delete' ? api.delete(`/productie/opdrachten/${o.id}`) : api.post(`/productie/opdrachten/${o.id}/${pad}`)), tekst); };
   if (bevestigen) return <BevestigDialoog o={o} onSluit={() => setBevestigen(false)} onKlaar={onKlaar} />;
+  if (runOpen) return <RunVenster runId={runOpen} onSluit={() => setRunOpen(null)} onKlaar={naRun} />;
   const titel = o ? `Printopdracht · ${o.naam}` : vast ? `Printopdracht voor ${vast.label || vast.naam}` : 'Nieuwe printopdracht';
   return (
     <Dialoog titel={titel} onSluit={onSluit} breed
@@ -98,7 +109,9 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit, onKlaar
             <thead><tr><th>Run</th><th>Uitkomst</th><th className="r">kWh</th></tr></thead>
             <tbody>
               {o.runs.length === 0 ? <tr><td colSpan={3} className="sub">Nog geen runs gekoppeld. Start de print; de run verschijnt dan op de printerkaart om te koppelen.</td></tr>
-                : o.runs.map(r => <tr key={r.id}><td className="num">{datumTijd(r.gestart_op)}</td><td>{UITKOMST[r.uitkomst]}</td><td className="r num">{naarInvoer(r.kwh) || '—'}</td></tr>)}
+                : o.runs.map(r => (
+                  <tr key={r.id} className="row" tabIndex={0} title="Run openen" onClick={() => setRunOpen(r.id)} onKeyDown={e => { if (e.key === 'Enter') setRunOpen(r.id); }}>
+                    <td className="num">{datumTijd(r.gestart_op)}</td><td>{UITKOMST[r.uitkomst]}</td><td className="r num">{naarInvoer(r.kwh) || '—'}</td></tr>))}
             </tbody>
           </table>
         </div>

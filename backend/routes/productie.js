@@ -85,7 +85,8 @@ r.get('/runs', metFouten((req, res) => {
 r.get('/runs/:id', metFouten((req, res) => {
   const db = getDb();
   const x = run(db, req.params.id);
-  res.json({ ...runInfo(db, x, liveCache().get(x.printer_id)?.lezing), printer_id: x.printer_id });
+  res.json({ ...runInfo(db, x, liveCache().get(x.printer_id)?.lezing), printer_id: x.printer_id,
+    printer: db.prepare('SELECT naam FROM printers WHERE id = ?').get(x.printer_id)?.naam });
 }));
 
 // Run koppelen: aan een printopdracht (voorstel, andere of nieuwe) of intern.

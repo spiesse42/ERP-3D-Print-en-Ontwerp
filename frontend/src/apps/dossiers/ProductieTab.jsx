@@ -4,6 +4,7 @@ import { Link } from '../../schil/Schil.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { aantal, euro, naarInvoer } from '../../lib/formaat.js';
 import { OpdrachtBadge, OpdrachtDialoog, BevestigDialoog, KoppelDialoog, duur } from '../productie/opdracht.jsx';
+import { RunVenster } from '../productie/RunDialoog.jsx';
 import { StatusBadge } from '../productie/PrintersLive.jsx';
 import { api } from '../../lib/api.js';
 import { datumTijd } from '../../lib/formaat.js';
@@ -42,7 +43,8 @@ export default function ProductieTab({ d, vuil, herlaad }) {
           <h4>{runs.length === 1 ? 'Er is een run die nog niet gekoppeld is' : `Er zijn ${runs.length} runs die nog niet gekoppeld zijn`}</h4>
           {runs.map(r => (
             <div key={r.id} className="run">
-              <div className="wat"><b>{r.printer}</b> · <span className="num">{datumTijd(r.gestart_op)}</span> · {duur(r.duur_min)} <StatusBadge status={r.uitkomst} />
+              <div className="wat klikbaar" role="button" tabIndex={0} title="Run openen" onClick={() => setDialoog({ soort: 'run', id: r.id })}
+                onKeyDown={e => { if (e.key === 'Enter') setDialoog({ soort: 'run', id: r.id }); }}><b>{r.printer}</b> · <span className="num">{datumTijd(r.gestart_op)}</span> · {duur(r.duur_min)} <StatusBadge status={r.uitkomst} />
                 {r.bestand && <div className="sub mono">{r.bestand}</div>}</div>
               <div className="knoppen">
                 {r.voorstel && <button type="button" className="btn klein primary" disabled={bezig} onClick={() => koppel(r)}>Koppelen aan "{r.voorstel.naam}"</button>}
@@ -103,6 +105,7 @@ export default function ProductieTab({ d, vuil, herlaad }) {
       {dialoog?.soort === 'open' && <OpdrachtDialoog opdracht={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'bevestig' && <BevestigDialoog o={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'koppel' && <KoppelDialoog run={dialoog.run} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
+      {dialoog?.soort === 'run' && <RunVenster runId={dialoog.id} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
     </>
   );
 }
