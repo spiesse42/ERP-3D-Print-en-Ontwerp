@@ -32,7 +32,8 @@ Lokale instellingen voor koppelingen: als omgevingsvariabelen (nooit in de datab
 |---|---|
 | `gemini_api_key` | sleutel voor Factuur inlezen (PDF/foto). UBL-bestanden hebben hem niet nodig. |
 | `gemini_model` | leeg = standaard |
-| `smtp_user`, `smtp_pass`, `smtp_from` | Gmail-adres en app-wachtwoord om offertes, werkbonnen en pakbonnen te mailen |
+| `smtp_user`, `smtp_pass`, `smtp_from` | mailadres en wachtwoord om offertes, werkbonnen en pakbonnen te mailen (Gmail: app-wachtwoord) |
+| `smtp_host`, `smtp_port` | leeg = Gmail. Eigen mailserver, bv. OVH MX Plan: `ssl0.ovh.net` en `465`, gebruiker = het volledige adres (bv. info@…) met het gewone wachtwoord van die mailbox |
 | `tijdzone` | standaard `Europe/Brussels` |
 
 Home Assistant zelf (printers, camera, kWh-meters) werkt in de add-on zonder token (via de Supervisor).

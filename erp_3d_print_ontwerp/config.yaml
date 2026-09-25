@@ -7,7 +7,7 @@
 # zelf wordt bereikt via de Supervisor (homeassistant_api), zonder token.
 name: "ERP 3D Print & Ontwerp"
 description: "Dossiers, offertes, werkbonnen, productie, voorraad en financien voor 3D-print en ontwerp"
-version: "0.13.3"
+version: "0.13.4"
 slug: "erp_3d_print_ontwerp"
 url: "https://github.com/spiesse42/ERP-3D-Print-en-Ontwerp"
 init: false
@@ -31,6 +31,8 @@ options:
   smtp_user: ""
   smtp_pass: ""
   smtp_from: ""
+  smtp_host: ""
+  smtp_port: 465
   tijdzone: "Europe/Brussels"
 schema:
   gemini_api_key: password?
@@ -38,4 +40,6 @@ schema:
   smtp_user: email?
   smtp_pass: password?
   smtp_from: str?
+  smtp_host: str?
+  smtp_port: port?
   tijdzone: str?

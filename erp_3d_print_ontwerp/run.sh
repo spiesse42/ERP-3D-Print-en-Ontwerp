@@ -15,6 +15,8 @@ if [ -f /data/options.json ]; then
   export SMTP_USER="$(optie smtp_user)"
   export SMTP_PASS="$(optie smtp_pass)"
   export SMTP_FROM="$(optie smtp_from)"
+  H="$(optie smtp_host)";     [ -n "$H" ] && export SMTP_HOST="$H"
+  P="$(optie smtp_port)";     [ -n "$P" ] && export SMTP_PORT="$P"
   T="$(optie tijdzone)";      [ -n "$T" ] && export TZ="$T"
 fi
 # Backup terugzetten: leg het bestand als "terugzetten.db" in de add-on-map
@@ -33,7 +35,7 @@ export HA_URL="http://supervisor/core"
 
 echo "ERP 3D Print & Ontwerp: poort $PORT, databank $DB_PATH"
 [ -n "$GEMINI_API_KEY" ] && echo "Gemini: ingesteld" || echo "Gemini: niet ingesteld"
-[ -n "$SMTP_USER" ] && echo "Mail: $SMTP_USER" || echo "Mail: niet ingesteld"
+[ -n "$SMTP_USER" ] && echo "Mail: $SMTP_USER via ${SMTP_HOST:-Gmail}" || echo "Mail: niet ingesteld"
 
 cd /app/backend
 exec node server.js

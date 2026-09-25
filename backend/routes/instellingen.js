@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { GEMINI_MODEL, reserveModellen } from '../integraties/gemini.js';
 import { getDb } from '../db/index.js';
-import { mailIngesteld } from '../documenten/mail.js';
+import { mailIngesteld, mailServer } from '../documenten/mail.js';
 import { vindBrowser } from '../documenten/pdf.js';
 import { haIngesteld } from '../integraties/homeassistant.js';
 
@@ -65,6 +65,7 @@ r.get('/integraties', (req, res) => {
     gemini_reserve: reserveModellen(),
     // stap 5b: mailen (SMTP_USER/SMTP_PASS) en PDF (Chrome/Edge/Chromium gevonden?)
     mail: mailIngesteld(),
+    mail_server: mailServer(),   // geen geheim: Gmail of de hostnaam
     pdf: !!vindBrowser(),
   });
 });
