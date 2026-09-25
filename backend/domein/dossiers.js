@@ -183,9 +183,62 @@ export function leesDossier(db, dossierId) {
   const prod = productie.status;
   const opts = { aantalRegels: regels.length, offerte, werkbon, verstuurdeOffertes: offertes.filter(o => o.verstuurd_op).length, lever, leveringen: leveringen.length,
     prod, printopdrachten: productie.aantal_opdrachten };
-  return { ...d, klant_gegevens, fase: faseVan(d, { offerte, lever, prod }), stappen: stappenVan(d, { lever, prod }), acties: actiesVan(d, opts),
+  const uit = { ...d, klant_gegevens, fase: faseVan(d, { offerte, lever, prod }), stappen: stappenVan(d, { lever, prod }), acties: actiesVan(d, opts),
     leverbaar: lever_lijst, lever_status: lever, leveringen, productie,
     regels, berekening, offertes: offertes.map(({ regels_api: _r, document: _doc, ...o }) => o), werkbon, zonder_werkbon, wijkt_af_van_offerte, overname };
+  uit.volgende_stap = volgendeStap(uit);
+  return uit;
+}
+
+// ── Volgende stap (25-09): één zin + één knop bovenaan het dossier, zodat je
+// niet hoeft te zoeken wat er nu moet gebeuren. Afgeleid uit het dossier
+// zoals leesDossier het teruggeeft. `soort` bepaalt de knop in de frontend;
+// `extra` zijn optionele tips (bv. leveren).
+const nlGetal = v => String(Math.round(Number(v) * 1000) / 1000).replace('.', ',');
+export function volgendeStap(d) {
+  const klant = d.soort === 'klant';
+  const extra = [];
+  if (klant && ['geen', 'deels'].includes(d.lever_status) && d.fase !== 'geannuleerd') extra.push('Leveren (pakbon) kan nog, maar is niet verplicht.');
+  if (d.fase === 'geannuleerd') return { soort: 'geannuleerd', tekst: 'Dit dossier is geannuleerd: niets af te rekenen of te leveren.', extra: [] };
+  if (d.fase === 'betaald') return { soort: 'afgerond', tekst: 'Afgerond: afgerekend en betaald.', extra };
+  if (d.fase === 'afgerekend') {
+    return { soort: 'betaling', tekst: `Afgerekend met ${d.afgerekend_soort} ${d.afgerekend_nummer}. Nog te doen: als betaald markeren zodra het geld binnen is (of via de Accountable-import).`, extra };
+  }
+  if (!d.regels.length) return { soort: 'regels', tekst: 'Voeg eerst regels toe: wat moet er gebeuren (printen, ontwerp, aanpassing, artikel, extra)?', extra: [] };
+  const offerte = (d.offertes || []).filter(o => o.verstuurd_op).sort((a, b) => b.versie - a.versie)[0];
+  if (klant && offerte && !offerte.aanvaard_op && !offerte.geweigerd_op && !d.gestart_op && !d.productie?.aantal_opdrachten) {
+    return { soort: 'offerte_wacht', tekst: `Offerte ${offerte.weergave} is verstuurd. Wacht op het antwoord van de klant: zet ze op aanvaard (start dan vanzelf) of geweigerd.`, extra: [] };
+  }
+  if (d.acties?.starten) {
+    const print = d.regels.some(r => r.type === 'printen');
+    return { soort: 'starten', tekst: klant
+      ? `Klaar om te starten: maakt de werkbon${print ? ' en een printopdracht per printregel' : ''}.${d.offertes?.length ? '' : ' Wil de klant eerst een prijs? Maak dan een offerte (tab Offertes).'}`
+      : 'Klaar om te starten: maakt een printopdracht per printregel.', extra: [] };
+  }
+  const p = d.productie;
+  if (p?.regels?.length && p.status !== 'klaar') {
+    const run = p.te_koppelen_runs?.[0];
+    if (run) return { soort: 'koppelen', tekst: `Er staat een run op ${run.printer} die nog niet gekoppeld is.`, run, extra: [] };
+    const ops = p.regels.flatMap(r => r.opdrachten);
+    const bevestig = ops.find(o => o.status === 'te_bevestigen');
+    if (bevestig) return { soort: 'bevestigen', tekst: `De print "${bevestig.naam}" is klaar: bevestig hoeveel stuks goed zijn.`, opdracht_id: bevestig.id, extra: [] };
+    const zonder = p.regels.find(r => r.te_plannen > 0 && !r.printer_id);
+    if (zonder && d.gestart_op) return { soort: 'printer_kiezen', tekst: `Kies een printer voor "${zonder.omschrijving || 'Printwerk'}" (tab Regels): dan komt de printopdracht vanzelf.`, extra: [] };
+    const mislukt = ops.find(o => o.status === 'mislukt');
+    if (mislukt) return { soort: 'herprint', tekst: `De laatste poging van "${mislukt.naam}" op ${mislukt.printer} is mislukt of gestopt. Start een herprint (koppel de nieuwe run aan dezelfde opdracht), of annuleer de printopdracht als ze niet meer nodig is.`, extra: [] };
+    const bezig = ops.find(o => o.status === 'bezig');
+    if (bezig) return { soort: 'bezig', tekst: `Aan het printen: "${bezig.naam}" op ${bezig.printer}. Als de print klaar is, bevestig je hier het aantal goede stuks.`, extra: [] };
+    const gepland = ops.find(o => o.status === 'gepland');
+    if (gepland) return { soort: 'wachtrij', tekst: `"${gepland.naam}" staat in de wachtrij van ${gepland.printer}. Start de print op de printer; de run verschijnt dan vanzelf om te koppelen.`, extra: [] };
+    const tekort = p.regels.find(r => r.goed < r.besteld);
+    if (tekort) return { soort: 'plannen', tekst: `Voor "${tekort.omschrijving || 'Printwerk'}" zijn nog ${nlGetal(tekort.besteld - tekort.goed)} stuks nodig: plan een printopdracht (tab Productie).`, extra: [] };
+  }
+  if (klant) {
+    const reden = !(d.werkbon || d.zonder_werkbon)?.volledig ? ' Eerst moeten alle regels berekend kunnen worden.' : '';
+    return { soort: 'afrekenen', tekst: `${p?.status === 'klaar' ? 'Alles is geprint. ' : ''}Nog af te rekenen in Accountable: maak daar de factuur of het bonnetje en vul het nummer hier in.${reden}`,
+      kan: !reden, extra: [...extra, 'Moet de klant niets betalen? Gebruik dan "Dossier annuleren".'] };
+  }
+  return { soort: 'klaar', tekst: d.soort === 'eigen' ? 'Alles is geprint; de goede stuks staan in voorraad.' : 'Alles is geprint.', extra: [] };
 }
 
 export function leesDossiers(db, { archief = '0', klant_id = null } = {}) {

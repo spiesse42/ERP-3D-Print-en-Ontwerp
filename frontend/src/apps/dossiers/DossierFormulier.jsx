@@ -17,6 +17,7 @@ import { AfrekenDialoog, BetaaldDialoog, Overnamefiche } from './AfrekenDialogen
 import { OffertesTab, WerkbonTab } from './DocumentTabs.jsx';
 import LeveringenTab from './LeveringenTab.jsx';
 import ProductieTab from './ProductieTab.jsx';
+import VolgendeStap from './VolgendeStap.jsx';
 
 const LEEG = { soort: 'klant', klant_id: '', titel: '', notities: '' };
 function naarFormulier(d, klantUitUrl) {
@@ -120,24 +121,25 @@ export default function DossierFormulier() {
     : null;
   const toonAfrekenen = !nieuw && d.soort === 'klant' && voorAfrekening;
   const afrekenKnop = toonAfrekenen && (
-    <button type="button" className={`btn${acties.starten ? '' : ' primary'}`} disabled={!!afrekenReden} title={afrekenReden || 'Factuur of bonnetje uit Accountable koppelen'}
+    <button type="button" className="btn" disabled={!!afrekenReden} title={afrekenReden || 'Factuur of bonnetje uit Accountable koppelen'}
       onClick={() => open('afrekenen')}>Afrekenen</button>
   );
   // Starten (25-09): werkbon (klantopdracht) + printopdracht per printregel met printer
   const heeftPrint = !nieuw && d.regels.some(r => r.type === 'printen');
   const startTekst = d?.soort === 'klant' ? (heeftPrint ? 'Gestart: werkbon en printopdrachten aangemaakt.' : 'Gestart: werkbon aangemaakt.') : 'Gestart: printopdrachten aangemaakt.';
   const startUitleg = d?.soort === 'klant' ? `Maakt de werkbon${heeftPrint ? ' en een printopdracht per printregel' : ''}. Met een offerte gebeurt dit vanzelf zodra de klant akkoord gaat.` : 'Maakt een printopdracht per printregel.';
+  const starten = () => actie('starten', r => {
+    const run = r?.productie?.te_koppelen_runs?.[0];
+    return run ? `${startTekst} Op ${run.printer} staat een run die nog niet gekoppeld is: koppel hem hieronder (Volgende stap).` : startTekst;
+  });
   const workflow = nieuw ? null : <>
-    {acties.starten && <button type="button" className="btn primary" disabled={vuil} title={vuil ? 'Sla eerst je wijzigingen op.' : startUitleg} onClick={() => actie('starten', r => {
-      const run = r?.productie?.te_koppelen_runs?.[0];
-      return run ? `${startTekst} Op ${run.printer} staat een run die nog niet gekoppeld is: koppel hem in de tab Productie.` : startTekst;
-    })}><Icoon naam="start" maat={14} /> Starten</button>}
+    {acties.starten && <button type="button" className="btn" disabled={vuil} title={vuil ? 'Sla eerst je wijzigingen op.' : startUitleg} onClick={starten}><Icoon naam="start" maat={14} /> Starten</button>}
     {afrekenKnop}
-    {acties.betaald && <button type="button" className="btn primary" onClick={() => open('betaald')}>Betaald</button>}
+    {acties.betaald && <button type="button" className="btn" onClick={() => open('betaald')}>Betaald</button>}
     {d.soort === 'klant' && d.regels.length > 0 && fase !== 'geannuleerd' && <button type="button" className="btn" onClick={() => open('overname')}>Overnamefiche</button>}
     {acties.betaling_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('betaling-ongedaan', 'Betaling ongedaan gemaakt.', { vraag: { titel: 'Betaling ongedaan maken', tekst: 'Het dossier gaat terug naar afgerekend.', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Betaling ongedaan</button>}
     {acties.afrekening_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('afrekening-ongedaan', 'Afrekening ongedaan gemaakt.', { vraag: { titel: 'Afrekening ongedaan maken', tekst: `De verwijzing naar ${d.afgerekend_soort} ${d.afgerekend_nummer} wordt gewist en het dossier kan weer gewijzigd worden. Pas dit ook aan in Accountable (bv. een creditnota).`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug', gevaarlijk: true } })}>Afrekening ongedaan</button>}
-    {acties.annuleren && <button type="button" className="btn ghost" onClick={() => actie('annuleren', 'Dossier geannuleerd.', { vraag: { titel: 'Dossier annuleren', tekst: `${d.nummer} annuleren? Je kunt het later heropenen.`, bevestigLabel: 'Annuleren', annuleerLabel: 'Terug' } })}>Annuleren</button>}
+    {acties.annuleren && <button type="button" className="btn ghost" title="Het hele dossier stopt: niets af te rekenen of te leveren" onClick={() => actie('annuleren', 'Dossier geannuleerd.', { vraag: { titel: 'Dossier annuleren', tekst: `${d.nummer} annuleren? Het hele dossier stopt: er wordt niets afgerekend of geleverd, en open printopdrachten worden mee geannuleerd. Gebruik dit ook als de klant niets hoeft te betalen. Heropenen kan later nog.`, bevestigLabel: 'Dossier annuleren', annuleerLabel: 'Terug' } })}>Dossier annuleren</button>}
     {acties.heropenen && <button type="button" className="btn" onClick={() => actie('heropenen', 'Dossier heropend.')}>Heropenen</button>}
   </>;
   const stappen = nieuw ? ['nieuw'] : d.stappen;
@@ -158,13 +160,10 @@ export default function DossierFormulier() {
               {fase !== 'geannuleerd' && stappen.length > 1 && <Statusbalk stappen={stappen.map(s => FASE[s][1])} huidig={stappen.indexOf(fase)} />}
             </div>
           )}
-          {toonAfrekenen && (
-            <div className="waarschuwing info-lint" role="status">
-              <span><Icoon naam="let" maat={16} /> Nog af te rekenen in Accountable (factuur of bonnetje).</span>
-              {afrekenReden && <span className="sub" style={{ color: 'inherit' }}>{afrekenReden}</span>}
-              <span style={{ marginLeft: 'auto' }}>{afrekenKnop}</span>
-            </div>
-          )}
+          {!nieuw && <VolgendeStap d={d} vuil={vuil} afrekenReden={afrekenReden} onStarten={starten} onAfrekenen={() => open('afrekenen')}
+            onBetaald={() => open('betaald')} onHeropenen={() => actie('heropenen', 'Dossier heropend.')}
+            naarTab={t => { setTab(t); document.querySelector('.tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+            herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} />}
           <div className="sheet-head">
             <div className="kop">
               <div className="nr">Dossier{!nieuw && ` · ${SOORT[d.soort]}`}</div>

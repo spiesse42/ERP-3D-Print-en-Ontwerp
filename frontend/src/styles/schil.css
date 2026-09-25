@@ -357,6 +357,18 @@ fieldset.regeleditor:disabled .regel-kop > button, fieldset.regeleditor:disabled
 .kkaart .l1 { display:flex; justify-content:space-between; gap:8px; }
 .kkaart .l1 b { overflow-wrap:anywhere; }
 .info-lint { border-color:var(--info); background:var(--info-bg); color:var(--info); margin-top:10px; }
+/* Volgende stap bovenaan een dossier (25-09) */
+.volgende-stap { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-top:10px; padding:12px 14px;
+  border:1px solid var(--info); border-left-width:4px; background:var(--info-bg); border-radius:var(--radius); }
+.volgende-stap .tekst { flex:1 1 320px; min-width:0; display:grid; gap:3px; color:var(--ink); }
+.volgende-stap .kop { font-weight:700; color:var(--info); display:inline-flex; gap:6px; align-items:center; font-size:12.5px; text-transform:uppercase; letter-spacing:.03em; }
+.volgende-stap .sub { color:var(--muted); }
+.volgende-stap .knoppen { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.volgende-stap.ok { border-color:var(--pos); background:var(--pos-bg); }
+.volgende-stap.ok .kop { color:var(--pos); }
+.volgende-stap.uit { border-color:var(--line); background:transparent; }
+.volgende-stap.uit .kop { color:var(--muted); }
+.uitleg ol, .uitleg ul { padding-left:20px; margin:6px 0 10px; display:grid; gap:6px; }
 table.overname { width:100%; }
 table.overname th { text-align:left; font-weight:600; color:var(--muted); white-space:nowrap; }
 table.overname tfoot th, table.overname tfoot td { border-top:2px solid var(--line-strong); color:var(--ink); font-weight:700; }

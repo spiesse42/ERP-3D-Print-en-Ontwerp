@@ -68,7 +68,7 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit: sluit, 
     <Dialoog titel={titel} onSluit={onSluit} breed
       voet={<>
         {o && o.runs.length === 0 && !volgtRegel && <button type="button" className="btn ghost" disabled={bezig} onClick={actie('delete', 'Printopdracht verwijderd.', { titel: 'Printopdracht verwijderen', tekst: `"${o.naam}" verwijderen?`, bevestigLabel: 'Verwijderen', gevaarlijk: true })}>Verwijderen</button>}
-        {o && !afgesloten && o.status !== 'bezig' && o.runs.length > 0 && <button type="button" className="btn ghost" disabled={bezig} onClick={actie('annuleer', 'Printopdracht geannuleerd.', { titel: 'Printopdracht annuleren', tekst: `"${o.naam}" annuleren? De gekoppelde runs blijven bewaard.`, bevestigLabel: 'Annuleren', annuleerLabel: 'Terug' })}>Opdracht annuleren</button>}
+        {o && !afgesloten && o.status !== 'bezig' && o.runs.length > 0 && <button type="button" className="btn ghost" disabled={bezig} onClick={actie('annuleer', 'Printopdracht geannuleerd.', { titel: 'Printopdracht annuleren', tekst: `Enkel de printopdracht "${o.naam}" stopt (bv. een stuk dat niet meer nodig is); de gekoppelde runs blijven bewaard. Het dossier zelf loopt verder. Moet de klant niets betalen? Gebruik dan "Dossier annuleren" in het dossier.`, bevestigLabel: 'Printopdracht annuleren', annuleerLabel: 'Terug' })}>Printopdracht annuleren</button>}
         {o && afgesloten && <button type="button" className="btn" disabled={bezig} onClick={actie('heropen', 'Printopdracht heropend.')}>Heropenen</button>}
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={onSluit}>Sluiten</button>

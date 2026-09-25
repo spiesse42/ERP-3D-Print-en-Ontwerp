@@ -26,6 +26,7 @@ const PADEN = {
   pijlOp: <path d="m6 15 6-6 6 6"/>,
   pijlNeer: <path d="m6 9 6 6 6-6"/>,
   pijlLinks: <path d="M19 12H5M11 6l-6 6 6 6"/>,
+  pijlRechts: <path d="m9 6 6 6-6 6"/>,
   bericht: <path d="M4 5h16v11H8l-4 4z"/>,
 };
 

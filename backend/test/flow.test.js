@@ -243,3 +243,37 @@ test('X12. te koppelen runs in het dossier: enkel printers van open opdrachten, 
   d = (await vraag('GET', `/dossiers/${d0.id}`)).data;
   assert.equal(d.productie.te_koppelen_runs.length, 0);
 });
+
+test('X13. volgende stap: van regels tot afgerond', async () => {
+  const stap = async id => (await vraag('GET', `/dossiers/${id}`)).data.volgende_stap;
+  getDb().prepare(`UPDATE printruns SET intern = 'test' WHERE printopdracht_id IS NULL AND intern IS NULL`).run();   // restjes van vorige tests
+  const d0 = (await vraag('POST', '/dossiers', { titel: 'Stappen', klant_id: klant })).data;
+  assert.equal(d0.volgende_stap.soort, 'regels');
+  let r = await vraag('PUT', `/dossiers/${d0.id}`, { soort: 'klant', klant_id: klant, titel: 'Stappen', regels: [
+    { type: 'printen', omschrijving: 'Hanger', printer_id: mini, aantal: 1, tijd_min: 30, materialen: [{ filament_type_id: pg, gram: 5 }] }] });
+  assert.equal(r.data.volgende_stap.soort, 'starten');
+  await vraag('POST', `/dossiers/${d0.id}/starten`);
+  assert.equal((await stap(d0.id)).soort, 'wachtrij');
+  const d = (await vraag('GET', `/dossiers/${d0.id}`)).data;
+  const o = d.productie.regels[0].opdrachten[0];
+  const x = (await vraag('POST', '/productie/runs', { printer_id: mini, gestart_op: new Date(Date.now() - 10 * 3600e3).toISOString(), geeindigd_op: new Date(Date.now() - 9 * 3600e3).toISOString(), uitkomst: 'klaar', kwh: 0.1 })).data;
+  let s = await stap(d0.id);
+  assert.equal(s.soort, 'koppelen'); assert.equal(s.run.id, x.id); assert.equal(s.run.voorstel.id, o.id);
+  await vraag('POST', `/productie/runs/${x.id}/koppel`, { printopdracht_id: o.id });
+  s = await stap(d0.id);
+  assert.equal(s.soort, 'bevestigen'); assert.equal(s.opdracht_id, o.id);
+  await vraag('POST', `/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: 1 });
+  s = await stap(d0.id);
+  assert.equal(s.soort, 'afrekenen'); assert.equal(s.kan, true); assert.match(s.tekst, /Alles is geprint/);
+  assert.ok(s.extra.some(t => /Dossier annuleren/.test(t)));
+  await vraag('POST', `/dossiers/${d0.id}/afrekenen`, { soort: 'factuur', nummer: 'F-77', datum: new Date().toISOString().slice(0, 10) });
+  assert.equal((await stap(d0.id)).soort, 'betaling');
+  await vraag('POST', `/dossiers/${d0.id}/betaald`, { datum: new Date().toISOString().slice(0, 10) });
+  assert.equal((await stap(d0.id)).soort, 'afgerond');
+  // offerte verstuurd → wachten op de klant; geannuleerd
+  const e = (await vraag('POST', '/dossiers', { titel: 'Offerte', klant_id: klant, regels: [{ type: 'ontwerp', minuten: 30 }] })).data;
+  let od = (await vraag('POST', `/dossiers/${e.id}/offertes`)).data;
+  od = (await vraag('POST', `/offertes/${od.offertes[0].id}/versturen`)).data;
+  assert.equal(od.volgende_stap.soort, 'offerte_wacht');
+  assert.equal((await vraag('POST', `/dossiers/${e.id}/annuleren`)).data.volgende_stap.soort, 'geannuleerd');
+});
