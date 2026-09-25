@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 import { initDb, sluitDb, getDb } from '../db/index.js';
 import { maakApp } from '../app.js';
 import { vervangLezer, maakInstructie } from '../integraties/gemini.js';
-import { catalogusVoorInstructie } from '../domein/factuurherkenning.js';
-import { JOYBUY_BESTELMAIL, JOYBUY_FACTUUR } from './fixtures/gemini-antwoorden.js';
+import { catalogusVoorInstructie, koppel } from '../domein/factuurherkenning.js';
+import { JOYBUY_BESTELMAIL, JOYBUY_BESTELMAIL_LEEG, JOYBUY_FACTUUR } from './fixtures/gemini-antwoorden.js';
 
 let server, basis;
 before(async () => {
@@ -50,7 +50,29 @@ const MAIL = 'Bedankt voor uw bestelling(bestelling 1062802400000080695) … 1. 
 
 test('B0. instructie kent documentsoort en bestelnummer', () => {
   const t = maakInstructie(catalogusVoorInstructie(getDb()));
-  assert.match(t, /BESTELBEVESTIGING/); assert.match(t, /bestelnummer/); assert.match(t, /Een bestelbon zonder prijzen/);
+  assert.match(t, /BESTELBEVESTIGING/); assert.match(t, /ELKE filamentregel/); assert.match(t, /bestelnummer/); assert.match(t, /Een bestelbon zonder prijzen/);
+});
+
+test('B0b. Gemini liet merk/type/kleur leeg → aangevuld uit de omschrijving', () => {
+  const v = koppel(getDb(), structuredClone(JOYBUY_BESTELMAIL_LEEG));
+  const f = v.regels.map(r => [r.filament.merk_naam, r.filament.materiaal_naam, r.filament.kleur_naam]);
+  assert.deepEqual(f, [
+    ['AnyCubic', 'PLA', 'Cyaan'], ['AnyCubic', 'PLA', 'Textuur grijs'], ['AnyCubic', 'PLA', 'Oranje'], ['AnyCubic', 'PLA', 'Blauw'], ['AnyCubic', 'PLA', 'Paars'],
+    ['eSUN', 'PLA', 'Zwart'], ['eSUN', 'PLA', 'Geel'], ['eSUN', 'PLA', 'Wit'], ['AnyCubic', 'PETG', 'Rood'],
+  ]);
+  assert.equal(v.regels[0].aangevuld, undefined);
+  assert.deepEqual(v.regels[1].aangevuld, ['type', 'merk', 'kleur']);
+  assert.ok(v.regels[2].filament.kleur_id, 'Oranje uit de catalogus');
+  // doorgeven van een vorige regel met hetzelfde product; kleur als los woord; filament-"artikel"
+  const w = koppel(getDb(), { regels: [
+    { soort: 'filament', omschrijving: 'Sunlu Mat printfilament 1 kg - Zwart', merk: 'Sunlu', materiaal: 'PLA Matte', kleur: 'Zwart' },
+    { soort: 'filament', omschrijving: 'Sunlu Mat printfilament 1 kg - Wit', merk: '', materiaal: '', kleur: '' },
+    { soort: 'artikel', omschrijving: 'PETG filament rood 1KG', naam_voorstel: 'Rood filament' },
+    { soort: 'artikel', omschrijving: 'Magneten 6x2 mm', naam_voorstel: 'Magneet 6x2' },
+  ] }).regels;
+  assert.deepEqual([w[1].filament.merk_naam, w[1].filament.materiaal_naam, w[1].filament.kleur_naam], ['Sunlu', 'PLA Matte', 'Wit']);
+  assert.deepEqual([w[2].soort, w[2].filament.materiaal_naam, w[2].filament.kleur_naam], ['nieuw_filament', 'PETG', 'Rood']);
+  assert.equal(w[3].soort, 'nieuw_artikel');
 });
 
 let akId;
@@ -113,6 +135,13 @@ test('B4. factuur met hetzelfde ordernummer → voorstel: koppelen aan de bestel
   assert.equal(ok(await vraag('GET', '/inkoop/aankopen')).length, 1);
   const h = ok(await vraag('GET', `/historiek/aankoop/${akId}`)).map(x => x.tekst);
   assert.ok(h.some(t => /Factuur NL20260002895943 gekoppeld: 9 regels bijgewerkt \(prijs, ook in voorraad\), 1 toegevoegd/.test(t)));
+});
+
+test('B4b. bestelmail opnieuw met lege velden → bestaande artikelen herkend (voorstel)', () => {
+  // zonder leverancier (anders al "herkend" via de onthouden omschrijving)
+  const v = koppel(getDb(), { ...structuredClone(JOYBUY_BESTELMAIL_LEEG), leverancier: null });
+  assert.ok(v.regels.every(r => r.status === 'voorstel' && r.artikel_id), JSON.stringify(v.regels.map(r => [r.status, r.filament?.kleur_naam])));
+  assert.equal(v.regels[1].artikel.kleur, 'Textuurgrijs', '"Textuur grijs" = "Textuurgrijs"');
 });
 
 test('B5. dezelfde factuur nog eens → geen bestelling meer (heeft al een factuur), dubbel gemeld', async () => {

@@ -59,5 +59,8 @@ export const JOYBUY_BESTELMAIL = {
     joyMail('JOYBUYxANYCUBIC PETG-filament 1 kg - Rood', 'Rood', 1),
   ],
 };
+// Zoals het echte Gemini het deed (25-09): enkel de eerste regel volledig,
+// bij de rest merk, type en kleur leeg.
+export const JOYBUY_BESTELMAIL_LEEG = { ...JOYBUY_BESTELMAIL, regels: JOYBUY_BESTELMAIL.regels.map((r, i) => (i === 0 ? r : { ...r, merk: '', materiaal: null, kleur: '', kleur_hex: '' })) };
 // De factuur van dezelfde bestelling, zoals Gemini ze nu ook teruggeeft.
 export const JOYBUY_FACTUUR = { ...JOYBUY, documentsoort: 'factuur', bestelnummer: '1062802400000080695', leverancier: { naam: 'JINGDONG RETAIL (NETHERLANDS) B.V.', btw_nummer: 'NL861678370B01' } };

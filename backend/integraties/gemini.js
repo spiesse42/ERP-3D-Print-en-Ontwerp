@@ -55,7 +55,7 @@ Per regel:
   Een kost die door korting € 0 wordt, geef je met prijs 0.
   Een bestelbon zonder prijzen: laat prijs_per_eenheid en regeltotaal leeg (niet 0).
 - regeltotaal: het bedrag van die regel incl. btw, na korting
-Enkel bij soort "filament":
+Enkel bij soort "filament" (vul merk, materiaal en kleur voor ELKE filamentregel in, ook als de regels op elkaar lijken; de kleur staat vaak achteraan, na " - "):
 - merk: kies EXACT uit deze lijst als het past: ${merken.join(', ') || '(leeg)'}. Anders de merknaam zoals op de factuur. Een huismerkwinkel (bv. Bambu Lab store) = dat merk. "JOYBUY x ANYCUBIC" = AnyCubic.
 - materiaal: kies EXACT uit deze lijst als het past: ${materialen.join(', ') || '(leeg)'}. "PLA Basic"/"PLA-Basic" = PLA. Anders de naam zoals op de factuur.
 - kleur: vertaal naar het Nederlands en kies EXACT uit deze lijst als het past: ${kleuren.join(', ') || '(leeg)'} (bv. Black = Zwart, Charcoal = Zwart, Dark Blue = Blauw, Felgroen/Donkergroen = Groen tenzij er een preciezere kleur in de lijst staat). Past geen enkele, geef dan de Nederlandse kleurnaam (bv. "Cyaan", "Textuurgrijs").

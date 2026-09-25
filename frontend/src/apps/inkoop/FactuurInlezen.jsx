@@ -265,6 +265,7 @@ export default function FactuurInlezen() {
                     })()}
                     <div className="irij-kop">
                       <span className={`badge ${bk}`}>{bl}{r.via ? ` via ${r.via}` : ''}</span>
+                      {r.aangevuld?.length > 0 && <span className="badge b-warn" title="Gemini liet dit leeg; het ERP haalde het uit de omschrijving. Even nakijken.">{r.aangevuld.join(' + ')} uit omschrijving</span>}
                       <span className="sub oms" title={r.omschrijving}>{r.productcode && <span className="mono">{r.productcode} · </span>}{r.omschrijving}</span>
                       <button type="button" className="btn ghost" aria-label={`Regel ${i + 1} weglaten`} onClick={() => setF(x => ({ ...x, regels: x.regels.filter((_, j) => j !== i) }))}><Icoon naam="kruis" maat={14} /></button>
                     </div>

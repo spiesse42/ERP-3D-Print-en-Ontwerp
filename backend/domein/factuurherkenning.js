@@ -60,9 +60,84 @@ function artikelInfo(db, id) {
   return a ? { ...a, weergave: weergaveNaam(a) } : null;
 }
 
+// ── Aanvullen uit de omschrijving (25-09) ────────────────────────────────
+// Gemini laat bij lange lijsten van gelijkaardige regels (bestelmail Joybuy)
+// soms merk/type/kleur leeg. Dan halen we ze uit de omschrijving zelf:
+// - type (materiaal) en merk: een naam uit de catalogus die in de tekst staat
+//   ("PLA-Basic" → PLA, "JOYBUYxANYCUBIC" → AnyCubic), langste eerst
+// - kleur: het stuk na de laatste " - " zonder gewicht ("Zwart 1 kg" → Zwart),
+//   vergeleken zonder spaties ("Textuur grijs" = "Textuurgrijs"); anders een
+//   kleur uit de catalogus die als los woord in de tekst staat
+// - wat dan nog ontbreekt: van een vorige regel met hetzelfde product
+const woorden = s => ` ${String(s ?? '').toLowerCase().replace(/[-_/,()]+/g, ' ').replace(/\s+/g, ' ').trim()} `;
+const compact = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9+]/g, '');
+const zonderGewicht = s => String(s ?? '').replace(/\b\d+([.,]\d+)?\s*(kg|g|gr|mm)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+const langsteEerst = rijen => [...rijen].sort((a, b) => b.naam.length - a.naam.length);
+const productDeel = oms => { const s = String(oms ?? ''); const i = Math.max(s.lastIndexOf(' - '), s.lastIndexOf(' – ')); return i > 0 ? s.slice(0, i) : null; };
+const kleurDeel = oms => { const s = String(oms ?? ''); const i = Math.max(s.lastIndexOf(' - '), s.lastIndexOf(' – ')); return i > 0 ? zonderGewicht(s.slice(i + 3)) : null; };
+
+// zelfde naam, ook met andere spaties/streepjes ("Textuur grijs" = "Textuurgrijs", "BambuLab" = "Bambu Lab")
+function zoekCompact(db, tabel, naam) {
+  const exact = zoekOpNaam(db, tabel, naam);
+  if (exact || !tekst(naam)) return exact;
+  const c = compact(naam);
+  return c ? db.prepare(`SELECT id, naam FROM ${tabel}`).all().find(x => compact(x.naam) === c) ?? null : null;
+}
+
+export function vulAanUitOmschrijving(db, regels) {
+  const cat = {
+    merken: langsteEerst(db.prepare('SELECT naam FROM filament_merken').all()),
+    materialen: langsteEerst(db.prepare('SELECT naam FROM filament_materialen').all()),
+    kleuren: langsteEerst(db.prepare('SELECT naam FROM filament_kleuren').all()),
+  };
+  const gezien = [];   // kleuren die Gemini op dit document al gaf (bv. "Textuurgrijs")
+  const uit = regels.map(r0 => {
+    const r = { ...r0 };
+    const oms = r.omschrijving || '';
+    const w = woorden(oms);
+    const alsWoord = naam => w.includes(woorden(naam));
+    // "artikel" dat duidelijk een filamentrol is
+    if (r.soort === 'artikel' && /filament/i.test(oms) && cat.materialen.some(m => alsWoord(m.naam))) r.soort = 'filament';
+    if (r.soort !== 'filament') return r;
+    const aangevuld = [];
+    if (!tekst(r.materiaal)) {
+      const m = cat.materialen.find(x => alsWoord(x.naam));
+      if (m) { r.materiaal = m.naam; aangevuld.push('type'); }
+    }
+    if (!tekst(r.merk)) {
+      const c = compact(oms);
+      const m = cat.merken.find(x => compact(x.naam).length >= 3 && c.includes(compact(x.naam)));
+      if (m) { r.merk = m.naam; aangevuld.push('merk'); }
+    }
+    if (!tekst(r.kleur)) {
+      const deel = kleurDeel(oms);
+      const k = deel && (cat.kleuren.find(x => compact(x.naam) === compact(deel)) || gezien.find(x => compact(x.naam) === compact(deel)));
+      const losWoord = !deel ? cat.kleuren.find(x => alsWoord(x.naam)) : null;
+      const naam = k?.naam || losWoord?.naam || (deel && deel.length <= 30 ? deel.charAt(0).toUpperCase() + deel.slice(1) : null);
+      if (naam) { r.kleur = naam; aangevuld.push('kleur'); }
+    }
+    if (tekst(r.kleur)) gezien.push({ naam: tekst(r.kleur) });
+    if (aangevuld.length) r._aangevuld = aangevuld;
+    return r;
+  });
+  // doorgeven van een vorige regel met hetzelfde product (alles vóór " - kleur")
+  uit.forEach((r, i) => {
+    if (r.soort !== 'filament' || (tekst(r.merk) && tekst(r.materiaal))) return;
+    const p = compact(productDeel(r.omschrijving));
+    if (!p) return;
+    const bron = uit.slice(0, i).reverse().find(x => x.soort === 'filament' && compact(productDeel(x.omschrijving)) === p && tekst(x.merk) && tekst(x.materiaal));
+    if (!bron) return;
+    const aangevuld = new Set(r._aangevuld || []);
+    if (!tekst(r.merk)) { r.merk = bron.merk; aangevuld.add('merk'); }
+    if (!tekst(r.materiaal)) { r.materiaal = bron.materiaal; aangevuld.add('type'); }
+    r._aangevuld = [...aangevuld];
+  });
+  return uit;
+}
+
 export function koppel(db, g) {
   const lev = zoekLeverancier(db, g?.leverancier);
-  const regels = (Array.isArray(g?.regels) ? g.regels : []).map((r, i) => {
+  const regels = vulAanUitOmschrijving(db, Array.isArray(g?.regels) ? g.regels : []).map((r, i) => {
     const aantal = Number(r.aantal) > 0 ? rond(Number(r.aantal)) : 1;
     const prijs = Number.isFinite(Number(r.prijs_per_eenheid)) && r.prijs_per_eenheid !== null ? rond(Number(r.prijs_per_eenheid))
       : Number.isFinite(Number(r.regeltotaal)) && r.regeltotaal !== null ? rond(Number(r.regeltotaal) / aantal) : null;
@@ -77,14 +152,15 @@ export function koppel(db, g) {
       if (hit) return { ...basis, status: 'herkend', soort: 'artikel', artikel_id: hit.artikel_id, artikel: artikelInfo(db, hit.artikel_id), via: viaCode ? 'productcode' : 'omschrijving' };
     }
     if (r.soort === 'filament') {
-      const merk = zoekOpNaam(db, 'filament_merken', r.merk);
-      const mat = zoekOpNaam(db, 'filament_materialen', r.materiaal);
-      const kleur = zoekOpNaam(db, 'filament_kleuren', r.kleur);
+      const merk = zoekCompact(db, 'filament_merken', r.merk);
+      const mat = zoekCompact(db, 'filament_materialen', r.materiaal);
+      const kleur = zoekCompact(db, 'filament_kleuren', r.kleur);
       const pg = merk && mat ? db.prepare('SELECT id, verkoopprijs_per_kg FROM filament_types WHERE merk_id = ? AND materiaal_id = ?').get(merk.id, mat.id) : null;
       const art = pg && kleur ? db.prepare(`SELECT id FROM artikelen WHERE type = 'filament' AND filament_type_id = ? AND kleur_id = ?`).get(pg.id, kleur.id) : null;
-      if (art) return { ...basis, status: 'voorstel', soort: 'artikel', artikel_id: art.id, artikel: artikelInfo(db, art.id) };
+      const aangevuld = r._aangevuld?.length ? { aangevuld: r._aangevuld } : {};
+      if (art) return { ...basis, ...aangevuld, status: 'voorstel', soort: 'artikel', artikel_id: art.id, artikel: artikelInfo(db, art.id) };
       return {
-        ...basis, status: 'nieuw', soort: 'nieuw_filament',
+        ...basis, ...aangevuld, status: 'nieuw', soort: 'nieuw_filament',
         filament: {
           merk_id: merk?.id ?? null, merk_naam: merk?.naam ?? tekst(r.merk),
           materiaal_id: mat?.id ?? null, materiaal_naam: mat?.naam ?? tekst(r.materiaal),
@@ -163,7 +239,7 @@ function zoekOfMaak(db, tabel, id, naam, label, extra = null) {
   if (id) return Number(id);
   const n = tekst(naam);
   if (!n) throw new DomeinFout(`Kies of vul ${label} in`);
-  const bestaand = db.prepare(`SELECT id FROM ${tabel} WHERE naam = ? COLLATE NOCASE`).get(n);
+  const bestaand = zoekCompact(db, tabel, n);
   if (bestaand) return bestaand.id;
   if (tabel === 'filament_kleuren') {
     const hex = /^#[0-9a-f]{6}$/i.test(extra || '') ? extra : '#888888';
