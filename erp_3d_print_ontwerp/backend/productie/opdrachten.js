@@ -132,8 +132,8 @@ export function bevestig(db, o, aantalGoed) {
   const n = getal(aantalGoed, 'Aantal goede stuks');
   // productiekost per goed stuk vastleggen (stap 6c): echte kost + arbeid apart
   const pk = productiekost(db, o, n);
-  db.prepare(`UPDATE printopdrachten SET aantal_goed = ?, voltooid_op = datetime('now'), productiekost_stuk = ?, arbeid_stuk = ?, kost_onvolledig = ? WHERE id = ?`)
-    .run(n, pk.per_stuk, pk.arbeid_stuk, pk.onvolledig ? 1 : 0, o.id);
+  db.prepare(`UPDATE printopdrachten SET aantal_goed = ?, voltooid_op = datetime('now'), productiekost_stuk = ?, arbeid_stuk = ?, kost_onvolledig = ?, kost_ontbreekt = ? WHERE id = ?`)
+    .run(n, pk.per_stuk, pk.arbeid_stuk, pk.onvolledig ? 1 : 0, pk.ontbreekt.join('; ') || null, o.id);
   const nl = v => String(v).replace('.', ',');
   let extra = '';
   // eigen product → goede stuks in voorraad (reden productie), aan de productiekost
@@ -166,10 +166,32 @@ function draaiBoekingTerug(db, o) {
     mut.run(p.artikel_id, p.id, -p.aantal_resterend, 'correctie', 'printopdracht', o.id, `Printopdracht "${o.naam}" heropend`);
   }
 }
+// Productiekost opnieuw berekenen voor een bevestigde opdracht (25-09): na
+// het aanvullen van een inkoopprijs, tarief of kWh. Een eigen product in
+// voorraad krijgt de nieuwe kost als partijprijs.
+export function herbereken(db, o) {
+  if (!o.voltooid_op) throw new DomeinFout('Enkel een bevestigde printopdracht heeft een productiekost.');
+  const pk = productiekost(db, o, o.aantal_goed);
+  db.prepare('UPDATE printopdrachten SET productiekost_stuk = ?, arbeid_stuk = ?, kost_onvolledig = ?, kost_ontbreekt = ? WHERE id = ?')
+    .run(pk.per_stuk, pk.arbeid_stuk, pk.onvolledig ? 1 : 0, pk.ontbreekt.join('; ') || null, o.id);
+  if (pk.per_stuk != null) {
+    db.prepare(`UPDATE voorraad_partijen SET prijs_per_eenheid = ? WHERE id IN (SELECT partij_id FROM voorraad_mutaties
+      WHERE bron_type = 'printopdracht' AND bron_id = ? AND reden = 'productie' AND aantal > 0)`).run(Math.round(pk.per_stuk * 10000) / 10000, o.id);
+  }
+  return pk;
+}
+// Alle bevestigde opdrachten met een onvolledige kost (Marges → herberekenen).
+export function herberekenOnvolledige(db) {
+  const ids = db.prepare('SELECT id FROM printopdrachten WHERE voltooid_op IS NOT NULL AND kost_onvolledig = 1').all().map(r => r.id);
+  let nuVolledig = 0;
+  for (const id of ids) if (!herbereken(db, leesOpdracht(db, id)).onvolledig) nuVolledig += 1;
+  return { bekeken: ids.length, volledig: nuVolledig };
+}
+
 export function heropen(db, o) {
   if (o.status !== 'voltooid' && o.status !== 'geannuleerd') throw new DomeinFout('Deze printopdracht is niet afgesloten');
   draaiBoekingTerug(db, o);
-  db.prepare('UPDATE printopdrachten SET aantal_goed = NULL, voltooid_op = NULL, geannuleerd_op = NULL, productiekost_stuk = NULL, arbeid_stuk = NULL, kost_onvolledig = 0, volgorde = ? WHERE id = ?')
+  db.prepare('UPDATE printopdrachten SET aantal_goed = NULL, voltooid_op = NULL, geannuleerd_op = NULL, productiekost_stuk = NULL, arbeid_stuk = NULL, kost_onvolledig = 0, kost_ontbreekt = NULL, volgorde = ? WHERE id = ?')
     .run(volgendeVolgorde(db, o.printer_id), o.id);
 }
 // Een geplande opdracht (nog niets geprint) van een gestart dossier volgt de

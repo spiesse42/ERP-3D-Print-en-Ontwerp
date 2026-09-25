@@ -6,7 +6,11 @@ import { ControlePaneel, Veld, Fout } from '../../schil/Weergaven.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { euro, naarInvoer, uitInvoer } from '../../lib/formaat.js';
 
-// Factuur of bonnetje inlezen (stap 3c):
+// Factuur, bonnetje of BESTELBON inlezen (stap 3c; bestelbon 25-09):
+// - bestelbon (PDF, foto of geplakte tekst van de bestelmail) → aankoop
+//   "besteld" met het bestelnummer, prijzen volgen met de factuur
+// - factuur met een gekend bestelnummer → koppelen aan die aankoop
+//   (prijzen per regel, ook van wat al ontvangen is)
 // 1. bestand kiezen → Gemini leest → het ERP koppelt aan wat het kent
 // 2. nakijken naast het document: per regel herkend / voorstel / nieuw / kost
 // 3. "Aankoop aanmaken": alles in één keer (leverancier, nieuwe artikelen,
@@ -39,6 +43,7 @@ export default function FactuurInlezen() {
   const [f, setF] = useState(null);                 // het nakijkformulier
   const [bezig, setBezig] = useState(false);
   const [sleep, setSleep] = useState(false);
+  const [plak, setPlak] = useState('');
   const { data: leveranciers } = useData(fase === 'nakijken' ? '/leveranciers' : null);
   const { data: artikelen } = useData(fase === 'nakijken' ? '/voorraad/artikelen' : null);
   const { data: categorieen } = useData(fase === 'nakijken' ? '/voorraad/categorieen' : null);
@@ -49,18 +54,20 @@ export default function FactuurInlezen() {
 
   useEffect(() => { zetVuil(fase === 'nakijken'); return () => zetVuil(false); }, [fase, zetVuil]);
 
-  async function leesIn(bestand) {
-    if (!bestand) return;
+  async function leesIn(bestand, tekst = null) {
+    if (!bestand && !tekst) return;
     setFout(null); setFase('lezen');
     try {
-      const fd = new FormData(); fd.append('bestand', bestand);
+      const fd = new FormData();
+      if (tekst) fd.append('tekst', tekst); else fd.append('bestand', bestand);
       const r = await api.upload('/inkoop/inlezen', fd);
       const v = r.voorstel;
       setLees({ token: r.token, bestandsnaam: r.bestandsnaam, mimetype: r.mimetype, model: r.model, hoofdmodel: r.hoofdmodel, bron: r.bron || 'ocr' });
       setF({
         leverancier: v.leverancier, factuurnummer: v.factuurnummer || '', datum: v.datum || '', totaal: v.totaal_factuur,
-        dubbel: v.dubbel, toch_dubbel: false, meteen_ontvangen: true, locatie: '', prijzenKg: {},
-        regels: v.regels.map((r0, i) => ({ ...r0, sleutel: i, aantal: naarInvoer(r0.aantal), prijs_per_eenheid: naarInvoer(r0.prijs_per_eenheid), artikel_id: r0.artikel_id ?? '' })),
+        documentsoort: v.documentsoort || 'factuur', bestelnummer: v.bestelnummer || '', bestelling: v.bestelling || null, koppelen: !!v.bestelling,
+        dubbel: v.dubbel, toch_dubbel: false, meteen_ontvangen: !v.bestelling && v.documentsoort !== 'bestelbon', locatie: '', prijzenKg: {},
+        regels: v.regels.map((r0, i) => ({ ...r0, sleutel: i, aantal: naarInvoer(r0.aantal), prijs_per_eenheid: naarInvoer(r0.prijs_per_eenheid), artikel_id: r0.artikel_id ?? '', aankoop_regel_id: r0.aankoop_regel_id ?? '' })),
       });
       setFase('nakijken');
     } catch (e) { setFout(e.message); setFase('kiezen'); }
@@ -97,10 +104,14 @@ export default function FactuurInlezen() {
     if (ontbreekt) { melding(`Vul de verkoopprijs per kg in voor de nieuwe prijsgroep ${ontbreekt[1]}.`, 'fout'); return; }
     setBezig(true);
     try {
+      const bestelbon = f.documentsoort === 'bestelbon';
+      const koppel = !bestelbon && f.bestelling && f.koppelen;
       const body = {
         leverancier: f.leverancier.id ? { id: f.leverancier.id } : f.leverancier,
-        factuurnummer: f.factuurnummer, datum: f.datum, meteen_ontvangen: f.meteen_ontvangen, locatie: f.locatie, toch_dubbel: f.toch_dubbel,
+        documentsoort: f.documentsoort, bestelnummer: f.bestelnummer, aankoop_id: koppel ? f.bestelling.id : null,
+        factuurnummer: bestelbon ? null : f.factuurnummer, datum: f.datum, meteen_ontvangen: !bestelbon && f.meteen_ontvangen, locatie: f.locatie, toch_dubbel: f.toch_dubbel,
         regels: f.regels.map(r => ({
+          aankoop_regel_id: koppel && r.aankoop_regel_id ? Number(r.aankoop_regel_id) : null,
           soort: r.soort, artikel_id: r.artikel_id || null, nieuw_artikel: r.nieuw_artikel,
           filament: r.filament ? { ...r.filament, verkoopprijs_per_kg: uitInvoer(f.prijzenKg[sleutelGroep(r.filament)]) } : undefined,
           omschrijving: r.omschrijving, productcode: r.productcode, aantal: uitInvoer(r.aantal), prijs_per_eenheid: uitInvoer(r.prijs_per_eenheid),
@@ -108,7 +119,10 @@ export default function FactuurInlezen() {
       };
       const ak = await api.post(`/inkoop/inlezen/${lees.token}/bevestig`, body);
       zetVuil(false);
-      melding(`Aankoop ${ak.nummer} aangemaakt${f.meteen_ontvangen ? ' en in voorraad ontvangen' : ''}.`);
+      melding(ak.gekoppeld
+        ? `Factuur gekoppeld aan ${ak.nummer}: ${ak.bijgewerkt} regel${ak.bijgewerkt === 1 ? '' : 's'} bijgewerkt${ak.toegevoegd ? `, ${ak.toegevoegd} toegevoegd` : ''}.`
+        : bestelbon ? `Bestelling ${ak.nummer} aangemaakt (besteld). Ontvang de rollen als ze binnen zijn; de factuur koppel je later aan deze aankoop.`
+        : `Aankoop ${ak.nummer} aangemaakt${f.meteen_ontvangen ? ' en in voorraad ontvangen' : ''}.`);
       navigeer(`/inkoop/aankopen/${ak.id}`);
     } catch (e) { melding(e.message, 'fout'); }
     finally { setBezig(false); }
@@ -117,7 +131,7 @@ export default function FactuurInlezen() {
   if (fase !== 'nakijken') {
     return (
       <>
-        <ControlePaneel kruimels={[{ label: 'Factuur inlezen' }]} />
+        <ControlePaneel kruimels={[{ label: 'Factuur of bestelbon inlezen' }]} />
         <div className="page">
           {integraties && !integraties.gemini && <Fout tekst="De Gemini-sleutel is niet ingesteld (GEMINI_API_KEY in de add-on-configuratie). Zonder sleutel kan een PDF of foto niet uitgelezen worden; een UBL-bestand (.xml) wel." />}
           {fout && <Fout tekst={fout} />}
@@ -125,15 +139,22 @@ export default function FactuurInlezen() {
             onDragOver={e => { e.preventDefault(); setSleep(true); }} onDragLeave={() => setSleep(false)}
             onDrop={e => { e.preventDefault(); setSleep(false); leesIn(e.dataTransfer.files?.[0]); }}>
             {fase === 'lezen' ? <>
-              <b>Gemini leest de factuur…</b>
+              <b>Gemini leest het document…</b>
               <span className="sub">Dat duurt meestal 5 à 20 seconden. Is Gemini druk, dan probeert het ERP het vanzelf opnieuw en eventueel met een reservemodel (kan tot een minuut duren).</span>
             </> : <>
               <Icoon naam="plus" maat={28} />
-              <b>Sleep een factuur of bonnetje hierheen</b>
-              <span className="sub">of klik om een PDF, foto of UBL-bestand (.xml, Peppol/Accountable-export) te kiezen (max. 20 MB)</span>
+              <b>Sleep een factuur, bonnetje of bestelbon hierheen</b>
+              <span className="sub">of klik om een PDF, foto/screenshot of UBL-bestand (.xml, Peppol/Accountable-export) te kiezen (max. 20 MB)</span>
             </>}
           </label>
           <input id="factuurbestand" type="file" className="sr-only" accept="application/pdf,image/*,.xml,application/xml,text/xml" disabled={fase === 'lezen'} onChange={e => leesIn(e.target.files?.[0])} />
+          <div className="plakvak">
+            <label className="lbl" htmlFor="plaktekst">Of plak de tekst van een bestelmail (bv. "Bedankt voor uw bestelling")</label>
+            <textarea id="plaktekst" className="inp" rows={5} value={plak} disabled={fase === 'lezen'} onChange={e => setPlak(e.target.value)}
+              placeholder="Selecteer in je mail alles (Ctrl+A), kopieer (Ctrl+C) en plak het hier (Ctrl+V)." />
+            <div><button type="button" className="btn" disabled={fase === 'lezen' || plak.trim().length < 20} onClick={() => leesIn(null, plak)}>Tekst inlezen</button></div>
+          </div>
+          <p className="note" style={{ margin: 0 }}><b>Bestelbon:</b> het ERP maakt een aankoop "besteld" met het bestelnummer (prijzen volgen met de factuur). Lees je later de factuur in, dan herkent het ERP de bestelling aan het bestel-/ordernummer en koppelt de factuur aan dezelfde aankoop.</p>
           <p className="note" style={{ margin: 0 }}>Gemini leest de gegevens (een UBL-bestand leest het ERP zelf, zonder Gemini); het ERP koppelt ze aan je leveranciers en artikelen. Je kijkt alles na voor er iets bewaard wordt. Wat je bevestigt (productcodes, omschrijvingen), wordt onthouden voor de volgende factuur van die leverancier.</p>
         </div>
       </>
@@ -141,24 +162,27 @@ export default function FactuurInlezen() {
   }
 
   const levKeuze = f.leverancier.id ? String(f.leverancier.id) : '__nieuw__';
+  const bestelbonModus = f.documentsoort === 'bestelbon';
+  const koppelModus = !bestelbonModus && !!f.bestelling && f.koppelen;
   const tellers = f.regels.reduce((t, r) => ({ ...t, [r.status || 'nieuw']: (t[r.status || 'nieuw'] || 0) + 1 }), {});
   return (
     <>
-      <ControlePaneel kruimels={[{ label: 'Factuur inlezen', naar: '/inkoop/inlezen' }, { label: lees.bestandsnaam }]} />
+      <ControlePaneel kruimels={[{ label: 'Factuur of bestelbon inlezen', naar: '/inkoop/inlezen' }, { label: lees.bestandsnaam }]} />
       <div className="inlees">
         <div className="voorbeeld">
-          {lees.mimetype === 'application/pdf' || lees.mimetype === 'application/xml'
+          {lees.mimetype === 'application/pdf' || lees.mimetype === 'application/xml' || lees.mimetype === 'text/plain'
             ? <iframe title="Factuur" src={`${BASE}/inkoop/inlezen/${lees.token}/bestand`} />
             : <img alt="Factuur" src={`${BASE}/inkoop/inlezen/${lees.token}/bestand`} />}
-          <a className="linkish" href={`${BASE}/inkoop/inlezen/${lees.token}/bestand`} target="_blank" rel="noopener noreferrer">Factuur in een nieuw tabblad openen</a>
+          <a className="linkish" href={`${BASE}/inkoop/inlezen/${lees.token}/bestand`} target="_blank" rel="noopener noreferrer">Document in een nieuw tabblad openen</a>
         </div>
         <div className="sheet">
           <div className="sheet-bar">
             <div className="links">
-              <button type="button" className="btn terug" onClick={() => { zetVuil(false); setFase('kiezen'); setF(null); }}><Icoon naam="pijlLinks" maat={16} /> Andere factuur</button>
+              <button type="button" className="btn terug" onClick={() => { zetVuil(false); setFase('kiezen'); setF(null); }}><Icoon naam="pijlLinks" maat={16} /> Ander document</button>
             </div>
             <div className="btns">
-              <button type="button" className="btn primary" disabled={bezig || (f.dubbel && !f.toch_dubbel)} onClick={bevestig}>{bezig ? 'Bezig…' : 'Aankoop aanmaken'}</button>
+              <button type="button" className="btn primary" disabled={bezig || (f.dubbel && !f.toch_dubbel && !koppelModus)} onClick={bevestig}>
+                {bezig ? 'Bezig…' : bestelbonModus ? 'Bestelling aanmaken' : koppelModus ? `Koppelen aan ${f.bestelling.nummer}` : 'Aankoop aanmaken'}</button>
             </div>
           </div>
           <div className="sheet-head">
@@ -172,9 +196,15 @@ export default function FactuurInlezen() {
               </div>
             </div>
           </div>
-          {f.dubbel && (
+          {f.bestelling && !bestelbonModus && (
+            <div className="waarschuwing info-lint" style={{ display: 'block' }} role="status">
+              <b>Deze factuur hoort bij bestelling {f.bestelling.extern_bestelnummer}</b>: aankoop {f.bestelling.nummer} van {f.bestelling.leverancier}, besteld op {f.bestelling.datum.split('-').reverse().join('/')} ({f.bestelling.status === 'besteld' ? 'nog niets ontvangen' : f.bestelling.status === 'deels' ? 'deels ontvangen' : f.bestelling.status}).
+              <label className="vinkje" style={{ marginTop: 6 }}><input type="checkbox" checked={f.koppelen} onChange={e => setF(x => ({ ...x, koppelen: e.target.checked }))} /> Factuur aan {f.bestelling.nummer} koppelen (prijzen per regel bijwerken, ook van wat al ontvangen is), i.p.v. een nieuwe aankoop</label>
+            </div>
+          )}
+          {f.dubbel && !koppelModus && (
             <div className="waarschuwing">
-              <b>Deze factuur werd al ingelezen</b> ({f.dubbel.nummer}).
+              <b>{bestelbonModus ? 'Deze bestelling werd al ingelezen' : 'Deze factuur werd al ingelezen'}</b> ({f.dubbel.nummer}).
               <label className="vinkje"><input type="checkbox" checked={f.toch_dubbel} onChange={e => setF(x => ({ ...x, toch_dubbel: e.target.checked }))} /> Toch opnieuw inlezen</label>
             </div>
           )}
@@ -190,16 +220,25 @@ export default function FactuurInlezen() {
                 </select>
                 {!f.leverancier.id && <input className="inp" aria-label="Naam nieuwe leverancier" value={f.leverancier.naam || ''} onChange={e => setF(x => ({ ...x, leverancier: { ...x.leverancier, naam: e.target.value } }))} />}
               </Veld>
-              <Veld label="Factuurnummer" id="i-fnr" hint="Enkel intern."><input id="i-fnr" className="inp" value={f.factuurnummer} onChange={e => setF(x => ({ ...x, factuurnummer: e.target.value }))} /></Veld>
-              <Veld label="Datum" id="i-datum"><input id="i-datum" type="date" className="inp" value={f.datum} onChange={e => setF(x => ({ ...x, datum: e.target.value }))} /></Veld>
+              <Veld label="Document">
+                <div className="seg" role="group" aria-label="Soort document">
+                  <button type="button" aria-pressed={!bestelbonModus} onClick={() => setF(x => ({ ...x, documentsoort: 'factuur' }))}>Factuur</button>
+                  <button type="button" aria-pressed={bestelbonModus} onClick={() => setF(x => ({ ...x, documentsoort: 'bestelbon' }))}>Bestelbon</button>
+                </div>
+              </Veld>
+              <Veld label="Bestelnummer" id="i-bnr" hint="Bestel-/ordernummer van de webshop: daarmee koppelt de factuur later aan deze aankoop."><input id="i-bnr" className="inp" value={f.bestelnummer} onChange={e => setF(x => ({ ...x, bestelnummer: e.target.value }))} /></Veld>
+              {!bestelbonModus && <Veld label="Factuurnummer" id="i-fnr" hint="Enkel intern."><input id="i-fnr" className="inp" value={f.factuurnummer} onChange={e => setF(x => ({ ...x, factuurnummer: e.target.value }))} /></Veld>}
+              <Veld label={bestelbonModus ? 'Besteldatum' : 'Datum'} id="i-datum"><input id="i-datum" type="date" className="inp" value={f.datum} onChange={e => setF(x => ({ ...x, datum: e.target.value }))} /></Veld>
             </div>
             <div>
-              <Veld label="Totaal factuur"><b className="num">{euro(f.totaal)}</b></Veld>
-              <Veld label="Som van de regels"><span className="num">{euro(Math.round(som * 100) / 100)}</span> {klopt === true ? <span className="badge b-pos">klopt</span> : klopt === false ? <span className="badge b-warn">verschil {euro(Math.round((f.totaal - som) * 100) / 100)}</span> : null}</Veld>
-              <Veld label="Voorraad">
-                <label className="vinkje" htmlFor="i-ontv"><input id="i-ontv" type="checkbox" checked={f.meteen_ontvangen} onChange={e => setF(x => ({ ...x, meteen_ontvangen: e.target.checked }))} /> Meteen in voorraad ontvangen</label>
-              </Veld>
-              {f.meteen_ontvangen && <Veld label="Locatie" id="i-loc"><input id="i-loc" className="inp" value={f.locatie} placeholder="optioneel" onChange={e => setF(x => ({ ...x, locatie: e.target.value }))} /></Veld>}
+              {!bestelbonModus && <Veld label="Totaal factuur"><b className="num">{euro(f.totaal)}</b></Veld>}
+              {!bestelbonModus && <Veld label="Som van de regels"><span className="num">{euro(Math.round(som * 100) / 100)}</span> {klopt === true ? <span className="badge b-pos">klopt</span> : klopt === false ? <span className="badge b-warn">verschil {euro(Math.round((f.totaal - som) * 100) / 100)}</span> : null}</Veld>}
+              {bestelbonModus ? <Veld label="Voorraad"><span className="sub">Nog niets: ontvang de rollen als ze binnen zijn (Inkoop → aankoop → Ontvangen). Prijzen mogen leeg blijven; ze komen met de factuur.</span></Veld> : (
+                <Veld label="Voorraad">
+                  <label className="vinkje" htmlFor="i-ontv"><input id="i-ontv" type="checkbox" checked={f.meteen_ontvangen} onChange={e => setF(x => ({ ...x, meteen_ontvangen: e.target.checked }))} /> {koppelModus ? 'Wat nog openstaat meteen in voorraad ontvangen' : 'Meteen in voorraad ontvangen'}</label>
+                </Veld>
+              )}
+              {!bestelbonModus && f.meteen_ontvangen && <Veld label="Locatie" id="i-loc"><input id="i-loc" className="inp" value={f.locatie} placeholder="optioneel" onChange={e => setF(x => ({ ...x, locatie: e.target.value }))} /></Veld>}
             </div>
           </div>
 
@@ -211,6 +250,19 @@ export default function FactuurInlezen() {
                 const a = uitInvoer(r.aantal), p = uitInvoer(r.prijs_per_eenheid);
                 return (
                   <div className="irij" key={r.sleutel}>
+                    {koppelModus && (() => {
+                      const o = f.bestelling.regels.find(x => String(x.id) === String(r.aankoop_regel_id));
+                      return (
+                        <div className="irij-koppel">
+                          <label className="sub" htmlFor={`i-kop-${i}`}>Hoort bij</label>
+                          <select id={`i-kop-${i}`} className="inp" aria-label={`Bestelregel voor regel ${i + 1}`} value={String(r.aankoop_regel_id || '')} onChange={e => zetRegel(i, { aankoop_regel_id: e.target.value })}>
+                            <option value="">Nieuwe regel (staat niet op de bestelling)</option>
+                            {f.bestelling.regels.map(x => <option key={x.id} value={x.id}>{x.weergave} · {naarInvoer(x.aantal)} st.{x.ontvangen ? ` (${naarInvoer(x.ontvangen)} ontvangen)` : ''}</option>)}
+                          </select>
+                          {o && <span className="sub">prijs {o.prijs_per_eenheid == null ? 'nog leeg' : euro(o.prijs_per_eenheid)} → <b>{p === null || Number.isNaN(p) ? '—' : euro(p)}</b></span>}
+                        </div>
+                      );
+                    })()}
                     <div className="irij-kop">
                       <span className={`badge ${bk}`}>{bl}{r.via ? ` via ${r.via}` : ''}</span>
                       <span className="sub oms" title={r.omschrijving}>{r.productcode && <span className="mono">{r.productcode} · </span>}{r.omschrijving}</span>
@@ -259,7 +311,7 @@ export default function FactuurInlezen() {
                       <div className="getallen">
                         <input className="inp num" inputMode="decimal" aria-label={`Aantal regel ${i + 1}`} value={r.aantal} onChange={e => zetRegel(i, { aantal: e.target.value })} />
                         <span className="sub">×</span>
-                        <input className="inp num" inputMode="decimal" aria-label={`Prijs regel ${i + 1}`} value={r.prijs_per_eenheid} onChange={e => zetRegel(i, { prijs_per_eenheid: e.target.value })} />
+                        <input className="inp num" inputMode="decimal" aria-label={`Prijs regel ${i + 1}`} value={r.prijs_per_eenheid} placeholder={bestelbonModus ? 'volgt' : undefined} onChange={e => zetRegel(i, { prijs_per_eenheid: e.target.value })} />
                         <span className="num sub">= {a > 0 && p >= 0 && p !== null ? euro(Math.round(a * p * 100) / 100) : '—'}</span>
                       </div>
                     </div>

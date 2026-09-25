@@ -6,7 +6,7 @@ export const APPS = [
   { id: 'productie',    naam: 'Productie',    icoon: 'nozzle',   kleur: '#3a6ea8', klaar: true,
     menu: [['', 'Printers'], ['opdrachten', 'Printopdrachten'], ['runs', 'Runs']] },
   { id: 'inkoop',       naam: 'Inkoop',       icoon: 'kar',      kleur: '#6b7d3a', klaar: true,
-    menu: [['aankopen', 'Aankopen'], ['inlezen', 'Factuur inlezen'], ['leveranciers', 'Leveranciers']] },
+    menu: [['aankopen', 'Aankopen'], ['inlezen', 'Factuur / bestelbon inlezen'], ['leveranciers', 'Leveranciers']] },
   { id: 'voorraad',     naam: 'Voorraad',     icoon: 'spoel',    kleur: '#8a5a2b', klaar: true,
     menu: [['artikelen', 'Artikelen'], ['te-bestellen', 'Te bestellen'], ['mutaties', 'Mutaties'], ['telling', 'Voorraadtelling'], ['categorieen', 'Categorieën']] },
   { id: 'klanten',      naam: 'Klanten',      icoon: 'mensen',   kleur: '#7a4f86', klaar: true,

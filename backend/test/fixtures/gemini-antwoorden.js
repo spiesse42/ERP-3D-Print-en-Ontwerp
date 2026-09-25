@@ -41,3 +41,23 @@ export const JOYBUY = {
     { soort: 'kost', omschrijving: 'Freight', aantal: 1, prijs_per_eenheid: 0, regeltotaal: 0 },
   ],
 };
+
+// Bestelmail van Joybuy (25-09-2026, uit een screenshot): geen prijzen,
+// Nederlandse omschrijvingen, bestelnummer = ordernummer op de factuur.
+const joyMail = (oms, kleur, aantal) => ({ soort: 'filament', omschrijving: oms, aantal, merk: oms.includes('eSUN') ? 'eSUN' : 'AnyCubic', materiaal: oms.includes('PETG') ? 'PETG' : 'PLA', kleur, kleur_hex: '#888888' });
+export const JOYBUY_BESTELMAIL = {
+  documentsoort: 'bestelbon', leverancier: { naam: 'Joybuy', website: 'joybuy.nl' }, bestelnummer: '1062802400000080695', datum: '2026-09-21',
+  regels: [
+    joyMail('JOYBUY x ANYCUBIC PLA Basic printfilament, 1 kg spoel - Cyaan', 'Cyaan', 1),
+    joyMail('JOYBUY x ANYCUBIC PLA Basic printfilament, 1 kg spoel - Textuur grijs', 'Textuurgrijs', 2),
+    joyMail('JOYBUY x ANYCUBIC PLA Basic printfilament, 1 kg spoel - Oranje', 'Oranje', 1),
+    joyMail('JOYBUY x ANYCUBIC PLA Basic printfilament, 1 kg spoel - Blauw', 'Blauw', 1),
+    joyMail('JOYBUY x ANYCUBIC PLA Basic printfilament, 1 kg spoel - Paars', 'Paars', 1),
+    joyMail('eSUN PLA-Basic 3D-printfilament 1,75 mm - Zwart 1 kg', 'Zwart', 2),
+    joyMail('eSUN PLA-Basic 3D-printfilament 1,75 mm - Geel 1 kg', 'Geel', 1),
+    joyMail('eSUN PLA-Basic 3D-printfilament 1,75 mm - Wit 1 kg', 'Wit', 2),
+    joyMail('JOYBUYxANYCUBIC PETG-filament 1 kg - Rood', 'Rood', 1),
+  ],
+};
+// De factuur van dezelfde bestelling, zoals Gemini ze nu ook teruggeeft.
+export const JOYBUY_FACTUUR = { ...JOYBUY, documentsoort: 'factuur', bestelnummer: '1062802400000080695', leverancier: { naam: 'JINGDONG RETAIL (NETHERLANDS) B.V.', btw_nummer: 'NL861678370B01' } };

@@ -27,6 +27,15 @@ export default function ProductieTab({ d, vuil, herlaad }) {
     setBezig(false);
   }
   const runs = d.productie.te_koppelen_runs || [];
+  async function herbereken(o) {
+    setBezig(true);
+    try {
+      const r = await api.post(`/productie/opdrachten/${o.id}/herbereken`);
+      melding(r.kost?.onvolledig ? `Nog steeds onvolledig — ontbreekt: ${r.kost.ontbreekt.join(' · ')}` : 'Productiekost herberekend: nu volledig.', r.kost?.onvolledig ? 'fout' : undefined);
+      await herlaad();
+    } catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
   const kan = d.acties.printopdracht;
   const klaar = async () => { setDialoog(null); await herlaad(); };
   function plan(x) {
@@ -68,6 +77,12 @@ export default function ProductieTab({ d, vuil, herlaad }) {
             {x.te_plannen > 0 && d.gestart_op && !x.printer_id && (
               <div className="waarschuwing" style={{ margin: '8px 0 0' }} role="status">Nog {aantal(x.te_plannen)} te plannen: kies een printer op de regel (tabblad Regels), dan komt de printopdracht vanzelf.</div>
             )}
+            {x.opdrachten.filter(o => o.voltooid_op && o.kost_onvolledig).map(o => (
+              <div key={`k${o.id}`} className="waarschuwing" style={{ margin: '8px 0 0' }} role="status">
+                <span>Productiekost van "{o.naam}" onvolledig{o.kost_ontbreekt ? <> — ontbreekt: {o.kost_ontbreekt}</> : ''}.</span>
+                <button type="button" className="btn klein" style={{ marginLeft: 'auto' }} disabled={bezig} onClick={() => herbereken(o)}>Kost herberekenen</button>
+              </div>
+            ))}
             {x.te_veel > 0 && (
               <div className="waarschuwing" style={{ margin: '8px 0 0' }} role="status">{aantal(x.te_veel)} stuk{x.te_veel === 1 ? '' : 's'} meer geprint of in de maak dan besteld.</div>
             )}

@@ -11,7 +11,8 @@ import { haStaten, haDienst, haCameraBeeld, haIngesteld, HaFout, meterOp } from 
 import { leesPrinter, entiteitenVan, KOPPELINGEN } from '../productie/adapters.js';
 import { liveCache, openRun, kwhVanRun, kwhUitMetingen, startRun, sluitRun, tik, INTERVAL_MS, vulAan } from '../productie/wachter.js';
 import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wijzigOpdracht, verschuif, bevestig, heropen, annuleer, verwijder,
-  voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer } from '../productie/opdrachten.js';
+  voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer, herbereken } from '../productie/opdrachten.js';
+import { productiekost } from '../productie/kost.js';
 import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct } from '../productie/materiaal.js';
 
 const r = Router();
@@ -238,6 +239,20 @@ r.post('/opdrachten/:id/bevestig', metFouten((req, res) => {
   const o = opdracht(db, req.params.id);
   db.transaction(() => { bevestig(db, o, req.body?.aantal_goed); if (o.dossier_id) synchroniseer(db, o.dossier_id); })();
   res.json(leesOpdracht(db, o.id));
+}));
+// Productiekost: vooraf bekijken (bevestigvenster: wat ontbreekt?) en
+// achteraf opnieuw berekenen (na het aanvullen van inkoopprijs, tarief, kWh).
+r.get('/opdrachten/:id/kost-voorbeeld', metFouten((req, res) => {
+  const db = getDb();
+  const o = opdracht(db, req.params.id);
+  const n = parseFloat(String(req.query.aantal_goed ?? o.aantal).replace(',', '.'));
+  res.json(productiekost(db, o, Number.isFinite(n) ? n : o.aantal));
+}));
+r.post('/opdrachten/:id/herbereken', metFouten((req, res) => {
+  const db = getDb();
+  const o = opdracht(db, req.params.id);
+  const pk = db.transaction(() => herbereken(db, o))();
+  res.json({ ...leesOpdracht(db, o.id), kost: pk });
 }));
 r.post('/opdrachten/:id/heropen', metFouten((req, res) => {
   const db = getDb();

@@ -42,6 +42,17 @@ export function kostPerKg(db, { artikel_id = null, filament_type_id = null }) {
   return null;
 }
 
+// Leesbare naam voor de melding "inkoopprijs filament …".
+function filamentNaam(db, m) {
+  const r = m.artikel_id
+    ? db.prepare(`SELECT COALESCE(a.naam, fm.naam || ' ' || mat.naam || ' · ' || k.naam) AS naam FROM artikelen a
+        LEFT JOIN filament_types ft ON ft.id = a.filament_type_id LEFT JOIN filament_merken fm ON fm.id = ft.merk_id
+        LEFT JOIN filament_materialen mat ON mat.id = ft.materiaal_id LEFT JOIN filament_kleuren k ON k.id = a.kleur_id WHERE a.id = ?`).get(m.artikel_id)
+    : db.prepare(`SELECT fm.naam || ' ' || mat.naam AS naam FROM filament_types ft JOIN filament_merken fm ON fm.id = ft.merk_id
+        JOIN filament_materialen mat ON mat.id = ft.materiaal_id WHERE ft.id = ?`).get(m.filament_type_id);
+  return r?.naam || '(onbekend)';
+}
+
 const duurU = r => ((r.geeindigd_op ? Date.parse(r.geeindigd_op) : Date.now()) - Date.parse(r.gestart_op)) / 3600e3;
 
 // opdracht: { id, dossier_regel_id, aantal, aantal_goed? }; goed = aantal goede stuks
@@ -56,7 +67,7 @@ export function productiekost(db, opdracht, goed = opdracht.aantal_goed) {
     for (const m of mat) {
       if (!m.gram) continue;
       const kg = kostPerKg(db, m);
-      if (kg == null) { ontbreekt.push('inkoopprijs filament'); continue; }
+      if (kg == null) { ontbreekt.push(`inkoopprijs filament ${filamentNaam(db, m)}`); continue; }
       filament += m.gram * deel / 1000 * kg;
     }
     if (!mat.some(m => m.gram > 0)) ontbreekt.push('gewicht filament');
@@ -65,8 +76,8 @@ export function productiekost(db, opdracht, goed = opdracht.aantal_goed) {
     WHERE r.printopdracht_id = ? AND r.uitkomst <> 'bezig'`).all(opdracht.id);
   let energie = 0, machine = 0;
   for (const r of runs) {
-    if (r.kwh == null) ontbreekt.push('kWh van een run'); else energie += r.kwh * (t.kwh_prijs ?? 0);
-    if (r.machine_per_uur == null) ontbreekt.push('machinetarief'); else machine += duurU(r) * r.machine_per_uur;
+    if (r.kwh == null) ontbreekt.push('kWh van een run (open de run → Verbruik aanvullen)'); else if (t.kwh_prijs == null) ontbreekt.push('kWh-prijs (Instellingen → Tarieven)'); else energie += r.kwh * t.kwh_prijs;
+    if (r.machine_per_uur == null) ontbreekt.push(`machinetarief ${db.prepare('SELECT naam FROM printers WHERE id = ?').get(r.printer_id)?.naam || ''}`.trim()); else machine += duurU(r) * r.machine_per_uur;
   }
   const bmcu = runs.length * (t.bmcu_per_job ?? 0);
   const voorb = regel?.voorbereiding_min ?? t.voorbereiding_min ?? 0;

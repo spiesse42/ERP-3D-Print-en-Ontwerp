@@ -31,13 +31,16 @@ export function reserveModellen() {
 export const geminiIngesteld = () => !!(process.env.GEMINI_API_KEY || '').trim();
 
 export function maakInstructie({ merken, materialen, kleuren, categorieen }) {
-  return `Je leest een aankoopfactuur of kassabonnetje voor 3D Plezier, een klein 3D-printbedrijf in België.
-3D Plezier / David Spiesschaert is altijd de KLANT, nooit de leverancier. De leverancier is de verkoper.
+  return `Je leest een aankoopdocument voor 3D Plezier, een klein 3D-printbedrijf in België: een factuur, een kassabonnetje
+of een BESTELBEVESTIGING van een webshop (bestelbon, e-mail "Bedankt voor uw bestelling").
+3D Plezier / David Spiesschaert is altijd de KLANT, nooit de leverancier. De leverancier is de verkoper (bij een webshop: de webshop, bv. Joybuy).
 
 Geef terug:
+- documentsoort: "factuur" (factuur/invoice met factuurnummer), "bonnetje" (kassaticket) of "bestelbon" (bestelbevestiging zonder factuurnummer)
 - leverancier: naam (de verkopende winkel of firma, zonder rechtsvorm-ruis als "B.V." mag blijven), btw_nummer (van de verkoper), website (indien vermeld)
-- factuurnummer: het factuurnummer (niet het ordernummer, tenzij er geen factuurnummer is)
-- datum: factuurdatum als JJJJ-MM-DD. Europese datums zijn DAG/MAAND/JAAR (21/09/2026 = 2026-09-21).
+- factuurnummer: het factuurnummer (NIET het ordernummer). Leeg bij een bestelbon.
+- bestelnummer: het bestel-/ordernummer van de webshop (Bestelnummer, Ordernummer, Order number, Order #), anders leeg
+- datum: factuurdatum (bij een bestelbon: de besteldatum) als JJJJ-MM-DD. Europese datums zijn DAG/MAAND/JAAR (21/09/2026 = 2026-09-21; "21 sep 2026" = 2026-09-21).
 - totaal_incl_btw: het totaal dat betaald werd/moet worden, incl. btw
 - regels: ELKE regel van het document, over alle pagina's heen, in volgorde.
 
@@ -45,11 +48,12 @@ Per regel:
 - soort: "filament" (een rol 3D-printfilament), "artikel" (een ander fysiek product: onderdelen, gereedschap, magneten, ringen, …) of "kost" (verzending/freight/shipping/"Standard", administratiekost, …)
 - omschrijving: de productomschrijving zoals op de factuur, zonder marketingtekst (max. 120 tekens)
 - productcode: SKU / artikelnummer / productcode van de leverancier indien vermeld (bv. "A01-G7-1.75-1000-SPLFREE"), anders leeg
-- aantal: het aantal (rollen, stuks)
+- aantal: het aantal (rollen, stuks); in een bestelmail staat dat vaak achteraan als "x2"
 - prijs_per_eenheid: de ECHT BETAALDE prijs per eenheid INCL. BTW, NA korting.
   Staat er een subtotaal per regel incl. btw, gebruik dan: subtotaal ÷ aantal.
   Toont de factuur enkel prijzen excl. btw, reken dan om met het btw-tarief van die regel.
   Een kost die door korting € 0 wordt, geef je met prijs 0.
+  Een bestelbon zonder prijzen: laat prijs_per_eenheid en regeltotaal leeg (niet 0).
 - regeltotaal: het bedrag van die regel incl. btw, na korting
 Enkel bij soort "filament":
 - merk: kies EXACT uit deze lijst als het past: ${merken.join(', ') || '(leeg)'}. Anders de merknaam zoals op de factuur. Een huismerkwinkel (bv. Bambu Lab store) = dat merk. "JOYBUY x ANYCUBIC" = AnyCubic.
@@ -67,7 +71,9 @@ export const SCHEMA = {
   type: 'OBJECT',
   properties: {
     leverancier: { type: 'OBJECT', properties: { naam: { type: 'STRING' }, btw_nummer: { type: 'STRING' }, website: { type: 'STRING' } } },
+    documentsoort: { type: 'STRING', enum: ['factuur', 'bonnetje', 'bestelbon'] },
     factuurnummer: { type: 'STRING' },
+    bestelnummer: { type: 'STRING' },
     datum: { type: 'STRING' },
     totaal_incl_btw: { type: 'NUMBER' },
     regels: {
@@ -127,7 +133,11 @@ export function vertaalFout(status, tekst = '', model = GEMINI_MODEL()) {
 const slaap = ms => new Promise(r => setTimeout(r, ms));
 
 // Eén poging. fetchFn is vervangbaar in de tests.
-async function eenPoging({ buffer, mimetype, instructie, sleutel, fetchFn, model }) {
+async function eenPoging({ buffer, mimetype, tekst, instructie, sleutel, fetchFn, model }) {
+  // 25-09: ook geplakte tekst (bv. een bestelmail) i.p.v. een bestand
+  const document = tekst != null
+    ? { text: `DOCUMENT (tekst, bv. uit een e-mail):\n${String(tekst).slice(0, 60000)}` }
+    : { inline_data: { mime_type: mimetype, data: buffer.toString('base64') } };
   const stop = new AbortController();
   const klok = setTimeout(() => stop.abort(), 90_000);
   try {
@@ -138,7 +148,7 @@ async function eenPoging({ buffer, mimetype, instructie, sleutel, fetchFn, model
         // sleutel in een header, niet in de URL (komt dan niet in logs terecht)
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': sleutel },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: instructie }, { inline_data: { mime_type: mimetype, data: buffer.toString('base64') } }] }],
+          contents: [{ parts: [{ text: instructie }, document] }],
           generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0 },
         }),
         signal: stop.signal,
@@ -210,9 +220,15 @@ const echteGemini = async args => {
 // - backendtests: vervangLezer(fn)
 // - doorklik-test in de browser: omgevingsvariabele GEMINI_NEP = pad naar
 //   een JSON-bestand { "<bestandsnaam>": <antwoord> }. Nooit instellen in de add-on.
-async function nepGemini({ bestandsnaam }) {
+async function nepGemini({ bestandsnaam, tekst }) {
   const fs = await import('node:fs');
   const alle = JSON.parse(fs.readFileSync(process.env.GEMINI_NEP, 'utf8'));
+  // geplakte tekst: sleutel "tekst:<stukje dat in de tekst voorkomt>"
+  if (tekst != null) {
+    const k = Object.keys(alle).find(x => x.startsWith('tekst:') && String(tekst).includes(x.slice(6)));
+    if (!k) throw new Error('Geen nep-antwoord voor deze tekst');
+    return alle[k];
+  }
   if (!alle[bestandsnaam]) throw new Error(`Geen nep-antwoord voor ${bestandsnaam}`);
   return alle[bestandsnaam];
 }

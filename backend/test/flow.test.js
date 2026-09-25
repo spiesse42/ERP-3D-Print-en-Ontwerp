@@ -44,7 +44,7 @@ test('X0. voorbereiding', async () => {
   await vraag('PUT', `/printers/${mini}`, { naam: 'Bambu Lab A1 Mini', machine_per_uur: 0.2, verbruik_watt: 95 });
   pg = (await vraag('POST', '/filament/types', { merk_id: 1, materiaal_id: 1, verkoopprijs_per_kg: 25 })).data.id;
   klant = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'Sofie', naam: 'Maes' })).data.id;
-  assert.equal(db.pragma('user_version', { simple: true }), 13);
+  assert.equal(db.pragma('user_version', { simple: true }), 15);
 });
 
 let dos;
@@ -316,4 +316,35 @@ test('X14. gratis geleverd: geen omzet, werkbon definitief, kost in Marges, onge
   // eigen product: niet
   const e = (await vraag('POST', '/dossiers', { titel: 'Eigen', soort: 'eigen', regels: [{ type: 'extra', bedrag: 1 }] })).data;
   assert.match((await vraag('POST', `/dossiers/${e.id}/gratis`, {})).data.error, /Enkel een klantopdracht/);
+});
+
+test('X15. productiekost: wat ontbreekt wordt bewaard en getoond; herberekenen na het aanvullen', async () => {
+  getDb().prepare(`UPDATE printruns SET intern = 'test' WHERE printopdracht_id IS NULL AND intern IS NULL`).run();
+  const db = getDb();
+  // nieuwe prijsgroep zonder enige inkoopprijs
+  const kaal = (await vraag('POST', '/filament/types', { merk_id: 2, materiaal_id: 1, verkoopprijs_per_kg: 30 })).data.id;
+  const naam = db.prepare(`SELECT fm.naam || ' ' || mat.naam n FROM filament_types ft JOIN filament_merken fm ON fm.id = ft.merk_id JOIN filament_materialen mat ON mat.id = ft.materiaal_id WHERE ft.id = ?`).get(kaal).n;
+  const d0 = (await vraag('POST', '/dossiers', { titel: 'Zonder inkoop', klant_id: klant, regels: [
+    { type: 'printen', omschrijving: 'Kaal', printer_id: mini, aantal: 1, tijd_min: 30, materialen: [{ filament_type_id: kaal, gram: 50 }] }] })).data;
+  const d = (await vraag('POST', `/dossiers/${d0.id}/starten`)).data;
+  const o = d.productie.regels[0].opdrachten[0];
+  const x = (await vraag('POST', '/productie/runs', { printer_id: mini, gestart_op: new Date(Date.now() - 40 * 3600e3).toISOString(), geeindigd_op: new Date(Date.now() - 39.5 * 3600e3).toISOString(), uitkomst: 'klaar', kwh: 0.05 })).data;
+  await vraag('POST', `/productie/runs/${x.id}/koppel`, { printopdracht_id: o.id });
+  // bevestigvenster: vooraf zien wat ontbreekt
+  const vb = (await vraag('GET', `/productie/opdrachten/${o.id}/kost-voorbeeld?aantal_goed=1`)).data;
+  assert.equal(vb.onvolledig, true); assert.deepEqual(vb.ontbreekt, [`inkoopprijs filament ${naam}`]);
+  await vraag('POST', `/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: 1 });
+  let r = db.prepare('SELECT * FROM printopdrachten WHERE id = ?').get(o.id);
+  assert.equal(r.kost_onvolledig, 1); assert.equal(r.kost_ontbreekt, `inkoopprijs filament ${naam}`);
+  const voor = r.productiekost_stuk;
+  // inkoopprijs aanvullen (artikel in die prijsgroep met inkoopprijs per rol)
+  db.prepare(`INSERT INTO artikelen (type, filament_type_id, kleur_id, wordt_gekocht, inkoopprijs) VALUES ('filament', ?, 1, 1, 20)`).run(kaal);
+  const h = (await vraag('POST', `/productie/opdrachten/${o.id}/herbereken`)).data;
+  assert.equal(h.kost.onvolledig, false);
+  r = db.prepare('SELECT * FROM printopdrachten WHERE id = ?').get(o.id);
+  assert.equal(r.kost_onvolledig, 0); assert.equal(r.kost_ontbreekt, null);
+  assert.ok(r.productiekost_stuk > voor, 'filament telt nu mee');
+  // bulk via Marges
+  const b = (await vraag('POST', '/financien/marges/herbereken')).data;
+  assert.ok(b.bekeken >= 0);
 });

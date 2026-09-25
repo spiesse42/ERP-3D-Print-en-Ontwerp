@@ -43,10 +43,25 @@ function ruimOp() {
 r.post('/', (req, res) => {
   upload.single('bestand')(req, res, async (fout) => {
     if (fout) return res.status(400).json({ error: fout.code === 'LIMIT_FILE_SIZE' ? 'Bestand is groter dan 20 MB' : fout.message });
-    if (!req.file) return res.status(400).json({ error: 'Kies een PDF, een foto (jpg, png, webp, heic) of een UBL-bestand (.xml)' });
+    const geplakt = !req.file && typeof req.body?.tekst === 'string' ? req.body.tekst.trim() : '';
+    if (!req.file && !geplakt) return res.status(400).json({ error: 'Kies een PDF, een foto (jpg, png, webp, heic) of een UBL-bestand (.xml), of plak de tekst van een bestelmail' });
     ruimOp();
     const db = getDb();
     const token = crypto.randomUUID();
+    // 25-09: geplakte tekst (bestelmail): Gemini leest de tekst; de tekst wordt de bijlage
+    if (geplakt) {
+      if (geplakt.length > 60000) return res.status(400).json({ error: 'Die tekst is te lang (max. 60 000 tekens).' });
+      let g;
+      try { g = await leesFactuurMetGemini({ tekst: geplakt, bestandsnaam: 'bestelmail.txt', instructie: maakInstructie(catalogusVoorInstructie(db)) }); }
+      catch (e) { return res.status(502).json({ error: e.message }); }
+      const buf = Buffer.from(geplakt, 'utf8');
+      const naam = `bestelmail${g?.bestelnummer ? `-${String(g.bestelnummer).replace(/[^\w-]/g, '').slice(0, 40)}` : ''}.txt`;
+      fs.mkdirSync(tmpMap(), { recursive: true });
+      fs.writeFileSync(path.join(tmpMap(), `${token}.txt`), buf);
+      fs.writeFileSync(path.join(tmpMap(), `${token}.json`), JSON.stringify({ bestandsnaam: naam, mimetype: 'text/plain; charset=utf-8', ext: '.txt', grootte: buf.length }));
+      try { return res.json({ token, bestandsnaam: naam, mimetype: 'text/plain', model: g?._model ?? null, hoofdmodel: GEMINI_MODEL(), voorstel: koppel(db, g) }); }
+      catch (e) { return res.status(500).json({ error: e.message }); }
+    }
     const bestandsnaam = Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200);
     // UBL (stap 7): lezen zonder Gemini; de meegestuurde PDF wordt het voorbeeld en de bijlage
     if (XML(req.file)) {
@@ -99,7 +114,7 @@ r.post('/:token/bevestig', (req, res) => {
       const a = bevestig(db, req.body, m.bron === 'ubl' ? 'ubl' : 'ocr');
       db.prepare('INSERT INTO bijlagen (entiteit, entiteit_id, bestandsnaam, pad, mimetype, grootte) VALUES (?,?,?,?,?,?)')
         .run('aankoop', a.id, m.bestandsnaam, doelNaam, m.mimetype, m.grootte);
-      logGebeurtenis(db, 'aankoop', a.id, 'gewijzigd', `Ingelezen uit ${m.bestandsnaam}${m.bron === 'ubl' ? ' (UBL, zonder Gemini)' : ''}`);
+      logGebeurtenis(db, 'aankoop', a.id, 'gewijzigd', `${a.gekoppeld ? 'Factuur gekoppeld uit' : req.body?.documentsoort === 'bestelbon' ? 'Bestelbon ingelezen uit' : 'Ingelezen uit'} ${m.bestandsnaam}${m.bron === 'ubl' ? ' (UBL, zonder Gemini)' : ''}`);
       fs.copyFileSync(bron, path.join(bijlagenMap(), doelNaam));   // binnen de transactie: mislukt de kopie, dan wordt niets bewaard
       return a;
     })();

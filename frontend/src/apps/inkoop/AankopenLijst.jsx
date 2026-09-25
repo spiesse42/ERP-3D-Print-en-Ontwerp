@@ -37,7 +37,7 @@ export default function AankopenLijst() {
     if (!data) return [];
     const z = zoek.trim().toLowerCase();
     let rijen = data.filter(a => (status ? a.status === status : a.status !== 'geannuleerd')
-      && (!z || [a.nummer, a.leverancier, a.extern_factuurnummer, a.samenvatting, a.notities].some(v => String(v || '').toLowerCase().includes(z))));
+      && (!z || [a.nummer, a.leverancier, a.extern_factuurnummer, a.extern_bestelnummer, a.samenvatting, a.notities].some(v => String(v || '').toLowerCase().includes(z))));
     const s = kolommen[sortering.kolom]?.sorteer;
     if (s) rijen = [...rijen].sort((x, y) => { const p = s(x), r = s(y); return (p < r ? -1 : p > r ? 1 : 0) * (sortering.op ? 1 : -1); });
     if (groep === 'geen') return [{ titel: null, rijen }];
@@ -61,7 +61,7 @@ export default function AankopenLijst() {
         kruimels={[{ label: 'Aankopen' }]}
         zoek={zoek} onZoek={setZoek} facetten={facetten}
         acties={<>
-          <button type="button" className="btn" onClick={() => navigeer('/inkoop/inlezen')}>Factuur inlezen</button>
+          <button type="button" className="btn" onClick={() => navigeer('/inkoop/inlezen')}>Factuur / bestelbon inlezen</button>
           <button type="button" className="btn primary" onClick={() => navigeer('/inkoop/aankopen/nieuw')}>Nieuw</button>
         </>}
         filters={<>

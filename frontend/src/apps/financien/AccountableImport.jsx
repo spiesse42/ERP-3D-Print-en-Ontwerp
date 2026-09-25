@@ -67,7 +67,7 @@ export default function AccountableImport() {
               <input type="file" accept=".xlsx,.csv" className="sr-only" aria-label="Export van Accountable" onChange={e => { lees(e.target.files[0]); e.target.value = ''; }} />
             </label>
             {bestand && <span className="sub" style={{ marginLeft: 10 }}>{bestand.bestandsnaam}</span>}
-            <p className="note" style={{ marginBottom: 0 }}>Exporteer in Accountable de lijst met je facturen/inkomsten naar Excel. Het ERP koppelt elke rij op het <b>nummer</b> aan het dossier waar je dat nummer bij het afrekenen invulde, en zet dossiers die in de export betaald zijn ook hier op betaald. Aankoopfacturen (UBL) lees je in via <Link naar="/inkoop/inlezen">Inkoop → Factuur inlezen</Link>.</p>
+            <p className="note" style={{ marginBottom: 0 }}>Exporteer in Accountable de lijst met je facturen/inkomsten naar Excel. Het ERP koppelt elke rij op het <b>nummer</b> aan het dossier waar je dat nummer bij het afrekenen invulde, en zet dossiers die in de export betaald zijn ook hier op betaald. Aankoopfacturen (UBL) lees je in via <Link naar="/inkoop/inlezen">Inkoop → Factuur / bestelbon inlezen</Link>.</p>
           </div>
         </div>
         {b && (

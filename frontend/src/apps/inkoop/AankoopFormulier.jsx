@@ -18,9 +18,9 @@ const nieuweSleutel = () => `n${++volgnr}`;
 const s = v => (v == null ? '' : String(v));
 
 function naarFormulier(a) {
-  if (!a) return { kop: { leverancier_id: '', datum: vandaag(), extern_factuurnummer: '', notities: '' }, regels: [] };
+  if (!a) return { kop: { leverancier_id: '', datum: vandaag(), extern_bestelnummer: '', extern_factuurnummer: '', notities: '' }, regels: [] };
   return {
-    kop: { leverancier_id: s(a.leverancier_id), datum: a.datum, extern_factuurnummer: a.extern_factuurnummer || '', notities: a.notities || '' },
+    kop: { leverancier_id: s(a.leverancier_id), datum: a.datum, extern_bestelnummer: a.extern_bestelnummer || '', extern_factuurnummer: a.extern_factuurnummer || '', notities: a.notities || '' },
     regels: a.regels.map(r => ({
       sleutel: `r${r.id}`, id: r.id, soort: r.soort, artikel_id: s(r.artikel_id),
       plaatshouder_materiaal_id: s(r.plaatshouder_materiaal_id), plaatshouder_kleur_id: s(r.plaatshouder_kleur_id),
@@ -159,6 +159,9 @@ export default function AankoopFormulier() {
               </Veld>
               <Veld label="Datum" id="ak-datum" hint="Datum van de bestelling of van de factuur/het bonnetje.">
                 <input id="ak-datum" type="date" className="inp" disabled={alleenLezen} value={form.kop.datum} onChange={e => zetKop('datum')(e.target.value)} />
+              </Veld>
+              <Veld label="Bestelnr. webshop" id="ak-bnr" hint="Van de bestelbon. Een factuur met dit nummer wordt aan deze aankoop gekoppeld.">
+                <input id="ak-bnr" className="inp" disabled={alleenLezen} value={form.kop.extern_bestelnummer} onChange={e => zetKop('extern_bestelnummer')(e.target.value)} />
               </Veld>
               <Veld label="Factuurnr. leverancier" id="ak-fnr" hint="Enkel intern, komt nooit op een klantdocument.">
                 <input id="ak-fnr" className="inp" disabled={alleenLezen} value={form.kop.extern_factuurnummer} onChange={e => zetKop('extern_factuurnummer')(e.target.value)} />

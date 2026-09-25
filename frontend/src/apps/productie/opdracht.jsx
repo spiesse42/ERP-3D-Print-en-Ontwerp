@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { useData } from '../../schil/useData.js';
 import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
@@ -125,6 +125,14 @@ export function BevestigDialoog({ o, onSluit, onKlaar }) {
   const { melding } = useOmgeving();
   const [n, setN] = useState(naarInvoer(o.aantal));
   const [bezig, setBezig] = useState(false);
+  // 25-09: vooraf zien of de productiekost volledig wordt, en wat ontbreekt
+  const [kost, setKost] = useState(null);
+  useEffect(() => {
+    let weg = false;
+    const t = setTimeout(() => api.get(`/productie/opdrachten/${o.id}/kost-voorbeeld?aantal_goed=${encodeURIComponent(n || '0')}`)
+      .then(k => { if (!weg) setKost(k); }).catch(() => {}), 250);
+    return () => { weg = true; clearTimeout(t); };
+  }, [o.id, n]);
   async function ok() {
     setBezig(true);
     try { await api.post(`/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: n }); melding('Printopdracht voltooid.'); await onKlaar(); }
@@ -137,6 +145,12 @@ export function BevestigDialoog({ o, onSluit, onKlaar }) {
       <label className="lbl" htmlFor="bv-n">Aantal goede stuks (gepland: {aantal(o.aantal)})</label>
       <input id="bv-n" className="inp num" inputMode="decimal" value={n} onChange={e => setN(e.target.value)} autoFocus />
       {o.eindproduct && <p className="sub">De goede stuks komen in voorraad als <b>{o.eindproduct}</b>, aan de productiekost per stuk.</p>}
+      {kost?.onvolledig && (
+        <div className="waarschuwing" style={{ margin: '10px 0 0', display: 'block' }} role="status">
+          <b>Let op: de productiekost wordt onvolledig.</b> Ontbreekt: {kost.ontbreekt.join(' · ')}.
+          <div className="sub" style={{ color: 'inherit' }}>Je kunt toch bevestigen; vul het later aan (bv. Voorraad → artikel → inkoopprijs) en klik dan "Kost herberekenen".</div>
+        </div>
+      )}
       {mislukt > 0 && <p className="sub">{mislukt} mislukte poging{mislukt > 1 ? 'en' : ''}: die tellen niet op de werkbon, wel als kost voor jou (marge-analyse).</p>}
       <p className="note" style={{ marginBottom: 0 }}>Minder goede stuks dan gepland? Plan dan een herprint voor de rest (in het dossier, tabblad Productie).</p>
     </Dialoog>

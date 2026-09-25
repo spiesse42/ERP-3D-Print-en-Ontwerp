@@ -13,5 +13,7 @@ import * as m010 from './010_printopdrachten.js';
 import * as m011 from './011_productiekost.js';
 import * as m012 from './012_dossier_gestart.js';
 import * as m013 from './013_gratis.js';
+import * as m014 from './014_kost_ontbreekt.js';
+import * as m015 from './015_bestelnummer.js';
 
-export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013];
+export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015];

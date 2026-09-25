@@ -117,6 +117,7 @@ export function leesKop(body) {
     leverancier_id: id(body?.leverancier_id),
     datum,
     extern_factuurnummer: tekst(body?.extern_factuurnummer),
+    extern_bestelnummer: tekst(body?.extern_bestelnummer),
     notities: tekst(body?.notities),
   };
 }
@@ -151,9 +152,9 @@ export function leesRegelInvoer(r, i) {
 
 export function maakAankoop(db, kop, regels = [], bron = 'manueel') {
   const nummer = volgendNummer(db, 'AK');
-  const aankoopId = db.prepare(`INSERT INTO aankopen (nummer, leverancier_id, datum, bron, extern_factuurnummer, notities)
-    VALUES (?, ?, COALESCE(?, date('now')), ?, ?, ?)`)
-    .run(nummer, kop.leverancier_id, kop.datum, bron, kop.extern_factuurnummer, kop.notities).lastInsertRowid;
+  const aankoopId = db.prepare(`INSERT INTO aankopen (nummer, leverancier_id, datum, bron, extern_factuurnummer, extern_bestelnummer, notities)
+    VALUES (?, ?, COALESCE(?, date('now')), ?, ?, ?, ?)`)
+    .run(nummer, kop.leverancier_id, kop.datum, bron, kop.extern_factuurnummer, kop.extern_bestelnummer ?? null, kop.notities).lastInsertRowid;
   const ins = db.prepare(`INSERT INTO aankoop_regels (aankoop_id, volgorde, artikel_id, plaatshouder_materiaal_id, plaatshouder_kleur_id, omschrijving, aantal, prijs_per_eenheid)
     VALUES (?,?,?,?,?,?,?,?)`);
   regels.forEach((r, i) => ins.run(aankoopId, i, r.artikel_id, r.plaatshouder_materiaal_id, r.plaatshouder_kleur_id, r.omschrijving, r.aantal, r.prijs_per_eenheid));
@@ -188,8 +189,8 @@ export function bewaarAankoop(db, aankoopId, kop, regels) {
   }
   if (!kop.leverancier_id && oud.status !== 'concept') throw new DomeinFout('Een bestelde of ontvangen aankoop heeft een leverancier nodig');
 
-  db.prepare(`UPDATE aankopen SET leverancier_id = ?, datum = COALESCE(?, datum), extern_factuurnummer = ?, notities = ? WHERE id = ?`)
-    .run(kop.leverancier_id, kop.datum, kop.extern_factuurnummer, kop.notities, aankoopId);
+  db.prepare(`UPDATE aankopen SET leverancier_id = ?, datum = COALESCE(?, datum), extern_factuurnummer = ?, extern_bestelnummer = ?, notities = ? WHERE id = ?`)
+    .run(kop.leverancier_id, kop.datum, kop.extern_factuurnummer, kop.extern_bestelnummer ?? null, kop.notities, aankoopId);
   for (const o of oud.regels) if (!gezien.has(o.id)) db.prepare('DELETE FROM aankoop_regels WHERE id = ?').run(o.id);
   const upd = db.prepare(`UPDATE aankoop_regels SET volgorde=?, artikel_id=?, plaatshouder_materiaal_id=?, plaatshouder_kleur_id=?, omschrijving=?, aantal=?, prijs_per_eenheid=? WHERE id=?`);
   const ins = db.prepare(`INSERT INTO aankoop_regels (aankoop_id, volgorde, artikel_id, plaatshouder_materiaal_id, plaatshouder_kleur_id, omschrijving, aantal, prijs_per_eenheid)
@@ -203,6 +204,7 @@ export function bewaarAankoop(db, aankoopId, kop, regels) {
   const nieuw = leesAankoop(db, aankoopId);
   if ((oud.leverancier_id ?? null) !== (nieuw.leverancier_id ?? null)) wijzigingen.push(`Leverancier: ${oud.leverancier ?? '—'} → ${nieuw.leverancier ?? '—'}`);
   if (oud.datum !== nieuw.datum) wijzigingen.push(`Datum: ${oud.datum} → ${nieuw.datum}`);
+  if ((oud.extern_bestelnummer ?? '') !== (nieuw.extern_bestelnummer ?? '')) wijzigingen.push(`Bestelnummer webshop: ${oud.extern_bestelnummer ?? '—'} → ${nieuw.extern_bestelnummer ?? '—'}`);
   if ((oud.extern_factuurnummer ?? '') !== (nieuw.extern_factuurnummer ?? '')) wijzigingen.push(`Factuurnummer leverancier: ${oud.extern_factuurnummer ?? '—'} → ${nieuw.extern_factuurnummer ?? '—'}`);
   const sleutel = rs => JSON.stringify(rs.map(r => [r.weergave, r.aantal, r.prijs_per_eenheid]));
   if (sleutel(oud.regels) !== sleutel(nieuw.regels)) wijzigingen.push(`Regels gewijzigd (${nieuw.regels.length}, totaal € ${nieuw.totaal.toLocaleString('nl-BE', { minimumFractionDigits: 2 })})`);
@@ -268,7 +270,7 @@ function filamentVoorPlaatshouder(db, regel, merkId, nieuwePrijsKg) {
 }
 
 // Laatste prijs bij de leverancier + inkoopprijs op het artikel bijwerken.
-function werkPrijzenBij(db, artikelId, leverancierId, prijs) {
+export function werkPrijzenBij(db, artikelId, leverancierId, prijs) {
   if (prijs == null) return;
   const link = db.prepare('SELECT id FROM artikel_leveranciers WHERE artikel_id = ? AND leverancier_id = ? ORDER BY voorkeur DESC, id LIMIT 1').get(artikelId, leverancierId);
   if (link) {

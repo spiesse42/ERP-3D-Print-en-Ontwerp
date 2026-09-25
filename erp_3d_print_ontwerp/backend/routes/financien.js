@@ -12,6 +12,7 @@ import { DomeinFout } from '../domein/hulp.js';
 import { jaarOverzicht, opvolging, marges } from '../domein/financien.js';
 import { statistieken } from '../domein/statistieken.js';
 import { leesDossiers } from '../domein/dossiers.js';
+import { herberekenOnvolledige } from '../productie/opdrachten.js';
 
 const r = Router();
 function metFouten(fn) {
@@ -45,6 +46,12 @@ r.get('/csv/overzicht', metFouten((req, res) => {
   const o = jaarOverzicht(getDb(), jaarVan(req));
   stuurCsv(res, `financien-${o.jaar}.csv`, [['maand', 'Maand'], ['omzet', 'Omzet (afgerekend)'], ['facturen', 'Facturen'], ['bonnetjes', 'Bonnetjes'],
     ['ontvangen', 'Ontvangen'], ['aankopen', 'Aankopen'], ['saldo', 'Saldo']], o.maanden);
+}));
+// Onvolledige productiekosten opnieuw berekenen (na het aanvullen van
+// inkoopprijzen, tarieven of kWh).
+r.post('/marges/herbereken', metFouten((req, res) => {
+  const db = getDb();
+  res.json(db.transaction(() => herberekenOnvolledige(db))());
 }));
 r.get('/csv/marges', metFouten((req, res) => {
   const m = marges(getDb(), jaarVan(req));

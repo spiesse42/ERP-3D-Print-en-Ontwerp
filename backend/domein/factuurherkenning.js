@@ -10,13 +10,17 @@
 //        d. artikel met dezelfde naam                                      → "voorstel"
 //        e. anders een nieuw artikel/filament met het voorstel van Gemini  → "nieuw"
 //        kost (verzending, …)                                              → "kost"
+// 25-09: ook een BESTELBON (bestelbevestiging van een webshop): aankoop
+//    "besteld" met het bestelnummer, prijzen volgen met de factuur. Een
+//    factuur met hetzelfde bestelnummer wordt aan die aankoop GEKOPPELD:
+//    prijzen per regel (ook van wat al ontvangen is), factuurnummer, bijlage.
 // 2. bevestig(): alles in één transactie — leverancier, nieuwe artikelen,
 //    aankoop (bron OCR), bijlage, productcodes onthouden, en (standaard)
 //    meteen ontvangen in voorraad.
 
 import { DomeinFout, optioneelGetal, rond } from './hulp.js';
 import { leesArtikelInvoer, maakArtikel, weergaveNaam } from './artikelen.js';
-import { maakAankoop, bestel, ontvang, leesAankoop } from './aankopen.js';
+import { maakAankoop, bestel, ontvang, leesAankoop, werkPrijzenBij } from './aankopen.js';
 import { logGebeurtenis } from './historiek.js';
 
 const norm = s => String(s ?? '').trim().toLowerCase();
@@ -99,19 +103,52 @@ export function koppel(db, g) {
   const som = rond(regels.reduce((s, r) => s + (r.prijs_per_eenheid ?? 0) * r.aantal, 0));
   const totaal = Number.isFinite(Number(g?.totaal_incl_btw)) && g?.totaal_incl_btw !== null ? rond(Number(g.totaal_incl_btw)) : null;
   const factuurnummer = tekst(g?.factuurnummer);
-  const dubbel = lev && factuurnummer
-    ? db.prepare('SELECT id, nummer FROM aankopen WHERE leverancier_id = ? AND extern_factuurnummer = ? COLLATE NOCASE').get(lev.id, factuurnummer) ?? null
+  const bestelnummer = tekst(g?.bestelnummer);
+  const documentsoort = ['factuur', 'bonnetje', 'bestelbon'].includes(g?.documentsoort) ? g.documentsoort
+    : !factuurnummer && bestelnummer ? 'bestelbon' : 'factuur';
+  const bestelling = zoekBestelling(db, lev, bestelnummer);
+  // factuur bij een bestelling: regels koppelen aan de regels van die aankoop
+  if (bestelling && documentsoort !== 'bestelbon') {
+    const vrij = [...bestelling.regels];
+    for (const r of regels) {
+      const i = vrij.findIndex(a => (r.artikel_id && a.artikel_id === r.artikel_id) || (r.soort === 'kost' && a.soort === 'kost' && norm(a.omschrijving) === norm(r.omschrijving)));
+      if (i >= 0) { r.aankoop_regel_id = vrij[i].id; vrij.splice(i, 1); }
+    }
+  }
+  // factuur van een bestelling met een andere naam (bv. "Jingdong Retail" i.p.v. "Joybuy"): leverancier van de bestelling
+  const levVoorstel = lev ? { id: lev.id, naam: lev.naam }
+    : bestelling?.leverancier_id && documentsoort !== 'bestelbon' ? { id: bestelling.leverancier_id, naam: bestelling.leverancier }
+    : { id: null, naam: tekst(g?.leverancier?.naam), btw_nummer: tekst(g?.leverancier?.btw_nummer), website: tekst(g?.leverancier?.website) };
+  const dubbel = levVoorstel.id && factuurnummer
+    ? db.prepare('SELECT id, nummer FROM aankopen WHERE leverancier_id = ? AND extern_factuurnummer = ? COLLATE NOCASE').get(levVoorstel.id, factuurnummer) ?? null
     : null;
   return {
-    leverancier: lev ? { id: lev.id, naam: lev.naam } : { id: null, naam: tekst(g?.leverancier?.naam), btw_nummer: tekst(g?.leverancier?.btw_nummer), website: tekst(g?.leverancier?.website) },
+    leverancier: levVoorstel,
     factuurnummer,
     datum: /^\d{4}-\d{2}-\d{2}$/.test(g?.datum || '') ? g.datum : null,
     totaal_factuur: totaal,
     som_regels: som,
     klopt: totaal === null ? null : Math.abs(totaal - som) <= 0.02,
-    dubbel,
+    dubbel: documentsoort === 'bestelbon' ? (bestelling ? { id: bestelling.id, nummer: bestelling.nummer } : null) : dubbel,
+    documentsoort, bestelnummer,
+    // factuur bij een openstaande bestelling (nog zonder factuurnummer)
+    bestelling: documentsoort !== 'bestelbon' && bestelling && !bestelling.extern_factuurnummer ? bestelling : null,
     regels,
   };
+}
+
+const bestelNorm = s => String(s ?? '').replace(/[\s#-]/g, '').toLowerCase();
+// Aankoop met hetzelfde bestelnummer (en, als gekend, dezelfde leverancier).
+function zoekBestelling(db, lev, bestelnummer) {
+  const b = bestelNorm(bestelnummer);
+  if (!b) return null;
+  const hit = db.prepare(`SELECT id, extern_bestelnummer, leverancier_id FROM aankopen WHERE extern_bestelnummer IS NOT NULL AND geannuleerd_op IS NULL ORDER BY id DESC`).all()
+    .find(a => bestelNorm(a.extern_bestelnummer) === b && (!lev || !a.leverancier_id || a.leverancier_id === lev.id));
+  if (!hit) return null;
+  const a = leesAankoop(db, hit.id);
+  return { id: a.id, nummer: a.nummer, datum: a.datum, status: a.status, leverancier: a.leverancier, leverancier_id: a.leverancier_id, extern_bestelnummer: a.extern_bestelnummer,
+    extern_factuurnummer: a.extern_factuurnummer,
+    regels: a.regels.map(r => ({ id: r.id, soort: r.soort, artikel_id: r.artikel_id, weergave: r.weergave, omschrijving: r.omschrijving, aantal: r.aantal, ontvangen: r.ontvangen, prijs_per_eenheid: r.prijs_per_eenheid })) };
 }
 
 // ── Bevestigen ────────────────────────────────────────────────────────────
@@ -202,7 +239,14 @@ export function bevestig(db, invoer, bron = 'ocr') {
     levId = bestaand?.id ?? Number(db.prepare('INSERT INTO leveranciers (naam, btw_nummer, website) VALUES (?,?,?)').run(naam, tekst(l.btw_nummer), tekst(l.website)).lastInsertRowid);
     if (!bestaand) logGebeurtenis(db, 'leverancier', levId, 'aangemaakt', 'Aangemaakt via factuur inlezen');
   }
-  const factuurnummer = tekst(invoer.factuurnummer);
+  const bestelbon = invoer.documentsoort === 'bestelbon';
+  const factuurnummer = bestelbon ? null : tekst(invoer.factuurnummer);
+  const bestelnummer = tekst(invoer.bestelnummer);
+  if (bestelbon && bestelnummer && !invoer.toch_dubbel) {
+    const d = db.prepare('SELECT nummer, extern_bestelnummer FROM aankopen WHERE leverancier_id = ? AND extern_bestelnummer IS NOT NULL').all(levId)
+      .find(a => bestelNorm(a.extern_bestelnummer) === bestelNorm(bestelnummer));
+    if (d) throw new DomeinFout(`Bestelling ${bestelnummer} van deze leverancier werd al ingelezen (${d.nummer})`);
+  }
   if (factuurnummer && !invoer.toch_dubbel) {
     const d = db.prepare('SELECT nummer FROM aankopen WHERE leverancier_id = ? AND extern_factuurnummer = ? COLLATE NOCASE').get(levId, factuurnummer);
     if (d) throw new DomeinFout(`Factuur ${factuurnummer} van deze leverancier werd al ingelezen (${d.nummer})`);
@@ -212,24 +256,86 @@ export function bevestig(db, invoer, bron = 'ocr') {
   const lijst = Array.isArray(invoer.regels) ? invoer.regels : [];
   if (!lijst.length) throw new DomeinFout('Er zijn geen regels om in te lezen');
 
+  // factuur koppelen aan een bestaande bestelling (25-09)
+  const koppelId = !bestelbon && invoer.aankoop_id ? Number(invoer.aankoop_id) : null;
   const regels = lijst.map((r, i) => {
     const aantal = getal(r.aantal, `Regel ${i + 1}: aantal`, { verplicht: true, positief: true });
     const prijs = getal(r.prijs_per_eenheid, `Regel ${i + 1}: prijs`);
     if (r.soort === 'kost') {
       const oms = tekst(r.omschrijving);
       if (!oms) throw new DomeinFout(`Regel ${i + 1}: vul een omschrijving in`);
-      return { artikel_id: null, plaatshouder_materiaal_id: null, plaatshouder_kleur_id: null, omschrijving: oms, aantal, prijs_per_eenheid: prijs };
+      return { artikel_id: null, plaatshouder_materiaal_id: null, plaatshouder_kleur_id: null, omschrijving: oms, aantal, prijs_per_eenheid: prijs,
+        aankoop_regel_id: koppelId && r.aankoop_regel_id ? Number(r.aankoop_regel_id) : null };
     }
     const artikelId = artikelVoorRegel(db, { ...r, prijs_per_eenheid: prijs }, i);
     onthoud(db, artikelId, levId, tekst(r.productcode), tekst(r.omschrijving));
-    return { artikel_id: artikelId, plaatshouder_materiaal_id: null, plaatshouder_kleur_id: null, omschrijving: tekst(r.omschrijving), aantal, prijs_per_eenheid: prijs };
+    return { artikel_id: artikelId, plaatshouder_materiaal_id: null, plaatshouder_kleur_id: null, omschrijving: tekst(r.omschrijving), aantal, prijs_per_eenheid: prijs,
+      aankoop_regel_id: koppelId && r.aankoop_regel_id ? Number(r.aankoop_regel_id) : null };
   });
 
-  const ak = maakAankoop(db, { leverancier_id: levId, datum, extern_factuurnummer: factuurnummer, notities: null }, regels, bron);
+  if (koppelId) return koppelFactuur(db, koppelId, { levId, factuurnummer, bestelnummer, regels, invoer, datum, bron });
+
+  const ak = maakAankoop(db, { leverancier_id: levId, datum, extern_factuurnummer: factuurnummer, extern_bestelnummer: bestelnummer, notities: null },
+    regels.map(({ aankoop_regel_id: _a, ...r }) => r), bron);
+  if (bestelbon) {
+    bestel(db, ak.id);
+    if (datum) db.prepare('UPDATE aankopen SET besteld_op = ? WHERE id = ?').run(datum, ak.id);   // besteldatum van de webshop
+    return ak;
+  }
   if (invoer.meteen_ontvangen) {
     const open = leesAankoop(db, ak.id).regels.filter(r => r.openstaand > 0);
     if (open.length) ontvang(db, ak.id, open.map(r => ({ regel_id: r.id, aantal: r.openstaand })), { datum, locatie: tekst(invoer.locatie) });
     else bestel(db, ak.id);
   } else bestel(db, ak.id);
   return ak;
+}
+
+// Factuur koppelen aan een bestelling (25-09):
+// - gekoppelde regels: prijs (en aantal) van de factuur; wat al ontvangen is,
+//   krijgt die prijs ook in voorraad (productiekost klopt dan)
+// - regels die enkel op de factuur staan (bv. verzending): toegevoegd
+// - factuurnummer, leverancier, bestelnummer aangevuld; eventueel meteen ontvangen
+function koppelFactuur(db, aankoopId, { levId, factuurnummer, bestelnummer, regels, invoer, datum }) {
+  const a = leesAankoop(db, aankoopId);
+  if (!a) throw new DomeinFout('Aankoop niet gevonden');
+  if (a.status === 'geannuleerd') throw new DomeinFout(`Aankoop ${a.nummer} is geannuleerd`);
+  if (a.extern_factuurnummer && a.extern_factuurnummer.toLowerCase() !== (factuurnummer || '').toLowerCase()) {
+    throw new DomeinFout(`Aankoop ${a.nummer} heeft al een factuur (${a.extern_factuurnummer})`);
+  }
+  if (a.leverancier_id && a.leverancier_id !== levId) throw new DomeinFout(`Aankoop ${a.nummer} is van een andere leverancier (${a.leverancier})`);
+  const perId = new Map(a.regels.map(r => [r.id, r]));
+  const gebruikt = new Set();
+  const updPrijs = db.prepare('UPDATE aankoop_regels SET prijs_per_eenheid = ?, aantal = ? WHERE id = ?');
+  const updPartij = db.prepare('UPDATE voorraad_partijen SET prijs_per_eenheid = ? WHERE aankoop_regel_id = ?');
+  const ins = db.prepare(`INSERT INTO aankoop_regels (aankoop_id, volgorde, artikel_id, plaatshouder_materiaal_id, plaatshouder_kleur_id, omschrijving, aantal, prijs_per_eenheid)
+    VALUES (?,?,?,?,?,?,?,?)`);
+  let bijgewerkt = 0, toegevoegd = 0, volgorde = a.regels.length;
+  for (const [i, r] of regels.entries()) {
+    if (r.aankoop_regel_id) {
+      const o = perId.get(r.aankoop_regel_id);
+      if (!o) throw new DomeinFout(`Regel ${i + 1} hoort niet bij aankoop ${a.nummer}`);
+      if (gebruikt.has(o.id)) throw new DomeinFout(`Regel ${i + 1}: ${o.weergave} is al aan een andere factuurregel gekoppeld`);
+      gebruikt.add(o.id);
+      if (r.aantal < o.ontvangen - 1e-9) throw new DomeinFout(`Regel ${i + 1}: er is al ${String(o.ontvangen).replace('.', ',')} ontvangen van ${o.weergave}; het aantal kan niet lager`);
+      updPrijs.run(r.prijs_per_eenheid, r.aantal, o.id);
+      if (o.ontvangen > 0 && r.prijs_per_eenheid != null) {
+        updPartij.run(r.prijs_per_eenheid, o.id);
+        if (o.artikel_id) werkPrijzenBij(db, o.artikel_id, levId, r.prijs_per_eenheid);
+      }
+      bijgewerkt += 1;
+    } else {
+      ins.run(aankoopId, volgorde++, r.artikel_id, null, null, r.omschrijving, r.aantal, r.prijs_per_eenheid);
+      toegevoegd += 1;
+    }
+  }
+  db.prepare(`UPDATE aankopen SET extern_factuurnummer = COALESCE(?, extern_factuurnummer), extern_bestelnummer = COALESCE(extern_bestelnummer, ?),
+    leverancier_id = COALESCE(leverancier_id, ?) WHERE id = ?`).run(factuurnummer, bestelnummer, levId, aankoopId);
+  const nietOpFactuur = a.regels.filter(r => !gebruikt.has(r.id)).map(r => r.weergave);
+  logGebeurtenis(db, 'aankoop', aankoopId, 'gewijzigd', `Factuur ${factuurnummer || ''} gekoppeld: ${bijgewerkt} regel${bijgewerkt === 1 ? '' : 's'} bijgewerkt (prijs${a.regels.some(r => r.ontvangen > 0) ? ', ook in voorraad' : ''})`
+    + `${toegevoegd ? `, ${toegevoegd} toegevoegd` : ''}${nietOpFactuur.length ? `; niet op de factuur: ${nietOpFactuur.join(', ')}` : ''}`);
+  if (invoer.meteen_ontvangen) {
+    const open = leesAankoop(db, aankoopId).regels.filter(r => r.openstaand > 0);
+    if (open.length) ontvang(db, aankoopId, open.map(r => ({ regel_id: r.id, aantal: r.openstaand })), { datum, locatie: tekst(invoer.locatie) });
+  } else if (!a.besteld_op) bestel(db, aankoopId);
+  return { id: a.id, nummer: a.nummer, gekoppeld: true, bijgewerkt, toegevoegd, niet_op_factuur: nietOpFactuur };
 }

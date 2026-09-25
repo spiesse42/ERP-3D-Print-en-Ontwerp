@@ -79,7 +79,9 @@ export function leesUbl(buffer, catalogus = { merken: [], materialen: [], kleure
   return {
     gelezen: {
       leverancier: { naam, btw_nummer: btw, website: null },
+      documentsoort: 'factuur',
       factuurnummer: tekst(f.ID),
+      bestelnummer: tekst(f.OrderReference?.ID) || null,
       datum: /^\d{4}-\d{2}-\d{2}$/.test(tekst(f.IssueDate) || '') ? tekst(f.IssueDate) : null,
       totaal_incl_btw: totaal == null ? null : r4(Math.abs(totaal)),
       regels,
