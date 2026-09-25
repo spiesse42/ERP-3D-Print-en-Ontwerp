@@ -291,6 +291,7 @@ export function productieOverzicht(db, dossierId, regels) {
   return {
     status: statusUit(printregels, ops),
     aantal_opdrachten: ops.length,
+    te_koppelen_runs: teKoppelenVoorDossier(db, dossierId, ops),
     regels: printregels.map(r => {
       const eigen = ops.filter(o => o.dossier_regel_id === r.id);
       const open = eigen.filter(o => !o.voltooid_op && !o.geannuleerd_op);
@@ -303,6 +304,27 @@ export function productieOverzicht(db, dossierId, regels) {
         te_plannen: v.tekort > EPS ? Math.round(v.tekort * 1000) / 1000 : 0, te_veel: teVeel > EPS ? Math.round(teVeel * 1000) / 1000 : 0 };
     }),
   };
+}
+
+// Runs die nog niet gekoppeld zijn, op de printers van de OPEN
+// printopdrachten van dit dossier, van de laatste 48 u (25-09: koppelen
+// vanuit het dossier). Voorstel = de opdracht van dit dossier op die printer
+// waar nog geen andere print op loopt. Koppelen blijft altijd jouw keuze.
+export function teKoppelenVoorDossier(db, dossierId, ops) {
+  const open = ops.filter(o => !o.voltooid_op && !o.geannuleerd_op);
+  if (!open.length) return [];
+  const printers = [...new Set(open.map(o => o.printer_id))];
+  const grens = new Date(Date.now() - 48 * 3600e3).toISOString();
+  const runs = db.prepare(`SELECT r.*, p.naam AS printer FROM printruns r JOIN printers p ON p.id = r.printer_id
+    WHERE r.printopdracht_id IS NULL AND r.intern IS NULL AND r.gestart_op >= ? AND r.printer_id IN (${printers.map(() => '?').join(',')})
+    ORDER BY r.gestart_op`).all(grens, ...printers);
+  return runs.map(r => {
+    const kandidaat = open.find(o => o.printer_id === r.printer_id && !o.runs.some(x => x.uitkomst === 'bezig'));
+    const einde = r.geeindigd_op ? Date.parse(r.geeindigd_op) : Date.now();
+    return { id: r.id, printer_id: r.printer_id, printer: r.printer, bestand: r.bestand, gestart_op: r.gestart_op, geeindigd_op: r.geeindigd_op,
+      uitkomst: r.uitkomst, duur_min: Math.round((einde - Date.parse(r.gestart_op)) / 60000),
+      voorstel: kandidaat ? { id: kandidaat.id, naam: kandidaat.naam, uitleg: 'opdracht van dit dossier op deze printer' } : null };
+  });
 }
 
 // Een printregel met printopdrachten: weg of van soort wisselen kan enkel

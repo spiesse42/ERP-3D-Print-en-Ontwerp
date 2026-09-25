@@ -3,7 +3,10 @@ import { useOmgeving } from '../../schil/Omgeving.jsx';
 import { Link } from '../../schil/Schil.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { aantal, euro, naarInvoer } from '../../lib/formaat.js';
-import { OpdrachtBadge, OpdrachtDialoog, BevestigDialoog } from '../productie/opdracht.jsx';
+import { OpdrachtBadge, OpdrachtDialoog, BevestigDialoog, KoppelDialoog, duur } from '../productie/opdracht.jsx';
+import { StatusBadge } from '../productie/PrintersLive.jsx';
+import { api } from '../../lib/api.js';
+import { datumTijd } from '../../lib/formaat.js';
 
 // Productie van een dossier (stap 6b): per printregel de printopdrachten,
 // hoeveel stuks er goed zijn en wat er nog gepland staat. Klaar = elke
@@ -13,7 +16,16 @@ const uren = u => (u == null ? '—' : `${naarInvoer(Math.round(u * 100) / 100)}
 
 export default function ProductieTab({ d, vuil, herlaad }) {
   const { melding } = useOmgeving();
-  const [dialoog, setDialoog] = useState(null);   // { soort: 'nieuw', regel } | { soort: 'open' | 'bevestig', o }
+  const [dialoog, setDialoog] = useState(null);   // { soort: 'nieuw', regel } | { soort: 'open' | 'bevestig', o } | { soort: 'koppel', run }
+  const [bezig, setBezig] = useState(false);
+  // Te koppelen runs op de printers van dit dossier (25-09): in één klik aan het voorstel
+  async function koppel(run) {
+    setBezig(true);
+    try { await api.post(`/productie/runs/${run.id}/koppel`, { printopdracht_id: run.voorstel.id }); melding(`Run gekoppeld aan "${run.voorstel.naam}".`); await herlaad(); }
+    catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
+  const runs = d.productie.te_koppelen_runs || [];
   const kan = d.acties.printopdracht;
   const klaar = async () => { setDialoog(null); await herlaad(); };
   function plan(x) {
@@ -25,6 +37,21 @@ export default function ProductieTab({ d, vuil, herlaad }) {
   const gemeten = Object.fromEntries(d.regels.filter(r => r.type === 'printen').map(r => [r.id, r.gemeten]));
   return (
     <>
+      {runs.length > 0 && (
+        <section className="te-koppelen" aria-label="Te koppelen runs">
+          <h4>{runs.length === 1 ? 'Er is een run die nog niet gekoppeld is' : `Er zijn ${runs.length} runs die nog niet gekoppeld zijn`}</h4>
+          {runs.map(r => (
+            <div key={r.id} className="run">
+              <div className="wat"><b>{r.printer}</b> · <span className="num">{datumTijd(r.gestart_op)}</span> · {duur(r.duur_min)} <StatusBadge status={r.uitkomst} />
+                {r.bestand && <div className="sub mono">{r.bestand}</div>}</div>
+              <div className="knoppen">
+                {r.voorstel && <button type="button" className="btn klein primary" disabled={bezig} onClick={() => koppel(r)}>Koppelen aan "{r.voorstel.naam}"</button>}
+                <button type="button" className="btn klein" disabled={bezig} onClick={() => setDialoog({ soort: 'koppel', run: r })}>{r.voorstel ? 'Andere keuze…' : 'Koppelen…'}</button>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
       {d.productie.regels.map(x => {
         const g = gemeten[x.regel_id];
         const tekort = Math.max(0, x.besteld - x.goed);
@@ -75,6 +102,7 @@ export default function ProductieTab({ d, vuil, herlaad }) {
       {dialoog?.soort === 'nieuw' && <OpdrachtDialoog vast={dialoog.regel} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'open' && <OpdrachtDialoog opdracht={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'bevestig' && <BevestigDialoog o={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
+      {dialoog?.soort === 'koppel' && <KoppelDialoog run={dialoog.run} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
     </>
   );
 }

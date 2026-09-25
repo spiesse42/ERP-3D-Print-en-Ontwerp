@@ -477,6 +477,14 @@ label.keuze input { margin-top:3px; }
 .prod-regel { border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; margin-bottom:10px; }
 .prod-regel .kop { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; justify-content:space-between; }
 .prod-regel .tel { font-size:12.5px; }
+/* te koppelen runs in een dossier (25-09) */
+.te-koppelen { border:1px solid var(--warn); background:var(--warn-bg); border-radius:var(--radius); padding:10px 12px; margin-bottom:12px; }
+.te-koppelen h4 { margin:0 0 6px; font-size:14px; color:var(--warn); }
+.te-koppelen .run { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; padding:6px 0; border-top:1px solid var(--line); }
+.te-koppelen .run:first-of-type { border-top:0; }
+.te-koppelen .run .wat { flex:1 1 240px; min-width:0; overflow-wrap:anywhere; }
+.te-koppelen .run .knoppen { display:flex; gap:6px; flex-wrap:wrap; }
+.tab-stip { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--warn); margin-left:6px; vertical-align:middle; }
 @media (max-width: 700px) {
   .keuze-sub { margin-left:0; }
 }

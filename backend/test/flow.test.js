@@ -223,3 +223,23 @@ test('X11. niet gestart dossier: niets automatisch (zoals voorheen)', async () =
   assert.equal(d.fase, 'betaald', JSON.stringify(d));
   assert.ok(d.werkbon.definitief_op);
 });
+
+test('X12. te koppelen runs in het dossier: enkel printers van open opdrachten, laatste 48 u, voorstel = opdracht van het dossier', async () => {
+  const d0 = (await vraag('POST', '/dossiers', { titel: 'Bluey', klant_id: klant, regels: [
+    { type: 'printen', omschrijving: 'Bluey', printer_id: a1, aantal: 1, tijd_min: 60, materialen: [{ filament_type_id: pg, gram: 20 }] }] })).data;
+  let d = (await vraag('POST', `/dossiers/${d0.id}/starten`)).data;
+  const o = d.productie.regels[0].opdrachten[0];
+  const nieuweRun = async (printer, urenGeleden) => (await vraag('POST', '/productie/runs', { printer_id: printer,
+    gestart_op: new Date(Date.now() - urenGeleden * 3600e3).toISOString(), geeindigd_op: new Date(Date.now() - (urenGeleden - 0.5) * 3600e3).toISOString(), uitkomst: 'klaar', kwh: 0.1 })).data;
+  const juist = await nieuweRun(a1, 3);
+  await nieuweRun(a1, 60);                 // te oud
+  await nieuweRun(mini, 2);                // andere printer
+  const intern = await nieuweRun(a1, 5);
+  await vraag('POST', `/productie/runs/${intern.id}/koppel`, { intern: 'test' });
+  d = (await vraag('GET', `/dossiers/${d0.id}`)).data;
+  assert.deepEqual(d.productie.te_koppelen_runs.map(r => r.id), [juist.id]);
+  assert.equal(d.productie.te_koppelen_runs[0].voorstel.id, o.id);
+  await vraag('POST', `/productie/runs/${juist.id}/koppel`, { printopdracht_id: o.id });
+  d = (await vraag('GET', `/dossiers/${d0.id}`)).data;
+  assert.equal(d.productie.te_koppelen_runs.length, 0);
+});

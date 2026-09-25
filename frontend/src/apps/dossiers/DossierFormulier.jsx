@@ -94,7 +94,7 @@ export default function DossierFormulier() {
   async function actie(pad, tekst, { vraag, body: b } = {}) {
     if (vuil) { melding('Sla eerst je wijzigingen op of verwerp ze.', 'fout'); return false; }
     if (vraag && !await bevestig(vraag)) return false;
-    try { await api.post(`/dossiers/${id}/${pad}`, b); await herlaad(); setVersie(v => v + 1); melding(tekst); return true; }
+    try { const r = await api.post(`/dossiers/${id}/${pad}`, b); await herlaad(); setVersie(v => v + 1); melding(typeof tekst === 'function' ? tekst(r) : tekst); return true; }
     catch (e) { melding(e.message, 'fout'); return false; }
   }
   function open(wat) {
@@ -128,7 +128,10 @@ export default function DossierFormulier() {
   const startTekst = d?.soort === 'klant' ? (heeftPrint ? 'Gestart: werkbon en printopdrachten aangemaakt.' : 'Gestart: werkbon aangemaakt.') : 'Gestart: printopdrachten aangemaakt.';
   const startUitleg = d?.soort === 'klant' ? `Maakt de werkbon${heeftPrint ? ' en een printopdracht per printregel' : ''}. Met een offerte gebeurt dit vanzelf zodra de klant akkoord gaat.` : 'Maakt een printopdracht per printregel.';
   const workflow = nieuw ? null : <>
-    {acties.starten && <button type="button" className="btn primary" disabled={vuil} title={vuil ? 'Sla eerst je wijzigingen op.' : startUitleg} onClick={() => actie('starten', startTekst)}><Icoon naam="start" maat={14} /> Starten</button>}
+    {acties.starten && <button type="button" className="btn primary" disabled={vuil} title={vuil ? 'Sla eerst je wijzigingen op.' : startUitleg} onClick={() => actie('starten', r => {
+      const run = r?.productie?.te_koppelen_runs?.[0];
+      return run ? `${startTekst} Op ${run.printer} staat een run die nog niet gekoppeld is: koppel hem in de tab Productie.` : startTekst;
+    })}><Icoon naam="start" maat={14} /> Starten</button>}
     {afrekenKnop}
     {acties.betaald && <button type="button" className="btn primary" onClick={() => open('betaald')}>Betaald</button>}
     {d.soort === 'klant' && d.regels.length > 0 && fase !== 'geannuleerd' && <button type="button" className="btn" onClick={() => open('overname')}>Overnamefiche</button>}
@@ -197,7 +200,7 @@ export default function DossierFormulier() {
             </div>
           </div>
 
-          <Tabs tabs={[['regels', `Regels (${form.regels.length})`], ...(nieuw ? [] : [...(d.soort === 'klant' ? [['offertes', `Offertes (${d.offertes.length})`]] : []), ...(d.productie?.regels.length ? [['productie', `Productie (${d.productie.aantal_opdrachten})`]] : []), ['werkbon', 'Werkbon'], ...(d.soort === 'klant' ? [['leveringen', `Leveringen (${d.leveringen.length})`]] : []), ['bijlagen', 'Bijlagen']]), ['notities', 'Notities']]} actief={tab} onKies={setTab} />
+          <Tabs tabs={[['regels', `Regels (${form.regels.length})`], ...(nieuw ? [] : [...(d.soort === 'klant' ? [['offertes', `Offertes (${d.offertes.length})`]] : []), ...(d.productie?.regels.length ? [['productie', <>Productie ({d.productie.aantal_opdrachten}){d.productie.te_koppelen_runs?.length > 0 && <span className="tab-stip" title="Run(s) te koppelen" aria-label="runs te koppelen" />}</>]] : []), ['werkbon', 'Werkbon'], ...(d.soort === 'klant' ? [['leveringen', `Leveringen (${d.leveringen.length})`]] : []), ['bijlagen', 'Bijlagen']]), ['notities', 'Notities']]} actief={tab} onKies={setTab} />
           <div className="tabpanel">
             {tab === 'regels' && (
               <>

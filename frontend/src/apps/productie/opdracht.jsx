@@ -161,7 +161,7 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
         <legend className="sr-only">Waar hoort deze run bij?</legend>
         {run.voorstel && (
           <label className="keuze"><input type="radio" name="kp" checked={keuze === 'voorstel'} onChange={() => setKeuze('voorstel')} />
-            <span>Voorstel: <b>{run.voorstel.naam}</b> <span className="sub">(eerste in de wachtrij van deze printer)</span></span></label>
+            <span>Voorstel: <b>{run.voorstel.naam}</b> <span className="sub">({run.voorstel.uitleg || 'eerste in de wachtrij van deze printer'})</span></span></label>
         )}
         <label className="keuze"><input type="radio" name="kp" checked={keuze === 'andere'} onChange={() => setKeuze('andere')} disabled={!open.length} />
           <span>Een andere printopdracht{!open.length && <span className="sub"> (geen open opdrachten)</span>}</span></label>
