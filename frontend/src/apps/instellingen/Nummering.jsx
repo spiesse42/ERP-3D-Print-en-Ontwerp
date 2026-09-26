@@ -6,7 +6,10 @@ import { Laden, Fout } from '../../schil/Weergaven.jsx';
 
 // Nummering (stap 5a): per reeks het volgende nummer van dit jaar. Handig bij
 // de overschakeling: verder tellen waar het oude pakket stopte. Nooit lager
-// dan een nummer dat al bestaat. Facturen en bonnetjes nummert Accountable.
+// dan een nummer dat al bestaat. Sinds 26-09 ook bonnetjes (en later
+// facturen): het ERP geeft zelf het nummer uit waarmee gemaild wordt naar
+// inkomsten@accountable.eu; klopt dat niet meer met wat Accountable zelf
+// toekent, dan corrigeer je het hier.
 export default function Nummering() {
   const { data, fout, laden, setData } = useData('/nummering');
   const { melding } = useOmgeving();
@@ -46,7 +49,7 @@ export default function Nummering() {
             </tbody>
           </table>
         </div>
-        <p className="note" style={{ marginBottom: 0 }}>Elk jaar begint elke reeks opnieuw bij 1. Bij de overschakeling vul je hier in waar het oude pakket gebleven is (bv. offerte 43 → volgende nummer 44). Facturen en bonnetjes nummert Accountable, niet het ERP.</p>
+        <p className="note" style={{ marginBottom: 0 }}>Elk jaar begint elke reeks opnieuw bij 1. Bij de overschakeling vul je hier in waar het oude pakket gebleven is (bv. offerte 43 → volgende nummer 44). Bonnetjes en facturen geeft het ERP zelf een nummer bij het aanmaken en mailen naar Accountable — klopt dat niet met het nummer dat Accountable er zelf aan toekent, corrigeer het dan hier.</p>
       </div>
     </div>
   );

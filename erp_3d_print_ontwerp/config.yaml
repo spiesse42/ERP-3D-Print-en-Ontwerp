@@ -7,7 +7,7 @@
 # zelf wordt bereikt via de Supervisor (homeassistant_api), zonder token.
 name: "ERP 3D Print & Ontwerp"
 description: "Dossiers, offertes, werkbonnen, productie, voorraad en financien voor 3D-print en ontwerp"
-version: "0.13.16"
+version: "0.13.17"
 slug: "erp_3d_print_ontwerp"
 url: "https://github.com/spiesse42/ERP-3D-Print-en-Ontwerp"
 init: false
