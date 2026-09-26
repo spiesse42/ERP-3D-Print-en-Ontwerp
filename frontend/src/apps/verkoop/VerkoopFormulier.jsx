@@ -83,6 +83,21 @@ function NieuweVerkoop() {
     zetRegel(i, { dossier_id: id, aantal: '1', prijs: d?.bedrag != null ? naarInvoer(d.bedrag) : '', omschrijving: '' });
     if (d?.klant_id && !f.klant_id) zet('klant_id', String(d.klant_id));
   }
+  // 26-09: rechtstreeks toevoegen vanuit de lijst "Klaar om af te rekenen"
+  // (een lege regel wordt vervangen i.p.v. te blijven staan)
+  const isLeeg = r => !r.artikel_id && !r.dossier_id && !r.printopdracht_id && !r.omschrijving && !r.prijs;
+  function voegToe(soort, id) {
+    const regel = { ...nieuweRegel(soort) };
+    if (soort === 'dossier') {
+      const d = dossierVan.get(String(id));
+      Object.assign(regel, { dossier_id: String(id), aantal: '1', prijs: d?.bedrag != null ? naarInvoer(d.bedrag) : '' });
+      if (d?.klant_id && !f.klant_id) zet('klant_id', String(d.klant_id));
+    } else {
+      const o = opdrachtVan.get(String(id));
+      Object.assign(regel, { printopdracht_id: String(id), aantal: o ? naarInvoer(o.aantal_goed) : '1', prijs: o?.voorstel != null ? naarInvoer(r2(o.voorstel / o.aantal_goed)) : '' });
+    }
+    setRegels(rs => [...rs.filter(r => !isLeeg(r)), regel]);
+  }
   function kiesOpdracht(i, id) {
     const o = opdrachtVan.get(id);
     // voorstel per stuk op 2 decimalen: aantal × prijs/stuk = het bedrag op het bonnetje
@@ -206,6 +221,8 @@ function NieuweVerkoop() {
               {klant?.type === 'zakelijk' && <p className="sub" style={{ margin: 0 }}>Zakelijke klant: normaal krijgt die een factuur (voorlopig via Accountable).</p>}
             </div>
           </div>
+          <KlaarOmAfTeRekenen kand={kand} klant={klant} gekozenD={new Set(regels.map(r => r.dossier_id).filter(Boolean))}
+            gekozenO={new Set(regels.map(r => r.printopdracht_id).filter(Boolean))} onVoegToe={voegToe} />
           <div style={{ padding: '0 22px 16px' }}>
             <div className="tabelvak">
               <table className="mini">
@@ -265,6 +282,70 @@ function NieuweVerkoop() {
         </div>
       </div>
     </>
+  );
+}
+
+// ── "Klaar om af te rekenen" (26-09) ─────────────────────────────────────
+// Meteen zien wat er open staat, zonder te zoeken: de af te rekenen dossiers
+// (van de gekozen klant, of allemaal als er nog geen klant gekozen is) en de
+// voltooide losse printopdrachten die nog niet verkocht zijn. Eén klik zet
+// het op het bonnetje.
+function KlaarOmAfTeRekenen({ kand, klant, gekozenD, gekozenO, onVoegToe }) {
+  const [alles, setAlles] = useState(false);
+  if (!kand) return null;
+  const vanKlant = klant ? kand.dossiers.filter(d => d.klant_id === klant.id) : kand.dossiers;
+  const anderen = klant ? kand.dossiers.length - vanKlant.length : 0;
+  const dossiers = (klant && !alles ? vanKlant : kand.dossiers)
+    .slice().sort((a, b) => (['klaar', 'deels', 'geleverd'].includes(b.fase) - ['klaar', 'deels', 'geleverd'].includes(a.fase)) || b.id - a.id);
+  const opdrachten = kand.printopdrachten;
+  if (!kand.dossiers.length && !opdrachten.length) return null;
+  const knop = (gekozen, uit, onClick) => (gekozen
+    ? <span className="sub" style={{ whiteSpace: 'nowrap' }}><Icoon naam="vink" maat={12} /> op bonnetje</span>
+    : <button type="button" className="btn klein" style={{ whiteSpace: 'nowrap' }} disabled={uit} onClick={onClick}><Icoon naam="plus" maat={12} /> Op bonnetje</button>);
+  return (
+    <div className="panel" style={{ margin: '0 22px 14px' }}>
+      <h3 style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        Klaar om af te rekenen{klant ? <span className="sub" style={{ fontWeight: 400 }}>voor {klantNaam(klant)}</span> : null}
+      </h3>
+      <div className="pbody" style={{ paddingTop: 4 }}>
+        <div className="tabelvak">
+          <table className="mini">
+            <tbody>
+              {dossiers.length === 0 && <tr><td className="sub">{klant ? `Geen open dossiers voor ${klantNaam(klant)}.` : 'Geen open klantdossiers.'}</td></tr>}
+              {dossiers.map(d => {
+                const ander = klant && d.klant_id && d.klant_id !== klant.id;
+                return (
+                  <tr key={`d${d.id}`}>
+                    <td style={{ width: 1, whiteSpace: 'nowrap' }}><span className="sub">Dossier</span></td>
+                    <td><span className="mono">{d.nummer}</span> · <b>{d.titel}</b>{(!klant || alles) && d.klant ? <span className="sub"> · {d.klant}</span> : null}
+                      {d.waarschuwingen.length > 0 && <div className="sub">{d.waarschuwingen.join(' ')}</div>}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}><span className={`badge ${FASE[d.fase]?.[0] || 'b-neutral'}`}>{FASE[d.fase]?.[1] || d.fase}</span></td>
+                    <td className="r num" style={{ whiteSpace: 'nowrap' }}>{d.volledig ? euro(d.bedrag) : <span className="sub">nog niet te berekenen</span>}{d.offerte && <div className="sub">offerteprijs</div>}</td>
+                    <td className="r" style={{ width: 1 }}>{knop(gekozenD.has(String(d.id)), !d.volledig || ander, () => onVoegToe('dossier', d.id))}
+                      {ander && <div className="sub">andere klant</div>}</td>
+                  </tr>
+                );
+              })}
+              {opdrachten.map(o => (
+                <tr key={`p${o.id}`}>
+                  <td style={{ width: 1, whiteSpace: 'nowrap' }}><span className="sub">Printopdracht</span></td>
+                  <td><b>{o.naam}</b><span className="sub"> · {o.printer} · {datum(o.voltooid_op)}</span>
+                    {o.waarschuwingen.length > 0 && <div className="sub">{o.waarschuwingen.join(' ')}</div>}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}><span className="sub">{fmtAantal(o.aantal_goed)} st.</span></td>
+                  <td className="r num" style={{ whiteSpace: 'nowrap' }}>{o.voorstel != null ? euro(o.voorstel) : <span className="sub">zelf prijzen</span>}</td>
+                  <td className="r" style={{ width: 1 }}>{knop(gekozenO.has(String(o.id)), false, () => onVoegToe('printopdracht', o.id))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {klant && anderen > 0 && (
+          <button type="button" className="linkish" style={{ marginTop: 6 }} onClick={() => setAlles(a => !a)}>
+            {alles ? `Enkel dossiers van ${klantNaam(klant)}` : `Ook de ${anderen} open dossier${anderen > 1 ? 's' : ''} van andere klanten tonen`}</button>
+        )}
+        {opdrachten.length > 0 && <p className="sub" style={{ margin: '6px 0 0' }}>Printopdrachten hebben geen klant: je ziet alle voltooide losse printopdrachten die nog niet verkocht zijn.</p>}
+      </div>
+    </div>
   );
 }
 
