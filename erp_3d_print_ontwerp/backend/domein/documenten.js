@@ -21,6 +21,15 @@ export function offertesVan(db, dossierId) {
 }
 export const nummerMetVersie = d => (d.versie > 1 ? `${d.nummer} v${d.versie}` : d.nummer);
 
+// Afrekening in teksten (26-09): "bonnetje Bonnetje 2026-020" → "Bonnetje 2026-020"
+// (het ERP-nummer draagt het woord al), anders "factuur 2026-002".
+export function afrekeningWeergave(soort, nummer) {
+  const n = String(nummer ?? '').trim();
+  return n.toLowerCase().startsWith(`${soort} `) ? n : `${soort} ${n}`;
+}
+// Een bonnetje dat het ERP zelf maakte (en dus kan tonen/mailen).
+export function isErpBonnetje(d) { return d.afgerekend_soort === 'bonnetje' && !!d.afrekening_pdf_op; }
+
 // De laatst verstuurde versie bepaalt de fase van het dossier.
 export function laatsteVerstuurde(offertes) {
   return [...offertes].filter(o => o.verstuurd_op).sort((a, b) => b.versie - a.versie)[0] || null;

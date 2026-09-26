@@ -38,14 +38,21 @@ function haalTransport() {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export class MailFout extends Error {}
 
-export async function verstuurMail({ aan, onderwerp, tekst, bijlage }) {
+// Enkel een geldig e-mailadres (gedeeld met de routes: vooraf controleren).
+export const geldigAdres = a => EMAIL.test(String(a || '').trim());
+
+// cc (26-09): bv. inkomsten@accountable.eu bij een bonnetje dat ook naar de
+// klant gaat. Leeg/afwezig = geen cc.
+export async function verstuurMail({ aan, cc = null, onderwerp, tekst, bijlage }) {
   const ontvanger = String(aan || '').trim();
   if (!EMAIL.test(ontvanger)) throw new MailFout('Vul een geldig e-mailadres in.');
+  const kopie = String(cc || '').trim();
+  if (kopie && !EMAIL.test(kopie)) throw new MailFout(`Ongeldig e-mailadres in cc: ${kopie}`);
   const t = haalTransport();
   if (!t) throw new MailFout('Mailen is nog niet ingesteld: vul smtp_user en smtp_pass in bij de add-on-configuratie (Gmail: app-wachtwoord; eigen server: ook smtp_host en smtp_port) (lokaal: omgevingsvariabelen).');
   const bericht = {
     from: process.env.SMTP_FROM || process.env.SMTP_USER || 'erp@localhost',
-    to: ontvanger, subject: onderwerp, text: tekst,
+    to: ontvanger, ...(kopie ? { cc: kopie } : {}), subject: onderwerp, text: tekst,
     attachments: bijlage ? [{ filename: bijlage.naam, content: bijlage.inhoud, contentType: 'application/pdf' }] : [],
   };
   try {

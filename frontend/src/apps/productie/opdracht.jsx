@@ -5,6 +5,7 @@ import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
 import { Link } from '../../schil/Schil.jsx';
 import { aantal, naarInvoer, datumTijd, euro } from '../../lib/formaat.js';
 import { RunVenster } from './RunDialoog.jsx';
+import Icoon from '../../schil/Icoon.jsx';
 
 // Printopdrachten en runs koppelen (stap 6b) — gedeelde stukken voor
 // Productie → Printopdrachten, Productie → Runs, de printerkaarten en het
@@ -24,6 +25,54 @@ const UITKOMST = { bezig: 'bezig', klaar: 'geslaagd', mislukt: 'mislukt', geannu
 export function Herkomst({ o }) {
   if (o.dossier_id) return <span><Link naar={`/dossiers/${o.dossier_id}?tab=productie`}><span className="mono">{o.dossier_nummer}</span></Link>{o.dossier_titel ? ` · ${o.dossier_titel}` : ''}</span>;
   return <span className="sub">{SOORT_OPDRACHT[o.soort]}</span>;
+}
+
+// ── Filament van een LOSSE printopdracht (26-09, optie A) ──────────────
+// Een opdracht zonder dossier heeft zelf filament + gram (voor de hele
+// opdracht, alle stuks samen). Zelfde keuze als op een printregel: een
+// filament (merk · type · kleur) of enkel een prijsgroep (merk · type).
+// Een opdracht MET dossier haalt het filament van de regel (daar aanpassen).
+export const legeMat = (gram = '') => [{ keuze: '', gram }];
+export function naarMatInvoer(materialen) {
+  return materialen?.length
+    ? materialen.map(m => ({ keuze: m.artikel_id ? `a:${m.artikel_id}` : `p:${m.filament_type_id}`, gram: naarInvoer(m.gram) }))
+    : legeMat();
+}
+export function matVoorApi(rijen) {
+  return rijen.filter(r => r.keuze).map(r => {
+    const [soort, id] = r.keuze.split(':');
+    const g = String(r.gram ?? '').trim();
+    return { [soort === 'a' ? 'artikel_id' : 'filament_type_id']: Number(id), gram: g === '' ? 0 : g.replace(',', '.') };
+  });
+}
+// Gewicht dat de printer zelf meldde (bv. Bambu "gewicht van print"), als voorstel.
+export function gemeldGewicht(runs) {
+  const g = (runs || []).filter(r => r.uitkomst === 'klaar' && r.gewicht_g > 0).reduce((t, r) => t + r.gewicht_g, 0);
+  return g > 0 ? naarInvoer(Math.round(g * 10) / 10) : '';
+}
+export function FilamentInvoer({ rijen, onWijzig, uit = false, id = 'fil' }) {
+  const { data: artikelen } = useData('/voorraad/artikelen?archief=alle');
+  const { data: prijsgroepen } = useData('/filament/types');
+  const gekozen = new Set(rijen.map(r => r.keuze));
+  const filamenten = (artikelen || []).filter(a => a.type === 'filament' && (!a.gearchiveerd || gekozen.has(`a:${a.id}`)));
+  const zet = (k, w) => onWijzig(rijen.map((r, j) => (j === k ? { ...r, ...w } : r)));
+  return (
+    <fieldset className="materialen" disabled={uit} style={{ border: 0, padding: 0, margin: 0 }}>
+      <legend className="lbl" style={{ padding: 0 }}>Filament <span className="sub" style={{ fontWeight: 400 }}>(gram voor de hele opdracht, alle stuks samen)</span></legend>
+      {rijen.map((m, k) => (
+        <div className="materiaal" key={k}>
+          <select className="inp" id={k === 0 ? `${id}-0` : undefined} aria-label={`Filament ${k + 1}`} value={m.keuze} onChange={e => zet(k, { keuze: e.target.value })}>
+            <option value="">Filament kiezen…</option>
+            <optgroup label="Filament (merk · type · kleur)">{filamenten.map(f => <option key={`a${f.id}`} value={`a:${f.id}`}>{f.weergave}</option>)}</optgroup>
+            <optgroup label="Enkel prijsgroep (merk · type)">{(prijsgroepen || []).map(g => <option key={`p${g.id}`} value={`p:${g.id}`}>{g.merk} {g.materiaal}</option>)}</optgroup>
+          </select>
+          <span className="unit"><input className="inp num" inputMode="decimal" aria-label={`Gewicht filament ${k + 1}`} placeholder="gram" value={m.gram} onChange={e => zet(k, { gram: e.target.value })} /><span>g</span></span>
+          {rijen.length > 1 && !uit && <button type="button" className="btn ghost" aria-label="Kleur weghalen" onClick={() => onWijzig(rijen.filter((_, j) => j !== k))}><Icoon naam="kruis" maat={12} /></button>}
+        </div>
+      ))}
+      {!uit && <button type="button" className="linkish" onClick={() => onWijzig([...rijen, { keuze: '', gram: '' }])}>+ kleur (multicolor)</button>}
+    </fieldset>
+  );
 }
 
 // ── Nieuwe printopdracht of bestaande bekijken/bewerken ─────────────────
@@ -50,18 +99,44 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit: sluit, 
   }));
   const [bezig, setBezig] = useState(false);
   const [bevestigen, setBevestigen] = useState(false);
+  // losse opdracht (geen dossierregel): eigen filament (26-09)
+  const los = o ? !o.dossier_regel_id : !vast;
+  // nog geen filament: het gewicht dat de printer meldde als voorstel
+  const [mat, setMat] = useState(() => (o?.materialen?.length ? naarMatInvoer(o.materialen) : legeMat(gemeldGewicht(o?.runs))));
+  const [matGewijzigd, setMatGewijzigd] = useState(false);
+  const wijzigMat = r => { setMat(r); setMatGewijzigd(true); };
   const zet = k => e => setF(x => ({ ...x, [k]: e.target.value }));
   const actief = (printers || []).filter(p => p.actief || String(p.id) === f.printer_id);
   async function doe(fn, tekst) {
     setBezig(true);
     try { await fn(); if (tekst) melding(tekst); await onKlaar(); } catch (e) { melding(e.message, 'fout'); setBezig(false); }
   }
+  const matBody = los ? { materialen: matVoorApi(mat) } : {};
   const opslaan = () => doe(() => (o
-    ? api.put(`/productie/opdrachten/${o.id}`, { naam: f.naam, aantal: f.aantal, printer_id: Number(f.printer_id), notities: f.notities })
+    ? api.put(`/productie/opdrachten/${o.id}`, { naam: f.naam, aantal: f.aantal, printer_id: Number(f.printer_id), notities: f.notities, ...matBody })
     : api.post('/productie/opdrachten', { printer_id: Number(f.printer_id), naam: f.naam, aantal: f.aantal, notities: f.notities,
-      ...(vast ? { dossier_regel_id: vast.dossier_regel_id } : { soort: f.soort }) })), o ? 'Printopdracht bewaard.' : 'Printopdracht gepland.');
+      ...(vast ? { dossier_regel_id: vast.dossier_regel_id } : { soort: f.soort, ...matBody }) })), o ? 'Printopdracht bewaard.' : 'Printopdracht gepland.');
+  // Na het bevestigen: filament aanvullen/corrigeren → kost meteen herberekend.
+  async function filamentBewaren() {
+    setBezig(true);
+    try {
+      const r = await api.put(`/productie/opdrachten/${o.id}/materialen`, { materialen: matVoorApi(mat) });
+      setVers(r); setMat(naarMatInvoer(r.materialen)); setMatGewijzigd(false); setGewijzigd(true);
+      melding(r.kost?.onvolledig ? `Filament bewaard. Productiekost nog onvolledig — ontbreekt: ${r.kost.ontbreekt.join(' · ')}` : 'Filament bewaard, productiekost herberekend.');
+    } catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
+  async function kostHerberekenen() {
+    setBezig(true);
+    try {
+      const r = await api.post(`/productie/opdrachten/${o.id}/herbereken`);
+      setVers(r); setGewijzigd(true);
+      melding(r.kost?.onvolledig ? `Nog steeds onvolledig — ontbreekt: ${r.kost.ontbreekt.join(' · ')}` : 'Productiekost herberekend.');
+    } catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
   const actie = (pad, tekst, vraag) => async () => { if (vraag && !await bevestig(vraag)) return; await doe(() => (pad === 'delete' ? api.delete(`/productie/opdrachten/${o.id}`) : api.post(`/productie/opdrachten/${o.id}/${pad}`)), tekst); };
-  if (bevestigen) return <BevestigDialoog o={o} onSluit={() => setBevestigen(false)} onKlaar={onKlaar} />;
+  if (bevestigen) return <BevestigDialoog o={o} mat={los && matGewijzigd ? mat : null} onSluit={() => setBevestigen(false)} onKlaar={onKlaar} />;
   if (runOpen) return <RunVenster runId={runOpen} onSluit={() => setRunOpen(null)} onKlaar={naRun} />;
   const titel = o ? `Printopdracht · ${o.naam}` : vast ? `Printopdracht voor ${vast.label || vast.naam}` : 'Nieuwe printopdracht';
   return (
@@ -100,8 +175,26 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit: sluit, 
       {o?.productiekost_stuk != null && (
         <p className="sub">Productiekost: <b>{euro(o.productiekost_stuk)}</b> per stuk{o.arbeid_stuk ? <> + arbeid {euro(o.arbeid_stuk)}</> : null}{o.kost_onvolledig ? ' (onvolledig: een prijs of meting ontbreekt)' : ''}</p>
       )}
-      {o?.materialen?.length > 0 && (
-        <p className="sub">Filament: {o.materialen.map(m => `${m.naam || '?'} (${aantal(m.gram)} g${m.artikel_id ? `, voorraad ${aantal(m.voorraad)}` : ''})`).join(' · ')}</p>
+      {los && (
+        <div style={{ marginTop: 12 }}>
+          <FilamentInvoer rijen={mat} onWijzig={wijzigMat} uit={o?.status === 'geannuleerd'} id="po-fil" />
+          {o?.status === 'voltooid' && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn primary" disabled={bezig || !matGewijzigd} onClick={filamentBewaren}>Filament bewaren</button>
+              <span className="sub">De productiekost wordt meteen opnieuw berekend.</span>
+            </div>
+          )}
+        </div>
+      )}
+      {!los && o?.materialen?.length > 0 && (
+        <p className="sub">Filament (van de regel in het dossier): {o.materialen.map(m => `${m.naam || '?'} (${aantal(m.gram)} g${m.artikel_id ? `, voorraad ${aantal(m.voorraad)}` : ''})`).join(' · ')}</p>
+      )}
+      {o?.status === 'voltooid' && !!o.kost_onvolledig && (
+        <div className="waarschuwing" style={{ margin: '10px 0 0', display: 'block' }} role="status">
+          <b>Productiekost onvolledig.</b>{o.kost_ontbreekt ? <> Ontbreekt: {o.kost_ontbreekt.split('; ').map(t => (los ? t.replace('(open de printopdracht → Filament)', '(hierboven)') : t)).join(' · ')}.</> : null}
+          <div style={{ marginTop: 6 }}><button type="button" className="btn klein" disabled={bezig} onClick={kostHerberekenen}>Kost herberekenen</button>
+            <span className="sub" style={{ color: 'inherit', marginLeft: 8 }}>na het aanvullen van een prijs, tarief of kWh</span></div>
+        </div>
       )}
       {o && (
         <div className="tabelvak" style={{ marginTop: 12 }}>
@@ -121,34 +214,43 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit: sluit, 
 }
 
 // ── Bevestigen: hoeveel stuks zijn goed? ─────────────────────────────────
-export function BevestigDialoog({ o, onSluit, onKlaar }) {
+// mat: filament dat in het opdrachtvenster al gewijzigd maar nog niet bewaard is.
+export function BevestigDialoog({ o, mat: matVan = null, onSluit, onKlaar }) {
   const { melding } = useOmgeving();
   const [n, setN] = useState(naarInvoer(o.aantal));
   const [bezig, setBezig] = useState(false);
+  // 26-09: losse opdracht → filament meteen hier ingeven (voorstel: het
+  // gewicht dat de printer meldde, als er nog niets ingevuld is)
+  const los = !o.dossier_regel_id;
+  const [mat, setMat] = useState(() => matVan || (o.materialen?.length ? naarMatInvoer(o.materialen) : legeMat(gemeldGewicht(o.runs))));
+  const matJson = los ? JSON.stringify(matVoorApi(mat)) : null;
   // 25-09: vooraf zien of de productiekost volledig wordt, en wat ontbreekt
   const [kost, setKost] = useState(null);
   useEffect(() => {
     let weg = false;
-    const t = setTimeout(() => api.get(`/productie/opdrachten/${o.id}/kost-voorbeeld?aantal_goed=${encodeURIComponent(n || '0')}`)
+    const t = setTimeout(() => api.get(`/productie/opdrachten/${o.id}/kost-voorbeeld?aantal_goed=${encodeURIComponent(n || '0')}${matJson ? `&materialen=${encodeURIComponent(matJson)}` : ''}`)
       .then(k => { if (!weg) setKost(k); }).catch(() => {}), 250);
     return () => { weg = true; clearTimeout(t); };
-  }, [o.id, n]);
+  }, [o.id, n, matJson]);
   async function ok() {
     setBezig(true);
-    try { await api.post(`/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: n }); melding('Printopdracht voltooid.'); await onKlaar(); }
+    try { await api.post(`/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: n, ...(los ? { materialen: JSON.parse(matJson) } : {}) }); melding('Printopdracht voltooid.'); await onKlaar(); }
     catch (e) { melding(e.message, 'fout'); setBezig(false); }
   }
   const mislukt = o.runs.filter(r => r.uitkomst !== 'klaar' && r.uitkomst !== 'bezig').length;
   return (
-    <Dialoog titel={`Bevestigen · ${o.naam}`} onSluit={onSluit}
+    <Dialoog titel={`Bevestigen · ${o.naam}`} onSluit={onSluit} breed={los}
       voet={<><button type="button" className="btn" onClick={onSluit}>Terug</button><button type="button" className="btn primary" disabled={bezig} onClick={ok}>Bevestigen</button></>}>
       <label className="lbl" htmlFor="bv-n">Aantal goede stuks (gepland: {aantal(o.aantal)})</label>
       <input id="bv-n" className="inp num" inputMode="decimal" value={n} onChange={e => setN(e.target.value)} autoFocus />
       {o.eindproduct && <p className="sub">De goede stuks komen in voorraad als <b>{o.eindproduct}</b>, aan de productiekost per stuk.</p>}
+      {los && <div style={{ marginTop: 12 }}><FilamentInvoer rijen={mat} onWijzig={setMat} id="bv-fil" /></div>}
       {kost?.onvolledig && (
         <div className="waarschuwing" style={{ margin: '10px 0 0', display: 'block' }} role="status">
-          <b>Let op: de productiekost wordt onvolledig.</b> Ontbreekt: {kost.ontbreekt.join(' · ')}.
-          <div className="sub" style={{ color: 'inherit' }}>Je kunt toch bevestigen; vul het later aan (bv. Voorraad → artikel → inkoopprijs) en klik dan "Kost herberekenen".</div>
+          <b>Let op: de productiekost wordt onvolledig.</b> Ontbreekt: {kost.ontbreekt.map(t => (los ? t.replace('(open de printopdracht → Filament)', '(hierboven)') : t)).join(' · ')}.
+          <div className="sub" style={{ color: 'inherit' }}>{los
+            ? 'Je kunt toch bevestigen en het later aanvullen: open de printopdracht (filament bewaren, of "Kost herberekenen").'
+            : 'Je kunt toch bevestigen en het later aanvullen; klik dan in het dossier (tabblad Productie) op "Kost herberekenen".'}</div>
         </div>
       )}
       {mislukt > 0 && <p className="sub">{mislukt} mislukte poging{mislukt > 1 ? 'en' : ''}: die tellen niet op de werkbon, wel als kost voor jou (marge-analyse).</p>}
@@ -168,12 +270,15 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
   const keuze = gekozenKeuze ?? (open.length ? 'andere' : 'nieuw');
   const [andere, setAndere] = useState('');
   const [nieuw, setNieuw] = useState({ naam: run.bestand ? run.bestand.replace(/(\.gcode)?\.(gcode|3mf|bgcode)$/i, '') : '', aantal: '1', soort: 'eigen' });
+  // 26-09: filament meteen meegeven (gewicht van de printer als voorstel)
+  const gemeld = run.gewicht_g > 0 ? naarInvoer(Math.round(run.gewicht_g * 10) / 10) : '';
+  const [nieuwMat, setNieuwMat] = useState(() => legeMat(gemeld));
   const [intern, setIntern] = useState('kalibratie');
   const [bezig, setBezig] = useState(false);
   const gekozen = open.find(o => String(o.id) === andere);
   async function ok() {
     const body = keuze === 'voorstel' ? { printopdracht_id: run.voorstel.id } : keuze === 'andere' ? { printopdracht_id: Number(andere) }
-      : keuze === 'nieuw' ? { nieuw } : { intern };
+      : keuze === 'nieuw' ? { nieuw: { ...nieuw, materialen: matVoorApi(nieuwMat) } } : { intern };
     setBezig(true);
     try { await api.post(`/productie/runs/${run.id}/koppel`, body); melding(keuze === 'intern' ? 'Run gemarkeerd als intern.' : 'Run gekoppeld.'); await onKlaar(); }
     catch (e) { melding(e.message, 'fout'); setBezig(false); }
@@ -217,6 +322,10 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
               <select id="kp-soort" className="inp" value={nieuw.soort} onChange={e => setNieuw(x => ({ ...x, soort: e.target.value }))}>
                 <option value="eigen">Eigen product</option><option value="intern">Intern</option>
               </select></div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <FilamentInvoer rijen={nieuwMat} onWijzig={setNieuwMat} id="kp-fil" />
+              {gemeld && <p className="sub" style={{ margin: '4px 0 0' }}>Gewicht zoals de printer het meldde ({gemeld} g); kies nog het filament.</p>}
+            </div>
           </div>
         )}
         <label className="keuze"><input type="radio" name="kp" checked={keuze === 'intern'} onChange={() => setKeuze('intern')} />

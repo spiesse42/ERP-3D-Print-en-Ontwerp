@@ -3,6 +3,8 @@
 export const APPS = [
   { id: 'dossiers',     naam: 'Dossiers',     icoon: 'map',      kleur: '#c2531a', klaar: true,
     menu: [['', 'Dossiers'], ['offertes', 'Offertes'], ['leveringen', 'Leveringen']] },
+  { id: 'verkoop',      naam: 'Verkoop',      icoon: 'bon',      kleur: '#a23b5c', klaar: true,
+    menu: [['', 'Overzicht'], ['nieuw', 'Nieuwe verkoop']] },
   { id: 'productie',    naam: 'Productie',    icoon: 'nozzle',   kleur: '#3a6ea8', klaar: true,
     menu: [['', 'Printers'], ['opdrachten', 'Printopdrachten'], ['runs', 'Runs']] },
   { id: 'inkoop',       naam: 'Inkoop',       icoon: 'kar',      kleur: '#6b7d3a', klaar: true,

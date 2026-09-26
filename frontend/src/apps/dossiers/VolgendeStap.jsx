@@ -7,7 +7,7 @@ import { BevestigDialoog } from '../productie/opdracht.jsx';
 // "Volgende stap" bovenaan een dossier (25-09): één zin met wat er nu moet
 // gebeuren en de knop erbij. De zin komt uit de backend (volgende_stap);
 // hier enkel de knop per soort. Plus de uitleg "Hoe werkt een dossier?".
-export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBetaald, onGratis, onHeropenen, naarTab, herlaad }) {
+export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBonnetje, onBonnetjeMailen, onBetaald, onGratis, onHeropenen, naarTab, herlaad }) {
   const { melding } = useOmgeving();
   const [bevestig, setBevestig] = useState(null);
   const [uitleg, setUitleg] = useState(false);
@@ -35,7 +35,11 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
     bezig: () => knop('Naar Productie', () => naarTab('productie'), { primair: false }),
     wachtrij: () => knop('Naar Productie', () => naarTab('productie'), { primair: false }),
     plannen: () => knop('Naar Productie', () => naarTab('productie')),
-    afrekenen: () => <>{knop('Afrekenen', onAfrekenen, { uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>,
+    // 26-09: particulier → "Bonnetje maken" (ERP) als hoofdknop; zakelijk → factuur via Accountable ("Afrekenen")
+    afrekenen: () => (d.klant_gegevens?.type === 'zakelijk'
+      ? <>{knop('Afrekenen', onAfrekenen, { uit: !!afrekenReden })}{knop('Bonnetje maken', onBonnetje, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>
+      : <>{knop('Bonnetje maken', onBonnetje, { uit: !!afrekenReden })}{knop('Afrekenen', onAfrekenen, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>),
+    bonnetje_mailen: () => knop('Bonnetje mailen', onBonnetjeMailen),
     betaling: () => knop('Betaald', onBetaald),
     geannuleerd: () => knop('Heropenen', onHeropenen, { primair: false }),
   };

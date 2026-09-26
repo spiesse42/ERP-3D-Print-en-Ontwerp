@@ -40,22 +40,27 @@ const SELECT = `SELECT o.*, p.naam AS printer, r.dossier_id, r.omschrijving AS r
   LEFT JOIN dossier_regels r ON r.id = o.dossier_regel_id LEFT JOIN dossiers d ON d.id = r.dossier_id
   LEFT JOIN artikelen ea ON ea.id = r.artikel_id AND r.type = 'printen'`;
 
-function metRuns(db, lijst) {
-  const runsVan = db.prepare('SELECT * FROM printruns WHERE printopdracht_id = ? ORDER BY gestart_op');
-  const mat = db.prepare(`SELECT m.gram, COALESCE(a.id, NULL) AS artikel_id,
+// Filament met leesbare naam, uit de regel van een dossier OF (26-09) uit de
+// losse printopdracht zelf (printopdracht_materialen).
+const MATERIAAL_SQL = (tabel, sleutel) => `SELECT m.gram, COALESCE(a.id, NULL) AS artikel_id, m.filament_type_id,
       COALESCE(fm.naam || ' ' || fmat.naam || ' · ' || k.naam, gm.naam || ' ' || gmat.naam) AS naam,
       (SELECT COALESCE(SUM(aantal_resterend), 0) FROM voorraad_partijen vp WHERE vp.artikel_id = a.id) AS voorraad
-    FROM dossier_regel_materialen m
+    FROM ${tabel} m
     LEFT JOIN artikelen a ON a.id = m.artikel_id
     LEFT JOIN filament_types ft ON ft.id = a.filament_type_id LEFT JOIN filament_merken fm ON fm.id = ft.merk_id
     LEFT JOIN filament_materialen fmat ON fmat.id = ft.materiaal_id LEFT JOIN filament_kleuren k ON k.id = a.kleur_id
     LEFT JOIN filament_types g ON g.id = m.filament_type_id LEFT JOIN filament_merken gm ON gm.id = g.merk_id
     LEFT JOIN filament_materialen gmat ON gmat.id = g.materiaal_id
-    WHERE m.regel_id = ? ORDER BY m.volgorde`);
+    WHERE m.${sleutel} = ? ORDER BY m.volgorde, m.id`;
+
+function metRuns(db, lijst) {
+  const runsVan = db.prepare('SELECT * FROM printruns WHERE printopdracht_id = ? ORDER BY gestart_op');
+  const mat = db.prepare(MATERIAAL_SQL('dossier_regel_materialen', 'regel_id'));
+  const matLos = db.prepare(MATERIAAL_SQL('printopdracht_materialen', 'printopdracht_id'));
   return lijst.map(o => {
     const runs = runsVan.all(o.id);
-    return { ...o, status: statusVan(o, runs), runs: runs.map(r => ({ id: r.id, uitkomst: r.uitkomst, gestart_op: r.gestart_op, geeindigd_op: r.geeindigd_op, kwh: r.kwh, printer_id: r.printer_id })),
-      materialen: o.dossier_regel_id ? mat.all(o.dossier_regel_id) : [] };
+    return { ...o, status: statusVan(o, runs), runs: runs.map(r => ({ id: r.id, uitkomst: r.uitkomst, gestart_op: r.gestart_op, geeindigd_op: r.geeindigd_op, kwh: r.kwh, printer_id: r.printer_id, gewicht_g: r.gewicht_g ?? null })),
+      materialen: o.dossier_regel_id ? mat.all(o.dossier_regel_id) : matLos.all(o.id) };
   });
 }
 
@@ -79,6 +84,42 @@ function volgendeVolgorde(db, printerId) {
   return (db.prepare('SELECT MAX(volgorde) m FROM printopdrachten WHERE printer_id = ?').get(printerId).m ?? 0) + 1;
 }
 
+// ── filament van een LOSSE printopdracht (26-09, optie A) ────────────────
+// Zelfde vorm als bij een printregel: per kleur een filament (artikel) OF
+// een prijsgroep, met het gewicht in gram voor de hele opdracht. Lege
+// regels (niets gekozen, geen gewicht) vallen weg.
+export function leesMaterialen(db, lijst) {
+  if (lijst === undefined) return undefined;
+  if (!Array.isArray(lijst)) throw new DomeinFout('Filament moet een lijst zijn');
+  const idVan = v => (v === null || v === undefined || v === '' ? null : Number(v));
+  return lijst.filter(m => m && (idVan(m.artikel_id) || idVan(m.filament_type_id))).map((m, i) => {
+    const wat = lijst.length > 1 ? `Filament ${i + 1}` : 'Filament';
+    const a = idVan(m.artikel_id), f = idVan(m.filament_type_id);
+    if ((a && f) || (a !== null && !Number.isInteger(a)) || (f !== null && !Number.isInteger(f))) throw new DomeinFout(`${wat}: kies een filament of een prijsgroep`);
+    if (a && !db.prepare(`SELECT 1 FROM artikelen WHERE id = ? AND type = 'filament'`).get(a)) throw new DomeinFout(`${wat}: onbekend filament`);
+    if (f && !db.prepare('SELECT 1 FROM filament_types WHERE id = ?').get(f)) throw new DomeinFout(`${wat}: onbekende prijsgroep`);
+    const gram = m.gram === null || m.gram === undefined || m.gram === '' ? 0 : getal(m.gram, `${wat}: gewicht (gram)`);
+    return { artikel_id: a, filament_type_id: f, gram };
+  });
+}
+function bewaarMaterialen(db, opdrachtId, materialen) {
+  db.prepare('DELETE FROM printopdracht_materialen WHERE printopdracht_id = ?').run(opdrachtId);
+  const ins = db.prepare('INSERT INTO printopdracht_materialen (printopdracht_id, volgorde, artikel_id, filament_type_id, gram) VALUES (?,?,?,?,?)');
+  materialen.forEach((m, k) => ins.run(opdrachtId, k, m.artikel_id, m.filament_type_id, m.gram));
+}
+const OP_DE_REGEL = 'Het filament van deze printopdracht staat op de regel van het dossier. Pas het daar aan.';
+
+// Filament van een losse opdracht wijzigen, ook NA het bevestigen: de
+// productiekost wordt dan meteen herberekend (en een eigen product in
+// voorraad krijgt de nieuwe kost). Geeft de nieuwe kost terug (of null).
+export function zetMaterialen(db, o, lijst) {
+  if (o.dossier_regel_id) throw new DomeinFout(OP_DE_REGEL);
+  if (o.status === 'geannuleerd') throw new DomeinFout('Deze printopdracht is geannuleerd');
+  const mat = leesMaterialen(db, lijst ?? []);
+  bewaarMaterialen(db, o.id, mat);
+  return o.voltooid_op ? herbereken(db, leesOpdracht(db, o.id)) : null;
+}
+
 export function maakOpdracht(db, body) {
   const printer = db.prepare('SELECT id, naam FROM printers WHERE id = ? AND actief = 1').get(Number(body?.printer_id));
   if (!printer) throw new DomeinFout('Kies een (actieve) printer');
@@ -93,8 +134,11 @@ export function maakOpdracht(db, body) {
   const naam = String(body?.naam ?? regel?.omschrijving ?? '').trim() || (regel ? `Printwerk ${regel.nummer}` : '');
   if (!naam) throw new DomeinFout('Geef de printopdracht een naam');
   const aantal = getal(body?.aantal ?? regel?.aantal ?? 1, 'Aantal stuks', { strikt: true });
+  const materialen = leesMaterialen(db, body?.materialen);
+  if (regel && materialen?.length) throw new DomeinFout(OP_DE_REGEL);
   const id = Number(db.prepare(`INSERT INTO printopdrachten (printer_id, dossier_regel_id, soort, naam, aantal, volgorde, notities) VALUES (?,?,?,?,?,?,?)`)
     .run(printer.id, regel?.id ?? null, soort, naam, aantal, volgendeVolgorde(db, printer.id), String(body?.notities || '').trim() || null).lastInsertRowid);
+  if (!regel && materialen?.length) bewaarMaterialen(db, id, materialen);
   if (regel) logGebeurtenis(db, 'dossier', regel.dossier_id, 'status', `Printopdracht "${naam}" gepland op ${printer.naam}`);
   return id;
 }
@@ -111,8 +155,11 @@ export function wijzigOpdracht(db, o, body) {
     if (!p) throw new DomeinFout('Onbekende printer');
     printerId = p.id;
   }
+  const materialen = leesMaterialen(db, body?.materialen);
+  if (o.dossier_regel_id && materialen?.length) throw new DomeinFout(OP_DE_REGEL);
   db.prepare('UPDATE printopdrachten SET naam = ?, aantal = ?, printer_id = ?, volgorde = CASE WHEN printer_id = ? THEN volgorde ELSE ? END, notities = ? WHERE id = ?')
     .run(naam, aantal, printerId, printerId, volgendeVolgorde(db, printerId), body?.notities !== undefined ? (String(body.notities).trim() || null) : o.notities, o.id);
+  if (!o.dossier_regel_id && materialen !== undefined) bewaarMaterialen(db, o.id, materialen);
 }
 
 // Eén plaats omhoog of omlaag in de wachtrij van dezelfde printer.

@@ -10,7 +10,8 @@ import { logGebeurtenis, beschrijfWijzigingen, wisHistoriek } from '../domein/hi
 import { volgendNummer } from '../domein/nummering.js';
 import { annuleerVoorDossier, synchroniseer } from '../productie/opdrachten.js';
 import { start } from '../domein/uitvoering.js';
-import { maakWerkbon } from '../domein/documenten.js';
+import { maakWerkbon, afrekeningWeergave } from '../domein/documenten.js';
+import { rekenAf } from '../domein/afrekening.js';
 import { SOORTEN, leesKop, leesRegels, bewaarRegels, leesDossier, leesDossiers, leesAfrekening, datumOk, leesRegelsVan } from '../domein/dossiers.js';
 
 const r = Router();
@@ -145,20 +146,10 @@ const NIET_TOEGELATEN = {
 // het offertebedrag, anders het bedrag volgens de metingen.
 r.post('/:id/starten', actie('starten', (db, d) => start(db, d.id)));
 
+// Verwijzing naar een document uit Accountable (nummer met de hand); de
+// logica zelf staat in domein/afrekening.js (gedeeld met "Bonnetje maken").
 r.post('/:id/afrekenen', actie('afrekenen', (db, d0, body) => {
-  // nog geen werkbon → eerst automatisch aanmaken (25-09)
-  const d = !d0.werkbon && maakWerkbon(db, d0.id, { waarom: 'bij het afrekenen' }) ? leesDossier(db, d0.id) : d0;
-  const wb = d.werkbon;
-  if (!wb.volledig || !wb.concept_document) throw new DomeinFout('Niet alle regels van de werkbon kunnen berekend worden. Los dat eerst op (zie de regels).');
-  const a = leesAfrekening(body, wb.bedrag);
-  const momentopname = { regels_api: leesRegelsVan(db, d.id), document: wb.concept_document, basis: wb.basis, metingen_totaal: wb.berekening?.totaal ?? null };
-  db.prepare('UPDATE werkbonnen SET definitief_op = ?, momentopname = ?, totaal = ? WHERE id = ?')
-    .run(a.datum, JSON.stringify(momentopname), wb.bedrag, wb.id);
-  // Een bonnetje = afgerekend én betaald in één keer (dagontvangsten).
-  const betaald = a.soort === 'bonnetje' ? a.datum : null;
-  db.prepare(`UPDATE dossiers SET afgerekend_soort=?, afgerekend_nummer=?, afgerekend_op=?, afgerekend_bedrag=?, betaald_op=? WHERE id=?`)
-    .run(a.soort, a.nummer, a.datum, a.bedrag, betaald, d.id);
-  logGebeurtenis(db, 'dossier', d.id, 'status', `Afgerekend in Accountable: ${a.soort} ${a.nummer} van ${dmj(a.datum)}, ${euro(a.bedrag)}${betaald ? ' (meteen betaald)' : ''}`);
+  rekenAf(db, d0, { afrekening: wb => leesAfrekening(body, wb.bedrag) });
 }));
 // Gratis geleverd (25-09): de klant krijgt het zonder te betalen. Geen
 // afrekening in Accountable en geen omzet; de werkbon wordt definitief (als
@@ -193,10 +184,11 @@ r.post('/:id/betaling-ongedaan', actie('betaling_ongedaan', (db, d) => {
   logGebeurtenis(db, 'dossier', d.id, 'status', 'Betaling ongedaan gemaakt');
 }));
 r.post('/:id/afrekening-ongedaan', actie('afrekening_ongedaan', (db, d) => {
-  db.prepare(`UPDATE dossiers SET afgerekend_soort=NULL, afgerekend_nummer=NULL, afgerekend_op=NULL, afgerekend_bedrag=NULL, betaald_op=NULL WHERE id=?`).run(d.id);
+  db.prepare(`UPDATE dossiers SET afgerekend_soort=NULL, afgerekend_nummer=NULL, afgerekend_op=NULL, afgerekend_bedrag=NULL, betaald_op=NULL,
+    afrekening_pdf_op=NULL, afrekening_gemaild_op=NULL, afrekening_klant_mail=NULL WHERE id=?`).run(d.id);
   // De werkbon wordt weer een concept, als nieuwe versie (domeinmodel: wijzigen na afrekenen = nieuwe versie).
   if (d.werkbon?.definitief_op) db.prepare('UPDATE werkbonnen SET definitief_op = NULL, momentopname = NULL, totaal = NULL, versie = versie + 1 WHERE id = ?').run(d.werkbon.id);
-  logGebeurtenis(db, 'dossier', d.id, 'status', `Afrekening ongedaan gemaakt (was ${d.afgerekend_soort} ${d.afgerekend_nummer}). Pas dit ook aan in Accountable.`);
+  logGebeurtenis(db, 'dossier', d.id, 'status', `Afrekening ongedaan gemaakt (was ${afrekeningWeergave(d.afgerekend_soort, d.afgerekend_nummer)}). Pas dit ook aan in Accountable.`);
 }));
 r.post('/:id/annuleren', actie('annuleren', (db, d) => {
   const n = annuleerVoorDossier(db, d.id);

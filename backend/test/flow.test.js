@@ -44,7 +44,7 @@ test('X0. voorbereiding', async () => {
   await vraag('PUT', `/printers/${mini}`, { naam: 'Bambu Lab A1 Mini', machine_per_uur: 0.2, verbruik_watt: 95 });
   pg = (await vraag('POST', '/filament/types', { merk_id: 1, materiaal_id: 1, verkoopprijs_per_kg: 25 })).data.id;
   klant = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'Sofie', naam: 'Maes' })).data.id;
-  assert.equal(db.pragma('user_version', { simple: true }), 15);
+  assert.equal(db.pragma('user_version', { simple: true }), 18);
 });
 
 let dos;
@@ -332,10 +332,10 @@ test('X15. productiekost: wat ontbreekt wordt bewaard en getoond; herberekenen n
   await vraag('POST', `/productie/runs/${x.id}/koppel`, { printopdracht_id: o.id });
   // bevestigvenster: vooraf zien wat ontbreekt
   const vb = (await vraag('GET', `/productie/opdrachten/${o.id}/kost-voorbeeld?aantal_goed=1`)).data;
-  assert.equal(vb.onvolledig, true); assert.deepEqual(vb.ontbreekt, [`inkoopprijs filament ${naam}`]);
+  assert.equal(vb.onvolledig, true); assert.deepEqual(vb.ontbreekt, [`inkoopprijs filament ${naam} (Voorraad → artikel → inkoopprijs)`]);
   await vraag('POST', `/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: 1 });
   let r = db.prepare('SELECT * FROM printopdrachten WHERE id = ?').get(o.id);
-  assert.equal(r.kost_onvolledig, 1); assert.equal(r.kost_ontbreekt, `inkoopprijs filament ${naam}`);
+  assert.equal(r.kost_onvolledig, 1); assert.equal(r.kost_ontbreekt, `inkoopprijs filament ${naam} (Voorraad → artikel → inkoopprijs)`);
   const voor = r.productiekost_stuk;
   // inkoopprijs aanvullen (artikel in die prijsgroep met inkoopprijs per rol)
   db.prepare(`INSERT INTO artikelen (type, filament_type_id, kleur_id, wordt_gekocht, inkoopprijs) VALUES ('filament', ?, 1, 1, 20)`).run(kaal);

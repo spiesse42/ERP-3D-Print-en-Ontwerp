@@ -19,6 +19,8 @@ export function statistieken(db, jaar) {
   const zet = (maand, w) => { const m = maanden.find(x => x.maand === maand); if (m) for (const [k, v] of Object.entries(w)) m[k] += v || 0; };
   for (const r of db.prepare(`SELECT substr(aangemaakt_op, 1, 7) maand, COUNT(*) n FROM dossiers WHERE substr(aangemaakt_op, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, { dossiers: r.n });
   for (const r of db.prepare(`SELECT substr(afgerekend_op, 1, 7) maand, COUNT(*) n, SUM(afgerekend_bedrag) b FROM dossiers WHERE substr(afgerekend_op, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, { afgerekend: r.n, omzet: r.b });
+  // losse verkopen (26-09) tellen mee in de omzet (niet als afgerekend dossier)
+  for (const r of db.prepare(`SELECT substr(datum, 1, 7) maand, SUM(totaal) b FROM verkopen WHERE geannuleerd_op IS NULL AND substr(datum, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, { omzet: r.b });
   for (const r of db.prepare(`SELECT substr(r.gestart_op, 1, 7) maand, COUNT(*) n, SUM(r.uitkomst = 'klaar') ok, SUM(r.uitkomst IN ('mislukt','geannuleerd')) nok,
       SUM(${UREN}) u, SUM(r.kwh) kwh FROM printruns r WHERE r.uitkomst <> 'bezig' AND substr(r.gestart_op, 1, 4) = ? GROUP BY maand`).all(j)) {
     zet(r.maand, { runs: r.n, geslaagd: r.ok, mislukt: r.nok, uren: r.u, kwh: r.kwh });

@@ -16,8 +16,11 @@ function klantNaam(k) {
   return [k.voornaam, k.naam].filter(Boolean).join(' ');
 }
 
-// soort: 'OFFERTE' | 'WERKBON'; info: [[label, waarde]] rechtsboven
-export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerking, concept = false, toonUren = false }) {
+// soort: 'OFFERTE' | 'WERKBON' | 'PAKBON' | 'BONNETJE'; info: [[label, waarde]] rechtsboven
+// btwKolom (bonnetje, 26-09): btw-tarief per regel (altijd 0 %) + de volledige
+// vrijstellingsvermelding — verplichte velden voor het dagontvangstenboek.
+export const VRIJSTELLING = 'Vrijstelling van belasting op basis van artikel 56bis van het Btw-Wetboek';
+export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerking, concept = false, toonUren = false, btwKolom = false }) {
   const { bedrijf = {}, klant, dossier, regels, totaal, vast } = inhoud;
   const k = klant;
   const contact = k && [k.type === 'zakelijk' && k.bedrijfsnaam && (k.voornaam || k.naam) ? `t.a.v. ${[k.voornaam, k.naam].filter(Boolean).join(' ')}` : null,
@@ -28,6 +31,7 @@ export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerkin
       <td class="n">${getal(r.aantal)}</td>
       <td>${esc(r.omschrijving)}${toonUren && r.uren ? `<div class="sub">printtijd ${getal(r.uren)} u</div>` : ''}</td>
       <td class="r">${euro(r.per_stuk)}</td>
+      ${btwKolom ? '<td class="r">0 %</td>' : ''}
       <td class="r">${euro(r.bedrag)}</td>
     </tr>`).join('');
   return `<!DOCTYPE html>
@@ -55,6 +59,7 @@ export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerkin
   .totaal-bedrag{font-size:1.9rem;font-weight:900;color:#2b9484}
   .opmerking{margin-top:16px;padding:12px 16px;border-left:4px solid #f59e0b;background:#fffbeb;border-radius:4px;color:#664400}
   .footer{margin-top:32px;border-top:1px solid #eee;padding-top:12px;font-size:.72rem;color:#999;text-align:center;line-height:1.6}
+  .btw-regel{margin-top:12px;font-size:.85rem;color:#333}
   .concept{position:fixed;top:40%;left:0;right:0;text-align:center;font-size:110px;font-weight:900;color:rgba(200,40,40,.12);transform:rotate(-24deg)}
 </style></head>
 <body>
@@ -76,18 +81,19 @@ ${concept ? '<div class="concept">CONCEPT</div>' : ''}
   </div>
 </div>
 ${k ? `<div class="klant"><h3>Klant</h3><strong>${esc(klantNaam(k))}</strong>${contact.map(c => `<br>${esc(c)}`).join('')}</div>` : ''}
-<div class="object"><strong>${esc(dossier.titel)}</strong> <span class="sub">· dossier ${esc(dossier.nummer)}</span></div>
+${dossier?.titel ? `<div class="object"><strong>${esc(dossier.titel)}</strong>${dossier.nummer ? ` <span class="sub">· dossier ${esc(dossier.nummer)}</span>` : ''}</div>` : ''}
 <table>
-  <thead><tr><th>Aantal</th><th>Omschrijving</th><th class="r">Prijs/stuk</th><th class="r">Totaal</th></tr></thead>
+  <thead><tr><th>Aantal</th><th>Omschrijving</th><th class="r">Prijs/stuk</th>${btwKolom ? '<th class="r">Btw</th>' : ''}<th class="r">Totaal</th></tr></thead>
   <tbody>${rijen}</tbody>
 </table>
 <div class="totaal">
   <div class="totaal-label">TOTAAL${vast > 0 ? `<div class="sub" style="color:#b8c4d6">waarvan ${euro(vast)} vaste kosten (bv. verzending)</div>` : ''}</div>
   <div class="totaal-bedrag">${euro(totaal)}</div>
 </div>
+${btwKolom ? `<div class="btw-regel">Btw-tarief: 0 % · ${esc(VRIJSTELLING)}</div>` : ''}
 ${opmerking ? `<div class="opmerking">${nl(opmerking)}</div>` : ''}
 <div class="footer">
-  Vrijgesteld van btw — art. 56bis Btw-wetboek
+  ${btwKolom ? esc(VRIJSTELLING) : 'Vrijgesteld van btw — art. 56bis Btw-wetboek'}
   ${bedrijf.iban ? `<br>IBAN: ${esc(bedrijf.iban)}` : ''}
 </div>
 </body></html>`;

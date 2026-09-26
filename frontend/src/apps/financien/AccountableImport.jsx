@@ -11,7 +11,7 @@ import { euro, datum } from '../../lib/formaat.js';
 // "Toepassen" verandert er iets. Aankoopfacturen (UBL) lees je in via
 // Inkoop → Factuur inlezen.
 const STATUS = {
-  betalen: ['b-pos', 'Wordt betaald'], open: ['b-neutral', 'Nog open'], in_orde: ['b-neutral', 'In orde'], niet_gevonden: ['b-warn', 'Geen dossier'],
+  betalen: ['b-pos', 'Wordt betaald'], open: ['b-neutral', 'Nog open'], in_orde: ['b-neutral', 'In orde'], niet_gevonden: ['b-warn', 'Niet gevonden'],
 };
 const toon = v => (v == null ? '' : String(v));
 
@@ -104,7 +104,7 @@ export default function AccountableImport() {
                 <span className="badge b-pos">{resultaat.telling.betalen} wordt betaald</span>
                 <span className="badge b-neutral">{resultaat.telling.open} nog open</span>
                 <span className="badge b-neutral">{resultaat.telling.in_orde} in orde</span>
-                <span className="badge b-warn">{resultaat.telling.niet_gevonden} zonder dossier</span>
+                <span className="badge b-warn">{resultaat.telling.niet_gevonden} niet gevonden</span>
               </div>
               <div className="scroll-x">
                 <table className="mini">
@@ -114,7 +114,8 @@ export default function AccountableImport() {
                       <td>{r.status === 'betalen' && <input type="checkbox" aria-label={`${r.nummer} als betaald markeren`} checked={kies.has(r.dossier.id)} onChange={() => wissel(r.dossier.id)} />}</td>
                       <td className="mono">{r.nummer}</td><td className="num">{datum(r.datum)}</td>
                       <td className="r num">{euro(r.bedrag)}{r.bedrag_verschilt && <div className="sub neg">ERP: {euro(r.dossier.afgerekend_bedrag)}</div>}</td>
-                      <td>{r.dossier ? <Link naar={`/dossiers/${r.dossier.id}`}><span className="mono">{r.dossier.nummer}</span></Link> : <span className="sub">—</span>}{r.dossier?.titel ? ` · ${r.dossier.titel}` : ''}</td>
+                      <td>{r.dossier ? <Link naar={`/dossiers/${r.dossier.id}`}><span className="mono">{r.dossier.nummer}</span></Link>
+                        : r.verkoop ? <Link naar={`/verkoop/${r.verkoop.id}`}><span className="mono">{r.verkoop.nummer}</span></Link> : <span className="sub">—</span>}{(r.dossier || r.verkoop)?.titel ? ` · ${(r.dossier || r.verkoop).titel}` : ''}</td>
                       <td><span className={`badge ${STATUS[r.status][0]}`}>{STATUS[r.status][1]}</span>{r.status === 'betalen' && r.betaald_op && <span className="sub"> op {datum(r.betaald_op)}</span>}</td>
                     </tr>
                   ))}</tbody>
@@ -123,7 +124,7 @@ export default function AccountableImport() {
               {resultaat.ontbreekt_in_export.length > 0 && (
                 <div className="waarschuwing" style={{ margin: 0, display: 'block' }}>
                   <b>Afgerekend in het ERP maar niet in deze export</b> ({datum(resultaat.periode.van)} – {datum(resultaat.periode.tot)}):{' '}
-                  {resultaat.ontbreekt_in_export.map((d, i) => <span key={d.id}>{i ? ', ' : ''}<Link naar={`/dossiers/${d.id}`}>{d.afgerekend_nummer}</Link></span>)}. Klopt het nummer in het dossier?
+                  {resultaat.ontbreekt_in_export.map((d, i) => <span key={d.id}>{i ? ', ' : ''}<Link naar={d.verkoop_id ? `/verkoop/${d.verkoop_id}` : `/dossiers/${d.id}`}>{d.afgerekend_nummer}</Link></span>)}. Klopt het nummer in het dossier?
                 </div>
               )}
               <div><button type="button" className="btn primary" disabled={bezig || !betalen.some(r => kies.has(r.dossier.id))} onClick={toepassen}>

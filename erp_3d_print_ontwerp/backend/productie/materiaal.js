@@ -27,9 +27,10 @@ const metNaam = a => ({ id: a.id, naam: weergaveNaam(a), voorraad: Math.round(a.
 // nu loopt (of de laatste), dan alles met voorraad.
 export function filamentVoorPrinter(db, printerId) {
   const run = db.prepare(`SELECT printopdracht_id FROM printruns WHERE printer_id = ? AND printopdracht_id IS NOT NULL ORDER BY (uitkomst = 'bezig') DESC, id DESC LIMIT 1`).get(printerId);
-  const opdracht = run ? db.prepare('SELECT dossier_regel_id FROM printopdrachten WHERE id = ?').get(run.printopdracht_id) : null;
+  const opdracht = run ? db.prepare('SELECT id, dossier_regel_id FROM printopdrachten WHERE id = ?').get(run.printopdracht_id) : null;
   const regelMat = opdracht?.dossier_regel_id
-    ? db.prepare('SELECT artikel_id, filament_type_id FROM dossier_regel_materialen WHERE regel_id = ? ORDER BY volgorde').all(opdracht.dossier_regel_id) : [];
+    ? db.prepare('SELECT artikel_id, filament_type_id FROM dossier_regel_materialen WHERE regel_id = ? ORDER BY volgorde').all(opdracht.dossier_regel_id)
+    : opdracht ? db.prepare('SELECT artikel_id, filament_type_id FROM printopdracht_materialen WHERE printopdracht_id = ? ORDER BY volgorde').all(opdracht.id) : [];
   const alle = db.prepare(`${FILAMENT} ORDER BY m.naam, mat.naam, k.naam`).all();
   const voorstelIds = new Set();
   for (const m of regelMat) {

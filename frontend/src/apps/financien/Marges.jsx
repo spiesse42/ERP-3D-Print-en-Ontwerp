@@ -41,9 +41,9 @@ export default function Marges() {
             <div className="kpi"><div className="l">Marge na arbeid</div><div className="w">{euro(m.totaal.marge_met_arbeid)}</div></div>
           </div>
           <div className="panel">
-            <Lijst sleutel={d => d.id} onOpen={d => navigeer(`/dossiers/${d.id}`)} groepen={[{ titel: null, rijen: m.rijen }]}
+            <Lijst sleutel={d => d.id} onOpen={d => navigeer(d.verkoop_id ? `/verkoop/${d.verkoop_id}` : `/dossiers/${d.id}`)} groepen={[{ titel: null, rijen: m.rijen }]}
               kolommen={[
-                { kop: 'Dossier', cel: d => <><span className="mono">{d.nummer}</span> · {d.titel}{d.afgerekend_soort === 'gratis' && <span className="badge b-info" style={{ marginLeft: 6 }} title={d.waarde != null ? `Waarde ${euro(d.waarde)}` : undefined}>gratis</span>}{d.onvolledig && <span className="badge b-warn" style={{ marginLeft: 6 }} title={d.redenen.join(', ')}>onvolledig</span>}
+                { kop: 'Dossier', cel: d => <><span className="mono">{d.nummer}</span> · {d.titel}{d.afgerekend_soort === 'gratis' && <span className="badge b-info" style={{ marginLeft: 6 }} title={d.waarde != null ? `Waarde ${euro(d.waarde)}` : undefined}>gratis</span>}{d.afgerekend_soort === 'verkoop' && <span className="badge b-neutral" style={{ marginLeft: 6 }}>losse verkoop</span>}{d.onvolledig && <span className="badge b-warn" style={{ marginLeft: 6 }} title={d.redenen.join(', ')}>onvolledig</span>}
                   {d.onvolledig && d.redenen.length > 0 && <div className="sub">{d.redenen.join(' · ')}</div>}</> },
                 { kop: 'Klant', cel: d => d.klant || '—' },
                 { kop: 'Afgerekend', cel: d => <span className="num">{datum(d.afgerekend_op)}</span> },

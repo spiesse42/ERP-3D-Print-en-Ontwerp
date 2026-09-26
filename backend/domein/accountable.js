@@ -90,6 +90,10 @@ export function stelKolommenVoor(koppen) {
 }
 
 const norm = s => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+// zonder het woord ervoor: "Bonnetje 2026-020" en "2026-020" → "2026020" (26-09:
+// het ERP nummert bonnetjes als "Bonnetje 2026-020"). Enkel gebruikt als het
+// ondubbelzinnig is: een bonnetje en een factuur kunnen hetzelfde "2026-020" hebben.
+const kaal = s => norm(String(s ?? '').replace(/^\s*(bonnetje|factuur)\b/i, ''));
 export function datumVan(v) {
   if (v == null || v === '') return null;
   if (typeof v === 'number' && v > 20000 && v < 80000) return new Date(Date.UTC(1899, 11, 30) + v * 864e5).toISOString().slice(0, 10);   // Excel-serienummer
@@ -132,13 +136,22 @@ export function interpreteer(blad, kolommen) {
 export function vergelijk(db, rijen) {
   const dossiers = db.prepare(`SELECT id, nummer, titel, afgerekend_soort, afgerekend_nummer, afgerekend_op, afgerekend_bedrag, betaald_op
     FROM dossiers WHERE afgerekend_nummer IS NOT NULL`).all();
+  // losse verkopen (26-09): bonnetjes, dus altijd al betaald → enkel "in orde"
+  for (const v of db.prepare(`SELECT id, nummer, omschrijving, datum, totaal FROM verkopen WHERE geannuleerd_op IS NULL`).all()) {
+    dossiers.push({ id: `v${v.id}`, verkoop_id: v.id, nummer: null, titel: v.omschrijving || 'Losse verkoop', afgerekend_soort: 'bonnetje',
+      afgerekend_nummer: v.nummer, afgerekend_op: v.datum, afgerekend_bedrag: v.totaal, betaald_op: v.datum });
+  }
   const opNummer = new Map(dossiers.map(d => [norm(d.afgerekend_nummer), d]));
+  const opKaal = new Map();
+  for (const d of dossiers) opKaal.set(kaal(d.afgerekend_nummer), [...(opKaal.get(kaal(d.afgerekend_nummer)) || []), d]);
+  const zoek = nr => opNummer.get(norm(nr)) || (opKaal.get(kaal(nr))?.length === 1 ? opKaal.get(kaal(nr))[0] : null);
   const gezien = new Set();
   const uit = rijen.map(r => {
-    const d = opNummer.get(norm(r.nummer));
+    const d = zoek(r.nummer);
     if (!d) return { ...r, status: 'niet_gevonden', dossier: null };
     gezien.add(d.id);
     const verschil = r.bedrag != null && d.afgerekend_bedrag != null && Math.abs(Math.abs(r.bedrag) - d.afgerekend_bedrag) > 0.01;
+    if (d.verkoop_id) return { ...r, status: 'in_orde', bedrag_verschilt: verschil, dossier: null, verkoop: { id: d.verkoop_id, nummer: d.afgerekend_nummer, titel: d.titel, afgerekend_bedrag: d.afgerekend_bedrag } };
     const status = r.betaald && !d.betaald_op ? 'betalen' : r.betaald === false && !d.betaald_op ? 'open' : 'in_orde';
     return { ...r, status, bedrag_verschilt: verschil, dossier: { id: d.id, nummer: d.nummer, titel: d.titel, afgerekend_bedrag: d.afgerekend_bedrag, betaald_op: d.betaald_op } };
   });

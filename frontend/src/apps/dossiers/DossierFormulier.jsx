@@ -13,7 +13,8 @@ import RegelEditor, { Totalen, TYPES, nieuweRegel, naarApi, vanApi, useBerekenin
 import { euro, datum } from '../../lib/formaat.js';
 import { klantNaam } from '../klanten/klant.js';
 import { FASE, SOORT, FaseBadge, VOOR_AFREKENING } from './dossier.jsx';
-import { AfrekenDialoog, BetaaldDialoog, GratisDialoog, Overnamefiche } from './AfrekenDialogen.jsx';
+import { AfrekenDialoog, BetaaldDialoog, GratisDialoog, Overnamefiche, BonnetjeDialoog, BonnetjeMailDialoog } from './AfrekenDialogen.jsx';
+import { BASE } from '../../lib/api.js';
 import { OffertesTab, WerkbonTab } from './DocumentTabs.jsx';
 import LeveringenTab from './LeveringenTab.jsx';
 import ProductieTab from './ProductieTab.jsx';
@@ -98,6 +99,23 @@ export default function DossierFormulier() {
     try { const r = await api.post(`/dossiers/${id}/${pad}`, b); await herlaad(); setVersie(v => v + 1); melding(typeof tekst === 'function' ? tekst(r) : tekst); return true; }
     catch (e) { melding(e.message, 'fout'); return false; }
   }
+  // Bonnetje door het ERP (26-09): maken + mailen. Mislukt enkel het mailen,
+  // dan bestaat het bonnetje wel (volgende stap: "Bonnetje mailen").
+  async function bonnetjeMaken(f) {
+    try {
+      const r = await api.post(`/dossiers/${id}/bonnetje`, f);
+      await herlaad(); setVersie(v => v + 1); setDialoog(null);
+      if (r.mail_fout) melding(`${r.afgerekend_nummer} is gemaakt, maar het mailen mislukte: ${r.mail_fout} Het is nog NIET bij Accountable: gebruik "Bonnetje mailen".`, 'fout');
+      else melding(`${r.afgerekend_nummer} gemaakt en gemaild naar Accountable${f.naar_klant ? ` en ${f.aan}` : ''}.`);
+    } catch (e) { melding(e.message, 'fout'); }
+  }
+  async function bonnetjeMailen(f) {
+    try {
+      await api.post(`/dossiers/${id}/bonnetje/mail`, f);
+      await herlaad(); setVersie(v => v + 1); setDialoog(null);
+      melding(`${d.afgerekend_nummer} gemaild naar ${[f.naar_klant && f.aan, f.naar_accountable && 'Accountable'].filter(Boolean).join(' en ')}.`);
+    } catch (e) { melding(e.message, 'fout'); }
+  }
   function open(wat) {
     if (vuil) { melding('Sla eerst je wijzigingen op of verwerp ze.', 'fout'); return; }
     setDialoog(wat);
@@ -120,10 +138,18 @@ export default function DossierFormulier() {
     : !(d.werkbon || d.zonder_werkbon)?.volledig ? 'Eerst moeten alle regels berekend kunnen worden.'
     : null;
   const toonAfrekenen = !nieuw && d.soort === 'klant' && voorAfrekening;
-  const afrekenKnop = toonAfrekenen && (
+  const afrekenKnop = toonAfrekenen && (<>
+    <button type="button" className="btn" disabled={!!afrekenReden} title={afrekenReden || 'Het ERP maakt het bonnetje en mailt het naar Accountable (en optioneel naar de klant)'}
+      onClick={() => open('bonnetje')}>Bonnetje maken</button>
     <button type="button" className="btn" disabled={!!afrekenReden} title={afrekenReden || 'Factuur of bonnetje uit Accountable koppelen'}
       onClick={() => open('afrekenen')}>Afrekenen</button>
-  );
+  </>);
+  // bonnetje dat het ERP maakte: PDF + (opnieuw) mailen
+  const erpBonnetje = !nieuw && d.afgerekend_soort === 'bonnetje' && !!d.afrekening_pdf_op;
+  const bonnetjeKnoppen = erpBonnetje && <>
+    <button type="button" className="btn" onClick={() => window.open(new URL(`${BASE}/dossiers/${id}/bonnetje/pdf`, document.baseURI).href, '_blank', 'noopener')}>Bonnetje (PDF)</button>
+    <button type="button" className={`btn${d.afrekening_gemaild_op ? '' : ' primary'}`} onClick={() => open('bonnetje-mail')}>Bonnetje mailen</button>
+  </>;
   // Starten (25-09): werkbon (klantopdracht) + printopdracht per printregel met printer
   const heeftPrint = !nieuw && d.regels.some(r => r.type === 'printen');
   const startTekst = d?.soort === 'klant' ? (heeftPrint ? 'Gestart: werkbon en printopdrachten aangemaakt.' : 'Gestart: werkbon aangemaakt.') : 'Gestart: printopdrachten aangemaakt.';
@@ -135,12 +161,13 @@ export default function DossierFormulier() {
   const workflow = nieuw ? null : <>
     {acties.starten && <button type="button" className="btn" disabled={vuil} title={vuil ? 'Sla eerst je wijzigingen op.' : startUitleg} onClick={starten}><Icoon naam="start" maat={14} /> Starten</button>}
     {afrekenKnop}
+    {bonnetjeKnoppen}
     {acties.betaald && <button type="button" className="btn" onClick={() => open('betaald')}>Betaald</button>}
     {acties.gratis && <button type="button" className="btn ghost" title="De klant betaalt niets: geen omzet, wel je kost in Marges" onClick={() => open('gratis')}>Gratis geleverd</button>}
     {acties.gratis_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('gratis-ongedaan', '"Gratis geleverd" ongedaan gemaakt.', { vraag: { titel: 'Gratis geleverd ongedaan maken', tekst: 'Het dossier gaat terug en kan weer gewijzigd en afgerekend worden. De werkbon wordt weer een concept (nieuwe versie).', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Gratis ongedaan</button>}
     {d.soort === 'klant' && d.regels.length > 0 && fase !== 'geannuleerd' && <button type="button" className="btn" onClick={() => open('overname')}>Overnamefiche</button>}
     {acties.betaling_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('betaling-ongedaan', 'Betaling ongedaan gemaakt.', { vraag: { titel: 'Betaling ongedaan maken', tekst: 'Het dossier gaat terug naar afgerekend.', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Betaling ongedaan</button>}
-    {acties.afrekening_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('afrekening-ongedaan', 'Afrekening ongedaan gemaakt.', { vraag: { titel: 'Afrekening ongedaan maken', tekst: `De verwijzing naar ${d.afgerekend_soort} ${d.afgerekend_nummer} wordt gewist en het dossier kan weer gewijzigd worden. Pas dit ook aan in Accountable (bv. een creditnota).`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug', gevaarlijk: true } })}>Afrekening ongedaan</button>}
+    {acties.afrekening_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('afrekening-ongedaan', 'Afrekening ongedaan gemaakt.', { vraag: { titel: 'Afrekening ongedaan maken', tekst: `De verwijzing naar ${String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`} wordt gewist en het dossier kan weer gewijzigd worden. Pas dit ook aan in Accountable (bv. een creditnota).`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug', gevaarlijk: true } })}>Afrekening ongedaan</button>}
     {acties.annuleren && <button type="button" className="btn ghost" title="Het hele dossier stopt: niets af te rekenen of te leveren" onClick={() => actie('annuleren', 'Dossier geannuleerd.', { vraag: { titel: 'Dossier annuleren', tekst: `${d.nummer} annuleren? Het hele dossier stopt: er wordt niets afgerekend of geleverd, en open printopdrachten worden mee geannuleerd. Gebruik dit ook als de klant niets hoeft te betalen. Heropenen kan later nog.`, bevestigLabel: 'Dossier annuleren', annuleerLabel: 'Terug' } })}>Dossier annuleren</button>}
     {acties.heropenen && <button type="button" className="btn" onClick={() => actie('heropenen', 'Dossier heropend.')}>Heropenen</button>}
   </>;
@@ -163,6 +190,7 @@ export default function DossierFormulier() {
             </div>
           )}
           {!nieuw && <VolgendeStap d={d} vuil={vuil} afrekenReden={afrekenReden} onStarten={starten} onAfrekenen={() => open('afrekenen')}
+            onBonnetje={() => open('bonnetje')} onBonnetjeMailen={() => open('bonnetje-mail')}
             onBetaald={() => open('betaald')} onGratis={() => open('gratis')} onHeropenen={() => actie('heropenen', 'Dossier heropend.')}
             naarTab={t => { setTab(t); document.querySelector('.tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
             herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} />}
@@ -194,7 +222,7 @@ export default function DossierFormulier() {
               <Veld label="Totaal">{uitkomst ? (uitkomst.volledig ? <b className="num">{euro(uitkomst.totaal)}</b> : <span className="badge b-warn">onvolledig</span>) : <span className="sub">—</span>}</Veld>
               {!nieuw && d.afgerekend_op && (
                 <Veld label="Afgerekend">
-                  <span><span className="mono">{d.afgerekend_soort} {d.afgerekend_nummer}</span> · {datum(d.afgerekend_op)} · <span className="num">{euro(d.afgerekend_bedrag)}</span></span>
+                  <span><span className="mono">{String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>{d.afrekening_pdf_op && !d.afrekening_gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>} · {datum(d.afgerekend_op)} · <span className="num">{euro(d.afgerekend_bedrag)}</span></span>
                 </Veld>
               )}
               {!nieuw && d.betaald_op && <Veld label="Betaald op"><span className="num">{datum(d.betaald_op)}</span></Veld>}
@@ -241,6 +269,8 @@ export default function DossierFormulier() {
       {dialoog === 'betaald' && <BetaaldDialoog onSluit={() => setDialoog(null)}
         onBevestig={async datum => { if (await actie('betaald', 'Betaald.', { body: { datum } })) setDialoog(null); }} />}
       {dialoog === 'overname' && <Overnamefiche dossier={d} onSluit={() => setDialoog(null)} />}
+      {dialoog === 'bonnetje' && <BonnetjeDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onBevestig={bonnetjeMaken} />}
+      {dialoog === 'bonnetje-mail' && <BonnetjeMailDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onVerstuur={bonnetjeMailen} />}
       {dialoog === 'gratis' && <GratisDialoog dossier={d} onSluit={() => setDialoog(null)}
         onBevestig={async datum => { if (await actie('gratis', 'Gratis geleverd: niets af te rekenen.', { body: { datum } })) setDialoog(null); }} />}
     </>

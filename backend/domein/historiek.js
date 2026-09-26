@@ -11,6 +11,7 @@ export const ENTITEITEN = {
   leverancier: 'leveranciers',
   printer: 'printers',
   dossier: 'dossiers',
+  verkoop: 'verkopen',   // losse verkoop (26-09)
 };
 
 // 'voorraad' = een boeking of telling (stap 3a), zodat die ook in de

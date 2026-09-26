@@ -29,6 +29,8 @@ import FinOpvolging from './apps/financien/Opvolging.jsx';
 import FinMarges from './apps/financien/Marges.jsx';
 import FinStatistieken from './apps/financien/Statistieken.jsx';
 import AccountableImport from './apps/financien/AccountableImport.jsx';
+import VerkopenLijst from './apps/verkoop/VerkopenLijst.jsx';
+import VerkoopFormulier from './apps/verkoop/VerkoopFormulier.jsx';
 
 // De app kan onder een voorvoegsel draaien (Home Assistant Ingress). De
 // backend zet dat voorvoegsel als <base href> in index.html; React Router
@@ -63,6 +65,8 @@ export default function App() {
             <Route path="dossiers/offertes" element={<OffertesLijst />} />
             <Route path="dossiers/leveringen" element={<LeveringenLijst />} />
             <Route path="dossiers/:id" element={<DossierFormulier />} />
+            <Route path="verkoop" element={<VerkopenLijst />} />
+            <Route path="verkoop/:id" element={<VerkoopFormulier />} />
             <Route path="productie" element={<PrintersLive />} />
             <Route path="productie/opdrachten" element={<Printopdrachten />} />
             <Route path="productie/runs" element={<RunsLijst />} />

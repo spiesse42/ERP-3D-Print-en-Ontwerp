@@ -11,7 +11,7 @@ import { haStaten, haDienst, haCameraBeeld, haIngesteld, HaFout, meterOp } from 
 import { leesPrinter, entiteitenVan, KOPPELINGEN } from '../productie/adapters.js';
 import { liveCache, openRun, kwhVanRun, kwhUitMetingen, startRun, sluitRun, tik, INTERVAL_MS, vulAan } from '../productie/wachter.js';
 import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wijzigOpdracht, verschuif, bevestig, heropen, annuleer, verwijder,
-  voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer, herbereken } from '../productie/opdrachten.js';
+  voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer, herbereken, leesMaterialen, zetMaterialen } from '../productie/opdrachten.js';
 import { productiekost } from '../productie/kost.js';
 import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct } from '../productie/materiaal.js';
 
@@ -234,11 +234,25 @@ r.post('/opdrachten/:id/:richting(op|neer)', metFouten((req, res) => {
   db.transaction(() => verschuif(db, o, req.params.richting))();
   res.json({ ok: true });
 }));
+// Losse opdracht: het filament mag meekomen (bevestigvenster, 26-09) en
+// wordt in dezelfde transactie eerst bewaard.
 r.post('/opdrachten/:id/bevestig', metFouten((req, res) => {
   const db = getDb();
   const o = opdracht(db, req.params.id);
-  db.transaction(() => { bevestig(db, o, req.body?.aantal_goed); if (o.dossier_id) synchroniseer(db, o.dossier_id); })();
+  db.transaction(() => {
+    if (req.body?.materialen !== undefined) zetMaterialen(db, o, req.body.materialen);
+    bevestig(db, o, req.body?.aantal_goed);
+    if (o.dossier_id) synchroniseer(db, o.dossier_id);
+  })();
   res.json(leesOpdracht(db, o.id));
+}));
+// Filament van een losse opdracht (26-09): ook na het bevestigen; dan wordt
+// de productiekost meteen herberekend.
+r.put('/opdrachten/:id/materialen', metFouten((req, res) => {
+  const db = getDb();
+  const o = opdracht(db, req.params.id);
+  const pk = db.transaction(() => zetMaterialen(db, o, req.body?.materialen))();
+  res.json({ ...leesOpdracht(db, o.id), kost: pk });
 }));
 // Productiekost: vooraf bekijken (bevestigvenster: wat ontbreekt?) en
 // achteraf opnieuw berekenen (na het aanvullen van inkoopprijs, tarief, kWh).
@@ -246,7 +260,14 @@ r.get('/opdrachten/:id/kost-voorbeeld', metFouten((req, res) => {
   const db = getDb();
   const o = opdracht(db, req.params.id);
   const n = parseFloat(String(req.query.aantal_goed ?? o.aantal).replace(',', '.'));
-  res.json(productiekost(db, o, Number.isFinite(n) ? n : o.aantal));
+  // losse opdracht: rekenen met het (nog niet bewaarde) filament uit het venster
+  let materialen = null;
+  if (req.query.materialen !== undefined && !o.dossier_regel_id) {
+    let lijst;
+    try { lijst = JSON.parse(String(req.query.materialen)); } catch { throw new DomeinFout('Ongeldige filamentlijst'); }
+    materialen = leesMaterialen(db, lijst);
+  }
+  res.json(productiekost(db, o, Number.isFinite(n) ? n : o.aantal, { materialen }));
 }));
 r.post('/opdrachten/:id/herbereken', metFouten((req, res) => {
   const db = getDb();

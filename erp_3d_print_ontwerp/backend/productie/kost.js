@@ -6,7 +6,9 @@
 // (die rekent verkoopprijzen met marge), maar:
 // - filament: gram van de printregel (naar rato van de stuks van deze
 //   opdracht) × INKOOPprijs per kg (gemiddelde van de rollen in voorraad,
-//   anders de laatst gekende prijs; rolgewicht van de prijsgroep)
+//   anders de laatst gekende prijs; rolgewicht van de prijsgroep). Een
+//   LOSSE opdracht (zonder dossier) heeft sinds 26-09 haar eigen filament
+//   (printopdracht_materialen, gram voor de hele opdracht)
 // - elektriciteit: gemeten kWh van alle runs (ook mislukte) × kWh-prijs
 // - machine: printtijd van alle runs × machinetarief van de printer
 // - BMCU/AMS-slijtage: per run
@@ -56,22 +58,27 @@ function filamentNaam(db, m) {
 const duurU = r => ((r.geeindigd_op ? Date.parse(r.geeindigd_op) : Date.now()) - Date.parse(r.gestart_op)) / 3600e3;
 
 // opdracht: { id, dossier_regel_id, aantal, aantal_goed? }; goed = aantal goede stuks
-export function productiekost(db, opdracht, goed = opdracht.aantal_goed) {
+// materialen (optioneel, enkel losse opdracht): nog niet bewaard filament om
+// vooraf te rekenen (bevestigvenster), in plaats van wat in de databank staat.
+export function productiekost(db, opdracht, goed = opdracht.aantal_goed, { materialen = null } = {}) {
   const t = getTarieven(db);
   const regel = opdracht.dossier_regel_id ? db.prepare('SELECT * FROM dossier_regels WHERE id = ?').get(opdracht.dossier_regel_id) : null;
   const deel = regel ? opdracht.aantal / (Number(regel.aantal) || 1) : 1;
   const ontbreekt = [];
   let filament = 0;
-  if (regel) {
-    const mat = db.prepare('SELECT artikel_id, filament_type_id, gram FROM dossier_regel_materialen WHERE regel_id = ?').all(regel.id);
-    for (const m of mat) {
-      if (!m.gram) continue;
-      const kg = kostPerKg(db, m);
-      if (kg == null) { ontbreekt.push(`inkoopprijs filament ${filamentNaam(db, m)}`); continue; }
-      filament += m.gram * deel / 1000 * kg;
-    }
-    if (!mat.some(m => m.gram > 0)) ontbreekt.push('gewicht filament');
-  } else ontbreekt.push('printregel (filament)');
+  const mat = regel
+    ? db.prepare('SELECT artikel_id, filament_type_id, gram FROM dossier_regel_materialen WHERE regel_id = ?').all(regel.id)
+    : (materialen ?? db.prepare('SELECT artikel_id, filament_type_id, gram FROM printopdracht_materialen WHERE printopdracht_id = ?').all(opdracht.id));
+  for (const m of mat) {
+    if (!m.gram) continue;
+    const kg = kostPerKg(db, m);
+    if (kg == null) { ontbreekt.push(`inkoopprijs filament ${filamentNaam(db, m)} (Voorraad → artikel → inkoopprijs)`); continue; }
+    filament += m.gram * deel / 1000 * kg;
+  }
+  if (!mat.some(m => m.gram > 0)) {
+    ontbreekt.push(regel ? 'gewicht filament (op de printregel van het dossier)'
+      : mat.length ? 'gewicht filament (open de printopdracht → Filament)' : 'filament en gewicht (open de printopdracht → Filament)');
+  }
   const runs = db.prepare(`SELECT r.*, p.machine_per_uur FROM printruns r JOIN printers p ON p.id = r.printer_id
     WHERE r.printopdracht_id = ? AND r.uitkomst <> 'bezig'`).all(opdracht.id);
   let energie = 0, machine = 0;

@@ -27,7 +27,9 @@ export const REEKSEN = {
   WB:  { naam: 'Werkbon',  cijfers: 4, tabel: 'werkbonnen', kolom: 'nummer' },
   PB:  { naam: 'Pakbon',   cijfers: 3, tabel: 'leveringen', kolom: 'nummer' },
   AK:  { naam: 'Aankoop',  cijfers: 4, tabel: 'aankopen', kolom: 'nummer' },
-  BON: { naam: 'Bonnetje', cijfers: 3, tabel: 'dossiers', kolom: 'afgerekend_nummer', metNaam: true, filter: "afgerekend_soort = 'bonnetje'" },
+  // ook: nog een tabel met nummers van dezelfde reeks (26-09: losse verkoop)
+  BON: { naam: 'Bonnetje', cijfers: 3, tabel: 'dossiers', kolom: 'afgerekend_nummer', metNaam: true, filter: "afgerekend_soort = 'bonnetje'",
+    ook: [{ tabel: 'verkopen', kolom: 'nummer' }] },
 };
 
 // "BON-" (klassiek) of "Bonnetje " (metNaam) — het stuk vóór "jaar-nummer".
@@ -54,7 +56,10 @@ function hoogsteUitgegeven(db, reeks, jaar) {
   if (!r?.tabel) return 0;
   const prefix = `${voorvoegsel(reeks, r)}${jaar}-`;
   const waar = r.filter ? `${r.kolom} LIKE ? AND ${r.filter}` : `${r.kolom} LIKE ?`;
-  const rijen = db.prepare(`SELECT ${r.kolom} AS n FROM ${r.tabel} WHERE ${waar}`).all(`${prefix}%`);
+  const rijen = [
+    ...db.prepare(`SELECT ${r.kolom} AS n FROM ${r.tabel} WHERE ${waar}`).all(`${prefix}%`),
+    ...(r.ook || []).flatMap(o => db.prepare(`SELECT ${o.kolom} AS n FROM ${o.tabel} WHERE ${o.kolom} LIKE ?`).all(`${prefix}%`)),
+  ];
   return rijen.reduce((m, x) => Math.max(m, parseInt(String(x.n).slice(prefix.length), 10) || 0), 0);
 }
 

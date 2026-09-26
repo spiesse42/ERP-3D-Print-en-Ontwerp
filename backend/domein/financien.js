@@ -4,7 +4,8 @@
 // Accountable blijft de boekhouding (domeinmodel, optie A). Dit zijn
 // RICHTWAARDEN uit wat het ERP kent:
 // - omzet      = afgerekende klantdossiers (bedrag van de afrekening), op de
-//                datum van de afrekening (factuur of bonnetje)
+//                datum van de afrekening (factuur of bonnetje), + losse
+//                verkopen (26-09, tegel Verkoop; niet de ongedane)
 // - ontvangen  = dezelfde bedragen op de betaaldatum (kasstelsel)
 // - aankopen   = bestelde/ontvangen, niet-geannuleerde aankopen (incl. btw,
 //                incl. kostregels zoals verzending), op de documentdatum
@@ -28,7 +29,8 @@ const AANKOOP_BEDRAG = `(SELECT COALESCE(SUM(r.aantal * COALESCE(r.prijs_per_een
 export function beschikbareJaren(db) {
   const jaren = new Set([new Date().getFullYear()]);
   for (const r of db.prepare(`SELECT DISTINCT substr(afgerekend_op, 1, 4) j FROM dossiers WHERE afgerekend_op IS NOT NULL
-    UNION SELECT DISTINCT substr(datum, 1, 4) FROM aankopen WHERE besteld_op IS NOT NULL`).all()) if (r.j) jaren.add(Number(r.j));
+    UNION SELECT DISTINCT substr(datum, 1, 4) FROM aankopen WHERE besteld_op IS NOT NULL
+    UNION SELECT DISTINCT substr(datum, 1, 4) FROM verkopen WHERE geannuleerd_op IS NULL`).all()) if (r.j) jaren.add(Number(r.j));
   return [...jaren].sort((a, b) => b - a);
 }
 
@@ -57,6 +59,11 @@ export function jaarOverzicht(db, jaar) {
   for (const r of db.prepare(`SELECT substr(afgerekend_op, 1, 7) maand, afgerekend_soort asoort, COUNT(*) n, SUM(afgerekend_bedrag) b FROM dossiers
     WHERE afgerekend_op IS NOT NULL AND substr(afgerekend_op, 1, 4) = ? GROUP BY maand, afgerekend_soort`).all(j)) {
     zet(r.maand, 'omzet', r.b); zet(r.maand, r.asoort === 'bonnetje' ? 'bonnetjes' : 'facturen', r.n);
+  }
+  // losse verkoop = bonnetje: omzet én meteen ontvangen
+  for (const r of db.prepare(`SELECT substr(datum, 1, 7) maand, COUNT(*) n, SUM(totaal) b FROM verkopen
+    WHERE geannuleerd_op IS NULL AND substr(datum, 1, 4) = ? GROUP BY maand`).all(j)) {
+    zet(r.maand, 'omzet', r.b); zet(r.maand, 'bonnetjes', r.n); zet(r.maand, 'ontvangen', r.b);
   }
   for (const r of db.prepare(`SELECT substr(betaald_op, 1, 7) maand, SUM(afgerekend_bedrag) b FROM dossiers
     WHERE betaald_op IS NOT NULL AND afgerekend_op IS NOT NULL AND substr(betaald_op, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, 'ontvangen', r.b);
@@ -134,6 +141,21 @@ export function marges(db, jaar) {
       marge_pct: d.afgerekend_bedrag > 0 ? Math.round(marge / d.afgerekend_bedrag * 1000) / 10 : null,
       onvolledig, redenen: [...redenen] };
   });
+  // losse verkopen (26-09): kost = partijprijs van wat uitgeboekt werd
+  const verkoopKost = db.prepare(`SELECT SUM(-m.aantal * p.prijs_per_eenheid) kost, SUM(CASE WHEN p.prijs_per_eenheid IS NULL THEN 1 ELSE 0 END) zonder_prijs
+    FROM voorraad_mutaties m JOIN verkoop_regels vr ON vr.id = m.bron_id LEFT JOIN voorraad_partijen p ON p.id = m.partij_id
+    WHERE m.bron_type = 'verkoop_regel' AND m.reden = 'levering' AND m.aantal < 0 AND vr.verkoop_id = ?`);
+  for (const v of db.prepare(`SELECT v.id, v.nummer AS afrekening, v.datum AS afgerekend_op, v.totaal AS afgerekend_bedrag, v.omschrijving, ${KLANTNAAM} klant
+      FROM verkopen v LEFT JOIN klanten k ON k.id = v.klant_id WHERE v.geannuleerd_op IS NULL AND substr(v.datum, 1, 4) = ?`).all(String(jaar))) {
+    const a = verkoopKost.get(v.id);
+    const kost = r2(a?.kost || 0);
+    const marge = r2(v.afgerekend_bedrag - kost);
+    rijen.push({ id: `v${v.id}`, verkoop_id: v.id, nummer: v.afrekening, titel: v.omschrijving || 'Losse verkoop', afgerekend_op: v.afgerekend_op,
+      afgerekend_bedrag: v.afgerekend_bedrag, afgerekend_soort: 'verkoop', waarde: null, klant: v.klant, kost_print: 0, kost_artikelen: kost, kost, arbeid: 0,
+      marge, marge_met_arbeid: marge, marge_pct: v.afgerekend_bedrag > 0 ? Math.round(marge / v.afgerekend_bedrag * 1000) / 10 : null,
+      onvolledig: !!a?.zonder_prijs, redenen: a?.zonder_prijs ? ['artikel zonder inkoopprijs'] : [] });
+  }
+  rijen.sort((x, y) => String(y.afgerekend_op).localeCompare(String(x.afgerekend_op)));
   const som = k => r2(rijen.reduce((t, x) => t + (x[k] || 0), 0));
   return { jaar: Number(jaar), rijen, totaal: { bedrag: som('afgerekend_bedrag'), kost: som('kost'), arbeid: som('arbeid'), marge: som('marge'), marge_met_arbeid: som('marge_met_arbeid') } };
 }

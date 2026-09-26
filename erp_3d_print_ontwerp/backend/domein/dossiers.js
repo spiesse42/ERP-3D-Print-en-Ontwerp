@@ -5,7 +5,7 @@ import { DomeinFout } from './hulp.js';
 import { getal } from './rekenmotor.js';
 import { berekenMetDb } from './berekening.js';
 import { faseVan, actiesVan, stappenVan } from './status/dossier.js';
-import { offertesVan, laatsteVerstuurde, werkbonVan, documentInhoud } from './documenten.js';
+import { offertesVan, laatsteVerstuurde, werkbonVan, documentInhoud, afrekeningWeergave, isErpBonnetje } from './documenten.js';
 import { leverbaar, leverStatus, leverStatusVan, leveringenVan, controleerGeleverd } from './leveringen.js';
 import { productieVan, productieOverzicht, metingenPerRegel, controleerPrintopdrachten, wisOpdrachtenVanRegels } from '../productie/opdrachten.js';
 
@@ -201,12 +201,20 @@ export function volgendeStap(d) {
   const extra = [];
   if (klant && ['geen', 'deels'].includes(d.lever_status) && d.fase !== 'geannuleerd') extra.push('Leveren (pakbon) kan nog, maar is niet verplicht.');
   if (d.fase === 'geannuleerd') return { soort: 'geannuleerd', tekst: 'Dit dossier is geannuleerd: niets af te rekenen of te leveren.', extra: [] };
-  if (d.fase === 'betaald') return { soort: 'afgerond', tekst: 'Afgerond: afgerekend en betaald.', extra };
+  // bonnetje van het ERP dat nog niet bij Accountable is (mailen mislukt, 26-09)
+  if (isErpBonnetje(d) && !d.afrekening_gemaild_op) {
+    return { soort: 'bonnetje_mailen', tekst: `${d.afgerekend_nummer} is gemaakt, maar nog NIET naar Accountable gemaild. Mail het nu, anders ontbreekt het in je dagontvangstenboek.`, extra: [] };
+  }
+  if (d.fase === 'betaald') {
+    return { soort: 'afgerond', tekst: isErpBonnetje(d)
+      ? `Afgerond: ${d.afgerekend_nummer} gemaakt en naar Accountable gemaild${d.afrekening_klant_mail ? ` (ook naar ${d.afrekening_klant_mail})` : ''}.`
+      : 'Afgerond: afgerekend en betaald.', extra };
+  }
   if (d.fase === 'gratis') {
     return { soort: 'afgerond', tekst: `Gratis geleverd${d.gratis_waarde != null ? ` (waarde ${euro2(d.gratis_waarde)})` : ''}: niets af te rekenen. Telt niet als omzet; je kost staat in Financiën → Marges.`, extra };
   }
   if (d.fase === 'afgerekend') {
-    return { soort: 'betaling', tekst: `Afgerekend met ${d.afgerekend_soort} ${d.afgerekend_nummer}. Nog te doen: als betaald markeren zodra het geld binnen is (of via de Accountable-import).`, extra };
+    return { soort: 'betaling', tekst: `Afgerekend met ${afrekeningWeergave(d.afgerekend_soort, d.afgerekend_nummer)}. Nog te doen: als betaald markeren zodra het geld binnen is (of via de Accountable-import).`, extra };
   }
   if (!d.regels.length) return { soort: 'regels', tekst: 'Voeg eerst regels toe: wat moet er gebeuren (printen, ontwerp, aanpassing, artikel, extra)?', extra: [] };
   const offerte = (d.offertes || []).filter(o => o.verstuurd_op).sort((a, b) => b.versie - a.versie)[0];
@@ -239,7 +247,7 @@ export function volgendeStap(d) {
   }
   if (klant) {
     const reden = !(d.werkbon || d.zonder_werkbon)?.volledig ? ' Eerst moeten alle regels berekend kunnen worden.' : '';
-    return { soort: 'afrekenen', tekst: `${p?.status === 'klaar' ? 'Alles is geprint. ' : ''}Nog af te rekenen in Accountable: maak daar de factuur of het bonnetje en vul het nummer hier in.${reden}`,
+    return { soort: 'afrekenen', tekst: `${p?.status === 'klaar' ? 'Alles is geprint. ' : ''}Nog af te rekenen: ${d.klant_gegevens?.type === 'zakelijk' ? 'maak de factuur in Accountable en vul het nummer hier in ("Afrekenen"), of maak toch een bonnetje' : 'maak het bonnetje ("Bonnetje maken": het ERP mailt het naar Accountable), of reken af met een factuur uit Accountable ("Afrekenen")'}.${reden}`,
       kan: !reden, extra: [...extra, 'Krijgt de klant het zonder te betalen? Kies "Gratis geleverd". Gaat de opdracht niet door? "Dossier annuleren".'] };
   }
   return { soort: 'klaar', tekst: d.soort === 'eigen' ? 'Alles is geprint; de goede stuks staan in voorraad.' : 'Alles is geprint.', extra: [] };
