@@ -7,6 +7,8 @@
 // - per printer: runs, slaagpercentage, uren, kWh
 // - filament: rollen leeggemeld per kleur
 // - eigen producten: stuks geproduceerd per artikel
+import { VIA_VERKOOP } from './hulp.js';
+
 const r2 = v => Math.round((v || 0) * 100) / 100;
 const r3 = v => Math.round((v || 0) * 1000) / 1000;
 const UREN = `(julianday(r.geeindigd_op) - julianday(r.gestart_op)) * 24`;
@@ -18,7 +20,9 @@ export function statistieken(db, jaar) {
     dossiers: 0, afgerekend: 0, omzet: 0, runs: 0, geslaagd: 0, mislukt: 0, uren: 0, kwh: 0, rollen: 0 }));
   const zet = (maand, w) => { const m = maanden.find(x => x.maand === maand); if (m) for (const [k, v] of Object.entries(w)) m[k] += v || 0; };
   for (const r of db.prepare(`SELECT substr(aangemaakt_op, 1, 7) maand, COUNT(*) n FROM dossiers WHERE substr(aangemaakt_op, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, { dossiers: r.n });
-  for (const r of db.prepare(`SELECT substr(afgerekend_op, 1, 7) maand, COUNT(*) n, SUM(afgerekend_bedrag) b FROM dossiers WHERE substr(afgerekend_op, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, { afgerekend: r.n, omzet: r.b });
+  // omzet van een dossier dat via een losse verkoop afgerekend werd, telt via die verkoop (hieronder)
+  for (const r of db.prepare(`SELECT substr(afgerekend_op, 1, 7) maand, COUNT(*) n, SUM(CASE WHEN ${VIA_VERKOOP('dossiers')} THEN 0 ELSE afgerekend_bedrag END) b
+      FROM dossiers WHERE substr(afgerekend_op, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, { afgerekend: r.n, omzet: r.b });
   // losse verkopen (26-09) tellen mee in de omzet (niet als afgerekend dossier)
   for (const r of db.prepare(`SELECT substr(datum, 1, 7) maand, SUM(totaal) b FROM verkopen WHERE geannuleerd_op IS NULL AND substr(datum, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, { omzet: r.b });
   for (const r of db.prepare(`SELECT substr(r.gestart_op, 1, 7) maand, COUNT(*) n, SUM(r.uitkomst = 'klaar') ok, SUM(r.uitkomst IN ('mislukt','geannuleerd')) nok,

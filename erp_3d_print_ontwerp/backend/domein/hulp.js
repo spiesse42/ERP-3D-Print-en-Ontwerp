@@ -47,3 +47,9 @@ export class DomeinFout extends Error {}
 
 // Afronden op 4 decimalen, tegen 0,1 + 0,2 = 0,30000000000000004.
 export const rond = x => Math.round(x * 1e4) / 1e4;
+
+// Dossier afgerekend via een losse verkoop (26-09): het bedrag staat dan op
+// het dossier ÉN in de verkoop. Omzet/aantallen tellen het via de verkoop;
+// deze voorwaarde sluit zulke dossiers uit (alias = de dossiers-tabel).
+export const VIA_VERKOOP = alias => `EXISTS (SELECT 1 FROM verkoop_regels vr_ JOIN verkopen v_ ON v_.id = vr_.verkoop_id
+  WHERE vr_.dossier_id = ${alias}.id AND v_.geannuleerd_op IS NULL)`;

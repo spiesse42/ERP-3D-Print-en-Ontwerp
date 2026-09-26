@@ -153,7 +153,8 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit: sluit, 
       {o && (
         <p style={{ marginTop: 0 }}><OpdrachtBadge status={o.status} /> <Herkomst o={o} />
           {o.status === 'voltooid' && <> · <b>{aantal(o.aantal_goed)}</b> goede stuks</>}
-          {o.eindproduct && <> · naar voorraad: {o.eindproduct}</>}</p>
+          {o.eindproduct && <> · naar voorraad: {o.eindproduct}</>}
+          {o.verkocht_nummer && <> · verkocht via <Link naar={`/verkoop/${o.verkocht_verkoop_id}`}><span className="mono">{o.verkocht_nummer}</span></Link></>}</p>
       )}
       {volgtRegel && <p className="note" style={{ marginTop: 0 }}>Deze opdracht volgt de regel van dossier {o.dossier_nummer}: het totaal aantal komt van die regel. Verlaag je hier het aantal, dan komt de rest in een aparte opdracht (bv. om over twee printers te spreiden). Niet meer nodig? Pas de regel aan.</p>}
       <div className="fgrid">

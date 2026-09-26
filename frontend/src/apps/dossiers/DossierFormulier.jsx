@@ -222,7 +222,8 @@ export default function DossierFormulier() {
               <Veld label="Totaal">{uitkomst ? (uitkomst.volledig ? <b className="num">{euro(uitkomst.totaal)}</b> : <span className="badge b-warn">onvolledig</span>) : <span className="sub">—</span>}</Veld>
               {!nieuw && d.afgerekend_op && (
                 <Veld label="Afgerekend">
-                  <span><span className="mono">{String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>{d.afrekening_pdf_op && !d.afrekening_gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>} · {datum(d.afgerekend_op)} · <span className="num">{euro(d.afgerekend_bedrag)}</span></span>
+                  <span><span className="mono">{String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>{d.afrekening_pdf_op && !d.afrekening_gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}
+                    {d.afgerekend_via && <> · <Link naar={`/verkoop/${d.afgerekend_via.id}`}>via losse verkoop</Link>{!d.afgerekend_via.gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}</>} · {datum(d.afgerekend_op)} · <span className="num">{euro(d.afgerekend_bedrag)}</span></span>
                 </Veld>
               )}
               {!nieuw && d.betaald_op && <Veld label="Betaald op"><span className="num">{datum(d.betaald_op)}</span></Veld>}

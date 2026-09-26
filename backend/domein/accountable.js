@@ -11,7 +11,7 @@
 // - betaald: via een kolom betaaldatum, een status-/betaald-kolom of een
 //   kolom "openstaand bedrag" (0 = betaald)
 import ExcelJS from 'exceljs';
-import { DomeinFout } from './hulp.js';
+import { DomeinFout, VIA_VERKOOP } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
 
 export const VELDEN = {
@@ -135,7 +135,7 @@ export function interpreteer(blad, kolommen) {
 // open (nog niet betaald) / niet_gevonden (geen dossier met dat nummer)
 export function vergelijk(db, rijen) {
   const dossiers = db.prepare(`SELECT id, nummer, titel, afgerekend_soort, afgerekend_nummer, afgerekend_op, afgerekend_bedrag, betaald_op
-    FROM dossiers WHERE afgerekend_nummer IS NOT NULL`).all();
+    FROM dossiers WHERE afgerekend_nummer IS NOT NULL AND NOT ${VIA_VERKOOP('dossiers')}`).all();   // via een verkoop: zit in die verkoop
   // losse verkopen (26-09): bonnetjes, dus altijd al betaald → enkel "in orde"
   for (const v of db.prepare(`SELECT id, nummer, omschrijving, datum, totaal FROM verkopen WHERE geannuleerd_op IS NULL`).all()) {
     dossiers.push({ id: `v${v.id}`, verkoop_id: v.id, nummer: null, titel: v.omschrijving || 'Losse verkoop', afgerekend_soort: 'bonnetje',

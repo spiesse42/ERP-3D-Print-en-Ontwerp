@@ -8,7 +8,7 @@ import { BevestigDialoog } from '../productie/opdracht.jsx';
 // gebeuren en de knop erbij. De zin komt uit de backend (volgende_stap);
 // hier enkel de knop per soort. Plus de uitleg "Hoe werkt een dossier?".
 export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBonnetje, onBonnetjeMailen, onBetaald, onGratis, onHeropenen, naarTab, herlaad }) {
-  const { melding } = useOmgeving();
+  const { melding, navigeer } = useOmgeving();
   const [bevestig, setBevestig] = useState(null);
   const [uitleg, setUitleg] = useState(false);
   const [bezig, setBezig] = useState(false);
@@ -40,6 +40,7 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
       ? <>{knop('Afrekenen', onAfrekenen, { uit: !!afrekenReden })}{knop('Bonnetje maken', onBonnetje, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>
       : <>{knop('Bonnetje maken', onBonnetje, { uit: !!afrekenReden })}{knop('Afrekenen', onAfrekenen, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>),
     bonnetje_mailen: () => knop('Bonnetje mailen', onBonnetjeMailen),
+    verkoop_mailen: () => knop('Naar de verkoop', () => navigeer(`/verkoop/${s.verkoop_id}`)),
     betaling: () => knop('Betaald', onBetaald),
     geannuleerd: () => knop('Heropenen', onHeropenen, { primair: false }),
   };

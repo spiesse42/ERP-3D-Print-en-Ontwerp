@@ -24,7 +24,7 @@ export default function VerkopenLijst() {
   const kolommen = [
     { kop: 'Nummer', cel: x => <span className="mono">{x.nummer}</span>, sorteer: x => String(x.nummer) },
     { kop: 'Datum', cel: x => <span className="num">{datum(x.datum)}</span>, sorteer: x => `${x.datum}-${String(x.nummer)}` },
-    { kop: 'Wat', cel: x => <><b>{x.titel || (x.bron === 'verkoop' ? 'Losse verkoop' : '—')}</b><div className="sub">{x.bron === 'dossier' ? <span className="mono">{x.dossier_nummer}</span> : BRON.verkoop}</div></>, sorteer: x => String(x.titel || '').toLowerCase() },
+    { kop: 'Wat', cel: x => <><b>{x.titel || (x.bron === 'verkoop' ? 'Losse verkoop' : '—')}</b><div className="sub">{x.bron === 'dossier' ? <span className="mono">{x.dossier_nummer}</span> : <>{BRON.verkoop}{x.dossiers ? <> · dossier <span className="mono">{x.dossiers}</span></> : null}</>}</div></>, sorteer: x => String(x.titel || '').toLowerCase() },
     { kop: 'Klant', cel: x => x.klant || <span className="sub">—</span>, sorteer: x => (x.klant || '').toLowerCase() },
     { kop: 'Bedrag', klasse: 'r', cel: x => <span className={`num${x.geannuleerd_op ? ' sub' : ''}`}>{euro(x.bedrag)}</span>, sorteer: x => x.bedrag },
     { kop: 'Status', cel: x => <StatusBadge x={x} />, sorteer: x => (x.geannuleerd_op ? 3 : !x.erp ? 2 : x.gemaild_op ? 1 : 0) },
