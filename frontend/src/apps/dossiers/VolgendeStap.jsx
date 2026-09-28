@@ -21,20 +21,23 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
     catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
   }
-  const knop = (label, onClick, { primair = true, uit = false } = {}) => (
-    <button type="button" className={`btn${primair ? ' primary' : ''}`} disabled={bezig || uit || vuil} title={vuil ? 'Sla eerst je wijzigingen op.' : undefined} onClick={onClick}>{label}</button>
-  );
+  // nav: enkel naar een tabblad gaan — kan ook met niet-opgeslagen wijzigingen
+  const knop = (label, onClick, { primair = true, uit = false, nav = false } = {}) => {
+    const blok = !nav && vuil;
+    return <button type="button" className={`btn${primair ? ' primary' : ''}`} disabled={bezig || uit || blok} title={blok ? 'Sla eerst je wijzigingen op.' : undefined} onClick={onClick}>{label}</button>;
+  };
+  const naar = (label, t, primair = true) => knop(label, () => naarTab(t), { primair, nav: true });
   const KNOP = {
-    regels: () => knop('Naar de regels', () => naarTab('regels'), { primair: false }),
-    offerte_wacht: () => knop('Naar de offerte', () => naarTab('offertes')),
+    regels: () => naar('Naar de regels', 'regels', false),
+    offerte_wacht: () => naar('Naar de offerte', 'offertes'),
     starten: () => knop(<><Icoon naam="start" maat={14} /> Starten</>, onStarten),
-    koppelen: () => (s.run.voorstel ? knop(`Koppelen aan "${s.run.voorstel.naam}"`, koppel) : knop('Naar Productie', () => naarTab('productie'))),
+    koppelen: () => (s.run.voorstel ? knop(`Koppelen aan "${s.run.voorstel.naam}"`, koppel) : naar('Naar Productie', 'productie')),
     bevestigen: () => knop('Bevestigen', () => setBevestig(opdracht(s.opdracht_id))),
-    printer_kiezen: () => knop('Naar de regels', () => naarTab('regels')),
-    herprint: () => knop('Naar Productie', () => naarTab('productie'), { primair: false }),
-    bezig: () => knop('Naar Productie', () => naarTab('productie'), { primair: false }),
-    wachtrij: () => knop('Naar Productie', () => naarTab('productie'), { primair: false }),
-    plannen: () => knop('Naar Productie', () => naarTab('productie')),
+    printer_kiezen: () => naar('Naar de regels', 'regels'),
+    herprint: () => naar('Naar Productie', 'productie', false),
+    bezig: () => naar('Naar Productie', 'productie', false),
+    wachtrij: () => naar('Naar Productie', 'productie', false),
+    plannen: () => naar('Naar Productie', 'productie'),
     // 26-09: particulier → "Bonnetje maken" (ERP) als hoofdknop; zakelijk → factuur via Accountable ("Afrekenen")
     afrekenen: () => (d.klant_gegevens?.type === 'zakelijk'
       ? <>{knop('Afrekenen', onAfrekenen, { uit: !!afrekenReden })}{knop('Bonnetje maken', onBonnetje, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>
@@ -59,7 +62,7 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
         </div>
         <div className="knoppen">
           {KNOP[s.soort]?.()}
-          {leverKnop && knop('Leveren (pakbon)', () => naarTab('leveringen'), { primair: false })}
+          {leverKnop && naar('Leveren (pakbon)', 'leveringen', false)}
           <button type="button" className="btn ghost klein" onClick={() => setUitleg(true)}>Hoe werkt een dossier?</button>
         </div>
       </div>
