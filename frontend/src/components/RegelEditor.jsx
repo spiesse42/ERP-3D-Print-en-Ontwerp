@@ -6,13 +6,15 @@ import { api } from '../lib/api.js';
 import Icoon from '../schil/Icoon.jsx';
 import NieuwArtikelDialoog from './NieuwArtikelDialoog.jsx';
 import { euro, naarInvoer, aantal as fmtAantal } from '../lib/formaat.js';
+import { verklein } from '../lib/afbeelding.js';
+import { useOmgeving } from '../schil/Omgeving.jsx';
 
 export const TYPES = [['printen', 'Printen'], ['ontwerp', 'Ontwerp'], ['aanpassing', 'Aanpassing'], ['artikel', 'Artikel / dienst'], ['extra', 'Extra kost']];
 let teller = 0;
 export const nieuweRegel = (type = 'printen') => ({
   sleutel: `r${++teller}`, type, omschrijving: '',
   printer_id: '', tijd_u: '', tijd_m: '', aantal: '1', voorbereiding_min: '', nabewerking_min: '', materialen: [{ keuze: '', gram: '' }],
-  minuten: '', tarief: '', artikel_id: '', bedrag: '', per_stuk: false, handmatig_bedrag: '',
+  minuten: '', tarief: '', artikel_id: '', bedrag: '', per_stuk: false, handmatig_bedrag: '', afbeelding: '',
 });
 
 const nr = v => (String(v ?? '').trim() === '' ? null : String(v).replace(',', '.'));
@@ -21,7 +23,7 @@ export function naarApi(r) {
   const basis = { ...(r.id ? { id: r.id } : {}), type: r.type, omschrijving: r.omschrijving, handmatig_bedrag: nr(r.handmatig_bedrag) };
   if (r.type === 'printen') {
     const u = Number(nr(r.tijd_u) ?? 0), m = Number(nr(r.tijd_m) ?? 0);
-    return { ...basis, printer_id: r.printer_id || null, aantal: nr(r.aantal) ?? 1, tijd_min: u * 60 + m, artikel_id: r.artikel_id || null,
+    return { ...basis, afbeelding: r.afbeelding || null, printer_id: r.printer_id || null, aantal: nr(r.aantal) ?? 1, tijd_min: u * 60 + m, artikel_id: r.artikel_id || null,
       voorbereiding_min: nr(r.voorbereiding_min), nabewerking_min: nr(r.nabewerking_min),
       materialen: r.materialen.filter(x => x.keuze).map(x => {
         const [soort, id] = x.keuze.split(':');
@@ -42,7 +44,7 @@ export function vanApi(r) {
   if (r.type === 'printen') {
     const t = Number(r.tijd_min) || 0;
     const u = Math.floor(t / 60), m = Math.round((t - u * 60) * 100) / 100;
-    Object.assign(f, { printer_id: alsInvoer(r.printer_id), artikel_id: alsInvoer(r.artikel_id), aantal: alsInvoer(r.aantal ?? 1), tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '',
+    Object.assign(f, { afbeelding: r.afbeelding || '', printer_id: alsInvoer(r.printer_id), artikel_id: alsInvoer(r.artikel_id), aantal: alsInvoer(r.aantal ?? 1), tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '',
       voorbereiding_min: alsInvoer(r.voorbereiding_min), nabewerking_min: alsInvoer(r.nabewerking_min),
       materialen: (r.materialen || []).length
         ? r.materialen.map(x => ({ keuze: x.artikel_id ? `a:${x.artikel_id}` : `p:${x.filament_type_id}`, gram: alsInvoer(x.gram) }))
@@ -62,7 +64,8 @@ export function useBerekening(regels, stand = 'schatting') {
   const [uitkomst, setUitkomst] = useState(null);
   const [fout, setFout] = useState(null);
   const volg = useRef(0);
-  const sleutel = JSON.stringify(regels.map(naarApi));
+  // zonder afbeelding: telt niet voor de prijs en maakt elke aanvraag zwaar
+  const sleutel = JSON.stringify(regels.map(r => { const { afbeelding: _a, ...x } = naarApi(r); return x; }));
   useEffect(() => {
     const mijn = ++volg.current;
     const klok = setTimeout(async () => {
@@ -103,6 +106,7 @@ const NIEUW = '__nieuw';
 export default function RegelEditor({ regels, onWijzig, uitkomst, printers, filamenten, prijsgroepen, artikelen, tarieven, herkomst, onArtikelGemaakt, alleenLezen = false, eindproducten = null }) {
   const actueel = useRef(regels);
   actueel.current = regels;
+  const { melding } = useOmgeving();
   const [nieuwVoor, setNieuwVoor] = useState(null);   // sleutel van de regel die een nieuw artikel krijgt
   const zet = (i, w) => onWijzig(regels.map((r, j) => (j === i ? { ...r, ...w } : r)));
   async function artikelGemaakt(id) {
@@ -110,6 +114,13 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
     // de regel opzoeken op sleutel: intussen kan de lijst veranderd zijn
     onWijzig(actueel.current.map(r => (r.sleutel === nieuwVoor ? { ...r, artikel_id: String(id) } : r)));
     setNieuwVoor(null);
+  }
+  async function kiesAfbeelding(sleutel, bestand) {
+    if (!bestand) return;
+    try {
+      const a = await verklein(bestand);
+      onWijzig(actueel.current.map(r => (r.sleutel === sleutel ? { ...r, afbeelding: a } : r)));
+    } catch (e) { melding(e.message, 'fout'); }
   }
   const zetMat = (i, k, w) => zet(i, { materialen: regels[i].materialen.map((m, j) => (j === k ? { ...m, ...w } : m)) });
   const t = tarieven || {};
@@ -155,6 +166,16 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                     </div>
                   ))}
                   <button type="button" className="linkish" onClick={() => zet(i, { materialen: [...r.materialen, { keuze: '', gram: '' }] })}>+ kleur (multicolor)</button>
+                </div>
+                <div className="regel-afb" title="Komt op de offerte en de werkbon">
+                  {r.afbeelding ? <>
+                    <img src={r.afbeelding} alt={`Afbeelding regel ${i + 1}`} />
+                    <button type="button" className="btn ghost" aria-label={`Afbeelding van regel ${i + 1} weghalen`} onClick={() => zet(i, { afbeelding: '' })}><Icoon naam="kruis" maat={12} /></button>
+                  </> : (
+                    <label className="linkish">+ afbeelding (op offerte)
+                      <input type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={e => { kiesAfbeelding(r.sleutel, e.target.files?.[0]); e.target.value = ''; }} />
+                    </label>
+                  )}
                 </div>
               </>}
               {(r.type === 'ontwerp' || r.type === 'aanpassing') && <>

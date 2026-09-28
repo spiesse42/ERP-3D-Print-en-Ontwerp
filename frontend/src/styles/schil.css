@@ -336,6 +336,10 @@ label.btn.bezig { opacity:.6; pointer-events:none; }
 .samen { display:flex; gap:6px; }
 .samen .inp { min-width:0; }
 .materialen { grid-column:1/-1; display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
+/* afbeelding van een printregel (28-09), komt op offerte en werkbon */
+.regel-afb { grid-column:1/-1; display:flex; align-items:center; gap:6px; }
+.regel-afb img { width:56px; height:56px; object-fit:contain; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); }
+.regel-afb label.linkish { cursor:pointer; }
 .materiaal { display:grid; grid-template-columns:minmax(0,1fr) 120px auto; gap:10px; align-items:center; width:100%; }
 .materiaal .unit span { min-width:0; }
 .regeldetail { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:8px; }
