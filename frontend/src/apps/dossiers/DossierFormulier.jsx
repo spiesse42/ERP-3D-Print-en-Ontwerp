@@ -53,6 +53,15 @@ export default function DossierFormulier() {
   useEffect(() => { setForm(origineel); }, [origineel]);
   const vuil = vergelijk(form) !== vergelijk(origineel);
   useEffect(() => { zetVuil(vuil); return () => zetVuil(false); }, [vuil, zetVuil]);
+  // In productie (28-09): elke 15 s de nieuwe stand ophalen, zodat een run die
+  // de printerwachter net zag meteen te koppelen is. Niet tijdens wijzigen of
+  // in een venster, en niet als het tabblad verborgen is.
+  const volgt = !nieuw && !vuil && !dialoog && (d?.productie?.status === 'productie' || d?.productie?.te_koppelen_runs?.length > 0);
+  useEffect(() => {
+    if (!volgt) return undefined;
+    const k = setInterval(() => { if (document.visibilityState === 'visible') herlaad(); }, 15000);
+    return () => clearInterval(k);
+  }, [volgt, herlaad]);
   const { uitkomst: live } = useBerekening(form.regels);
   // Tot de live-berekening binnen is: de berekening die de backend meestuurde.
   const uitkomst = live || (!nieuw && d && !vuil ? d.berekening : null);
