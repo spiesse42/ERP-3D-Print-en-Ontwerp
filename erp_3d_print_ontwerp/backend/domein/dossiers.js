@@ -54,13 +54,17 @@ export function leesRegels(lijst) {
     const nr = `Regel ${i + 1}`;
     if (!REGELTYPES.includes(r?.type)) throw new DomeinFout(`${nr}: onbekend soort regel`);
     const leeg = { aantal: null, printer_id: null, tijd_min: null, voorbereiding_min: null, nabewerking_min: null,
-      minuten: null, tarief: null, artikel_id: null, bedrag: null, per_stuk: 0, materialen: [], afbeelding: null };
+      minuten: null, tarief: null, artikel_id: null, bedrag: null, per_stuk: 0, materialen: [], afbeelding: null,
+      slicer_bijlage_id: null, slicer_plaat: null };
     const basis = { ...leeg, id: Number.isInteger(r.id) ? r.id : null, type: r.type, omschrijving: tekst(r.omschrijving),
       handmatig_bedrag: nietNegatief(r.handmatig_bedrag, `${nr}: eindbedrag`) };
     if (r.type === 'printen') {
       // artikel_id bij een printregel = eindproduct (enkel bij een dossier
       // "Eigen product": de goede stuks gaan naar de voorraad, stap 6c)
-      return { ...basis, afbeelding: afbeelding(r.afbeelding, nr), aantal: nietNegatief(r.aantal, `${nr}: aantal`) ?? 1, printer_id: id(r.printer_id, 'printer'), artikel_id: id(r.artikel_id, 'eindproduct'),
+      return { ...basis, afbeelding: afbeelding(r.afbeelding, nr),
+        // slicerbestand (bijlage van dit dossier) + plaat, 28-09
+        slicer_bijlage_id: id(r.slicer_bijlage_id, 'slicerbestand'), slicer_plaat: r.slicer_bijlage_id ? id(r.slicer_plaat, 'plaat') : null,
+        aantal: nietNegatief(r.aantal, `${nr}: aantal`) ?? 1, printer_id: id(r.printer_id, 'printer'), artikel_id: id(r.artikel_id, 'eindproduct'),
         tijd_min: nietNegatief(r.tijd_min, `${nr}: printtijd`) ?? 0,
         voorbereiding_min: nietNegatief(r.voorbereiding_min, `${nr}: voorbereiding`),
         nabewerking_min: nietNegatief(r.nabewerking_min, `${nr}: nabewerking`),
@@ -82,7 +86,7 @@ export function leesRegels(lijst) {
 // ── regels bewaren: bestaande id's behouden (leveringen/printopdrachten
 // verwijzen er later naar), nieuwe toevoegen, weggelaten regels schrappen.
 const KOL = ['type', 'omschrijving', 'aantal', 'printer_id', 'tijd_min', 'voorbereiding_min', 'nabewerking_min',
-  'minuten', 'tarief', 'artikel_id', 'bedrag', 'per_stuk', 'handmatig_bedrag', 'afbeelding'];
+  'minuten', 'tarief', 'artikel_id', 'bedrag', 'per_stuk', 'handmatig_bedrag', 'afbeelding', 'slicer_bijlage_id', 'slicer_plaat'];
 export function bewaarRegels(db, dossierId, regels) {
   const soort = db.prepare('SELECT soort FROM dossiers WHERE id = ?').get(dossierId)?.soort;
   for (const [i, r] of regels.entries()) {
@@ -90,6 +94,12 @@ export function bewaarRegels(db, dossierId, regels) {
     if (soort !== 'eigen') { r.artikel_id = null; continue; }
     const a = db.prepare('SELECT type, zelf_geprint, naam FROM artikelen WHERE id = ?').get(r.artikel_id);
     if (!a || a.type !== 'artikel' || !a.zelf_geprint) throw new DomeinFout(`Regel ${i + 1}: kies als eindproduct een artikel dat we zelf printen`);
+  }
+  // slicerbestand: enkel een (nog bestaande) bijlage van DIT dossier; anders
+  // vervalt de koppeling (bv. regels teruggezet uit een oude offerte)
+  const bijlage = db.prepare(`SELECT 1 FROM bijlagen WHERE id = ? AND entiteit = 'dossier' AND entiteit_id = ?`);
+  for (const r of regels) {
+    if (r.slicer_bijlage_id && !bijlage.get(r.slicer_bijlage_id, dossierId)) { r.slicer_bijlage_id = null; r.slicer_plaat = null; }
   }
   controleerGeleverd(db, dossierId, regels);
   const opdrachtenWeg = controleerPrintopdrachten(db, dossierId, regels);
@@ -118,7 +128,9 @@ export function bewaarRegels(db, dossierId, regels) {
 
 // ── lezen ───────────────────────────────────────────────────────────────
 export function leesRegelsVan(db, dossierId) {
-  const regels = db.prepare(`SELECT id, ${KOL.join(', ')}, werkelijk_uren, werkelijk_kwh FROM dossier_regels WHERE dossier_id = ? ORDER BY volgorde, id`).all(dossierId);
+  const regels = db.prepare(`SELECT id, ${KOL.join(', ')}, werkelijk_uren, werkelijk_kwh,
+    (SELECT b.bestandsnaam FROM bijlagen b WHERE b.id = dossier_regels.slicer_bijlage_id) AS slicer_bestandsnaam
+    FROM dossier_regels WHERE dossier_id = ? ORDER BY volgorde, id`).all(dossierId);
   const mat = db.prepare('SELECT artikel_id, filament_type_id, gram FROM dossier_regel_materialen WHERE regel_id = ? ORDER BY volgorde, id');
   return regels.map(({ werkelijk_uren, werkelijk_kwh, ...r }) => ({ ...r, per_stuk: !!r.per_stuk,
     ...(r.type === 'printen' ? { werkelijk: { uren: werkelijk_uren, kwh: werkelijk_kwh } } : {}),
@@ -183,8 +195,8 @@ export function leesDossier(db, dossierId) {
     || (berekening.regels?.length ? documentInhoud(db, basis, berekening) : null);
   // Wijken de regels af van de aanvaarde offerte? (werkbon: "regels terugzetten")
   const aanvaard = offertes.find(o => o.aanvaard_op);
-  // afbeelding telt niet mee (offertes van vóór 28-09 hebben ze niet)
-  const zonderWerkelijk = l => JSON.stringify(l.map(({ id: _i, werkelijk: _w, gemeten: _g, afbeelding: _a, ...x }) => x));
+  // afbeelding en slicerbestand tellen niet mee (offertes van vóór 28-09 hebben ze niet)
+  const zonderWerkelijk = l => JSON.stringify(l.map(({ id: _i, werkelijk: _w, gemeten: _g, afbeelding: _a, slicer_bijlage_id: _s, slicer_plaat: _p, slicer_bestandsnaam: _n, ...x }) => x));
   const wijkt_af_van_offerte = !!aanvaard && zonderWerkelijk(aanvaard.regels_api || []) !== zonderWerkelijk(regels);
   const lever_lijst = d.soort === 'klant' ? leverbaar(db, dossierId, regels) : [];
   const lever = leverStatus(lever_lijst);
