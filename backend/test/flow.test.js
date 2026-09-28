@@ -348,3 +348,27 @@ test('X15. productiekost: wat ontbreekt wordt bewaard en getoond; herberekenen n
   const b = (await vraag('POST', '/financien/marges/herbereken')).data;
   assert.ok(b.bekeken >= 0);
 });
+
+test('X16. run op een andere printer met de naam van de opdracht in het bestand → voorstel; koppelen verhuist de opdracht', async () => {
+  getDb().prepare(`UPDATE printruns SET intern = 'test' WHERE printopdracht_id IS NULL AND intern IS NULL`).run();
+  const d0 = (await vraag('POST', '/dossiers', { titel: 'Heksen', klant_id: klant, regels: [
+    { type: 'printen', omschrijving: 'Heksenbenen', printer_id: a1, aantal: 1, tijd_min: 60, materialen: [{ filament_type_id: pg, gram: 20 }] }] })).data;
+  let d = (await vraag('POST', `/dossiers/${d0.id}/starten`)).data;
+  const o = d.productie.regels[0].opdrachten[0];
+  assert.equal(o.printer_id, a1);
+  const nieuw = async (bestand, u) => (await vraag('POST', '/productie/runs', { printer_id: mini, bestand,
+    gestart_op: new Date(Date.now() - u * 3600e3).toISOString(), geeindigd_op: new Date(Date.now() - (u - 0.5) * 3600e3).toISOString(), uitkomst: 'klaar', kwh: 0.1 })).data;
+  const ander = await nieuw('Iets anders.gcode.3mf', 7);
+  assert.ok(ander.id, JSON.stringify(ander));
+  const juist = await nieuw('Heksenbenen_PLA_1h.gcode.3mf', 6);
+  d = (await vraag('GET', `/dossiers/${d0.id}`)).data;
+  assert.deepEqual(d.productie.te_koppelen_runs.map(r => r.id), [juist.id], 'enkel de run met de naam in het bestand');
+  assert.equal(d.productie.te_koppelen_runs[0].voorstel.id, o.id);
+  assert.match(d.productie.te_koppelen_runs[0].voorstel.uitleg, /verhuist/);
+  await vraag('POST', `/productie/runs/${juist.id}/koppel`, { printopdracht_id: o.id });
+  d = (await vraag('GET', `/dossiers/${d0.id}`)).data;
+  assert.equal(d.productie.regels[0].opdrachten[0].printer_id, mini, 'opdracht verhuisd naar de printer van de run');
+  // de andere run op de A1 Mini hoort nu bij een printer van het dossier, zonder voorstel (opdracht is te bevestigen)
+  assert.deepEqual(d.productie.te_koppelen_runs.map(r => [r.id, r.voorstel]), [[ander.id, null]]);
+  await vraag('POST', `/productie/runs/${ander.id}/koppel`, { intern: 'test' });
+});
