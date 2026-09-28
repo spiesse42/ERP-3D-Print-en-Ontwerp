@@ -20,5 +20,6 @@ import * as m017 from './017_afrekening_document.js';
 import * as m018 from './018_verkopen.js';
 import * as m019 from './019_verkoop_koppelingen.js';
 import * as m020 from './020_regel_afbeelding.js';
+import * as m021 from './021_regel_slicerbestand.js';
 
-export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020];
+export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021];

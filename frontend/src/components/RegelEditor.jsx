@@ -2,7 +2,7 @@
 // nu, dossiers/offertes/werkbonnen in stap 5. De berekening zelf gebeurt
 // ALTIJD in de backend (POST /api/bereken): één rekenmotor, geen kopie hier.
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../lib/api.js';
+import { api, BASE } from '../lib/api.js';
 import Icoon from '../schil/Icoon.jsx';
 import NieuwArtikelDialoog from './NieuwArtikelDialoog.jsx';
 import { euro, naarInvoer, aantal as fmtAantal } from '../lib/formaat.js';
@@ -15,6 +15,7 @@ export const nieuweRegel = (type = 'printen') => ({
   sleutel: `r${++teller}`, type, omschrijving: '',
   printer_id: '', tijd_u: '', tijd_m: '', aantal: '1', voorbereiding_min: '', nabewerking_min: '', materialen: [{ keuze: '', gram: '' }],
   minuten: '', tarief: '', artikel_id: '', bedrag: '', per_stuk: false, handmatig_bedrag: '', afbeelding: '',
+  slicer_bijlage_id: null, slicer_plaat: null, slicer_bestandsnaam: '',
 });
 
 const nr = v => (String(v ?? '').trim() === '' ? null : String(v).replace(',', '.'));
@@ -23,7 +24,7 @@ export function naarApi(r) {
   const basis = { ...(r.id ? { id: r.id } : {}), type: r.type, omschrijving: r.omschrijving, handmatig_bedrag: nr(r.handmatig_bedrag) };
   if (r.type === 'printen') {
     const u = Number(nr(r.tijd_u) ?? 0), m = Number(nr(r.tijd_m) ?? 0);
-    return { ...basis, afbeelding: r.afbeelding || null, printer_id: r.printer_id || null, aantal: nr(r.aantal) ?? 1, tijd_min: u * 60 + m, artikel_id: r.artikel_id || null,
+    return { ...basis, afbeelding: r.afbeelding || null, slicer_bijlage_id: r.slicer_bijlage_id || null, slicer_plaat: r.slicer_bijlage_id ? r.slicer_plaat || null : null, printer_id: r.printer_id || null, aantal: nr(r.aantal) ?? 1, tijd_min: u * 60 + m, artikel_id: r.artikel_id || null,
       voorbereiding_min: nr(r.voorbereiding_min), nabewerking_min: nr(r.nabewerking_min),
       materialen: r.materialen.filter(x => x.keuze).map(x => {
         const [soort, id] = x.keuze.split(':');
@@ -44,7 +45,7 @@ export function vanApi(r) {
   if (r.type === 'printen') {
     const t = Number(r.tijd_min) || 0;
     const u = Math.floor(t / 60), m = Math.round((t - u * 60) * 100) / 100;
-    Object.assign(f, { afbeelding: r.afbeelding || '', printer_id: alsInvoer(r.printer_id), artikel_id: alsInvoer(r.artikel_id), aantal: alsInvoer(r.aantal ?? 1), tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '',
+    Object.assign(f, { afbeelding: r.afbeelding || '', slicer_bijlage_id: r.slicer_bijlage_id ?? null, slicer_plaat: r.slicer_plaat ?? null, slicer_bestandsnaam: r.slicer_bestandsnaam || '', printer_id: alsInvoer(r.printer_id), artikel_id: alsInvoer(r.artikel_id), aantal: alsInvoer(r.aantal ?? 1), tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '',
       voorbereiding_min: alsInvoer(r.voorbereiding_min), nabewerking_min: alsInvoer(r.nabewerking_min),
       materialen: (r.materialen || []).length
         ? r.materialen.map(x => ({ keuze: x.artikel_id ? `a:${x.artikel_id}` : `p:${x.filament_type_id}`, gram: alsInvoer(x.gram) }))
@@ -65,7 +66,7 @@ export function useBerekening(regels, stand = 'schatting') {
   const [fout, setFout] = useState(null);
   const volg = useRef(0);
   // zonder afbeelding: telt niet voor de prijs en maakt elke aanvraag zwaar
-  const sleutel = JSON.stringify(regels.map(r => { const { afbeelding: _a, ...x } = naarApi(r); return x; }));
+  const sleutel = JSON.stringify(regels.map(r => { const { afbeelding: _a, slicer_bijlage_id: _s, slicer_plaat: _p, ...x } = naarApi(r); return x; }));
   useEffect(() => {
     const mijn = ++volg.current;
     const klok = setTimeout(async () => {
@@ -167,6 +168,16 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                   ))}
                   <button type="button" className="linkish" onClick={() => zet(i, { materialen: [...r.materialen, { keuze: '', gram: '' }] })}>+ kleur (multicolor)</button>
                 </div>
+                {(r.slicer_bijlage_id || r.slicer_wacht) && (
+                  <div className="regel-slicer sub">
+                    <Icoon naam="lagen" maat={14} />
+                    {r.slicer_bijlage_id
+                      ? <a href={`${BASE}/bijlagen/bestand/${r.slicer_bijlage_id}`} title="Slicerbestand downloaden (openen in Bambu Studio)">{r.slicer_bestandsnaam || 'Slicerbestand'}</a>
+                      : <span>{r.slicer_bestandsnaam || 'Slicerbestand'} (wordt bewaard bij het opslaan)</span>}
+                    {r.slicer_plaat && <span>· plaat {r.slicer_plaat}</span>}
+                    {!alleenLezen && <button type="button" className="btn ghost" aria-label={`Slicerbestand loskoppelen van regel ${i + 1}`} title="Loskoppelen (het bestand blijft in Bijlagen)" onClick={() => zet(i, { slicer_bijlage_id: null, slicer_plaat: null, slicer_bestandsnaam: '', slicer_wacht: false })}><Icoon naam="kruis" maat={12} /></button>}
+                  </div>
+                )}
                 <div className="regel-afb" title="Komt op de offerte en de werkbon">
                   {r.afbeelding ? <>
                     <img src={r.afbeelding} alt={`Afbeelding regel ${i + 1}`} />

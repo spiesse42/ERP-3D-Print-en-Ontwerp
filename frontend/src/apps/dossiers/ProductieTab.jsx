@@ -6,7 +6,7 @@ import { aantal, euro, naarInvoer } from '../../lib/formaat.js';
 import { OpdrachtBadge, OpdrachtDialoog, BevestigDialoog, KoppelDialoog, duur } from '../productie/opdracht.jsx';
 import { RunVenster } from '../productie/RunDialoog.jsx';
 import { StatusBadge } from '../productie/PrintersLive.jsx';
-import { api } from '../../lib/api.js';
+import { api, BASE } from '../../lib/api.js';
 import { datumTijd } from '../../lib/formaat.js';
 
 // Productie van een dossier (stap 6b): per printregel de printopdrachten,
@@ -93,7 +93,7 @@ export default function ProductieTab({ d, vuil, herlaad }) {
                   <tbody>
                     {x.opdrachten.map(o => (
                       <tr key={o.id} className="row" tabIndex={0} onClick={() => setDialoog({ soort: 'open', o })} onKeyDown={e => { if (e.key === 'Enter') setDialoog({ soort: 'open', o }); }}>
-                        <td>{o.naam}</td>
+                        <td>{o.naam}{o.slicer_bijlage_id && <div className="sub"><a href={`${BASE}/bijlagen/bestand/${o.slicer_bijlage_id}`} onClick={e => e.stopPropagation()} title="Slicerbestand downloaden (openen in Bambu Studio)">{o.slicer_bestandsnaam || 'slicerbestand'}</a>{o.slicer_plaat ? ` · plaat ${o.slicer_plaat}` : ''}</div>}</td>
                         <td>{o.printer}</td>
                         <td className="r num">{o.status === 'voltooid' ? `${aantal(o.aantal_goed)} / ${aantal(o.aantal)}` : aantal(o.aantal)}</td>
                         <td className="r num">{o.runs.length || ''}</td>

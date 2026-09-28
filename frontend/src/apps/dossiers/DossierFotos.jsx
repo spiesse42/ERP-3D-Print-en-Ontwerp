@@ -57,3 +57,10 @@ export async function bewaarFotos(dossierId, fotos) {
     await api.upload(`/bijlagen/dossier/${dossierId}`, fd);
   }
 }
+
+// Slicerbestand (28-09) als bijlage van het dossier → { id, bestandsnaam }.
+export async function bewaarBestand(dossierId, bestand) {
+  const fd = new FormData();
+  fd.append('bestand', bestand, bestand.name);
+  return api.upload(`/bijlagen/dossier/${dossierId}`, fd);
+}

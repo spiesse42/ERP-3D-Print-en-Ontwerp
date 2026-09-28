@@ -145,3 +145,39 @@ test('S5. afbeelding per printregel: bewaard, gecontroleerd, op offerte en werkb
   const html = documentHtml({ soort: 'OFFERTE', nummer: 'OFF-1', datum: '2026-09-28', inhoud: ok.data.overname });
   assert.ok(html.includes(`<img class="afb" src="${afb}"`));
 });
+
+test('S6. slicerbestand als bijlage van het dossier, gekoppeld aan de printregel (plaat); download; printopdracht kent het', async () => {
+  const json = (m, pad, body) => fetch(`${basis}${pad}`, { method: m, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) })
+    .then(async r => ({ status: r.status, data: await r.json() }));
+  const bestand = await bambu3mf({ platen: [{ nr: 2, sec: 600, gewicht: 5, objecten: ['X.stl'], filamenten: [{ slot: 1, type: 'PLA', kleur: '#1E88E5', g: 5 }] }] });
+  const d0 = (await json('POST', '/dossiers', { titel: 'Met bestand', regels: [{ type: 'printen', omschrijving: 'X', printer_id: 2, tijd_min: 10, materialen: [] }] })).data;
+  const upload = async (dossierId, naam, inhoud = bestand) => {
+    const fd = new FormData(); fd.append('bestand', new Blob([inhoud]), naam);
+    const r = await fetch(`${basis}/bijlagen/dossier/${dossierId}`, { method: 'POST', body: fd });
+    return { status: r.status, data: await r.json() };
+  };
+  const b = await upload(d0.id, 'figuurtjes.gcode.3mf');
+  assert.equal(b.status, 201, JSON.stringify(b.data));
+  const regels = d0.regels.map(r => ({ ...r, slicer_bijlage_id: b.data.id, slicer_plaat: 2 }));
+  let d = (await json('PUT', `/dossiers/${d0.id}`, { titel: d0.titel, soort: d0.soort, regels })).data;
+  assert.deepEqual([d.regels[0].slicer_bijlage_id, d.regels[0].slicer_plaat, d.regels[0].slicer_bestandsnaam], [b.data.id, 2, 'figuurtjes.gcode.3mf']);
+  const dl = await fetch(`${basis}/bijlagen/bestand/${b.data.id}`);
+  assert.equal(dl.status, 200); assert.match(dl.headers.get('content-disposition'), /^attachment;/);
+  assert.equal(Buffer.from(await dl.arrayBuffer()).length, bestand.length);
+  // printopdracht na starten kent bestand en plaat
+  const x = (await json('POST', `/dossiers/${d0.id}/starten`)).data;
+  const o = (await json('GET', `/productie/opdrachten/${x.productie.regels[0].opdrachten[0].id}`)).data;
+  assert.deepEqual([o.slicer_bijlage_id, o.slicer_plaat, o.slicer_bestandsnaam], [b.data.id, 2, 'figuurtjes.gcode.3mf']);
+  // bestand van een ANDER dossier → koppeling vervalt
+  const ander = (await json('POST', '/dossiers', { titel: 'Ander' })).data;
+  const b2 = await upload(ander.id, 'ander.gcode');
+  d = (await json('PUT', `/dossiers/${d0.id}`, { titel: d0.titel, soort: d0.soort, regels: d.regels.map(r => ({ ...r, slicer_bijlage_id: b2.data.id })) })).data;
+  assert.equal(d.regels[0].slicer_bijlage_id, null);
+  // bijlage verwijderd → regel verliest de koppeling (ON DELETE SET NULL)
+  await json('PUT', `/dossiers/${d0.id}`, { titel: d0.titel, soort: d0.soort, regels: d.regels.map(r => ({ ...r, slicer_bijlage_id: b.data.id, slicer_plaat: 2 })) });
+  await fetch(`${basis}/bijlagen/bestand/${b.data.id}`, { method: 'DELETE' });
+  d = (await json('GET', `/dossiers/${d0.id}`)).data;
+  assert.equal(d.regels[0].slicer_bijlage_id, null);
+  // andere bestandstypes: niet bij een dossier
+  assert.equal((await upload(d0.id, 'notities.txt', Buffer.from('x'))).status, 400);
+});
