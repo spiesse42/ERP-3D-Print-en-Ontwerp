@@ -8,7 +8,8 @@ import { naarInvoer } from '../../lib/formaat.js';
 // Slicerbestand inlezen (28-09): een geslicet 3mf uit Bambu Studio → één
 // printregel per aangevinkte plaat, met printtijd en gram per kleur. Enkel
 // geslicete platen staan in het bestand ("Slice plate" = die ene plaat).
-// Niets wordt bewaard tot je het dossier opslaat.
+// De regels worden pas bewaard als je het dossier opslaat; de afbeeldingen
+// van de platen gaan (optioneel) naar de foto's van het dossier.
 const uurMin = min => `${Math.floor(min / 60)} u ${String(min % 60).padStart(2, '0')}`;
 
 export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onToevoegen, onSluit }) {
@@ -17,6 +18,7 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
   const [sleep, setSleep] = useState(false);
   const [printerId, setPrinterId] = useState('');
   const [platen, setPlaten] = useState(null);
+  const [fotosMee, setFotosMee] = useState(true);
 
   async function leesIn(bestand) {
     if (!bestand) return;
@@ -37,11 +39,12 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
   const gekozen = (platen || []).filter(p => p.mee);
   const zonderFilament = gekozen.some(p => p.filamenten.some(f => !f.keuze));
   function toevoegen() {
+    const fotos = fotosMee ? gekozen.filter(p => p.afbeelding).map(p => ({ afbeelding: p.afbeelding, naam: `Plaat ${p.nummer} - ${p.omschrijving}.png`.replace(/[\\/:*?"<>|]/g, '') })) : [];
     onToevoegen(gekozen.map(p => ({
       ...nieuweRegel('printen'), omschrijving: p.omschrijving, printer_id: printerId, aantal: p.aantal || '1',
       tijd_u: String(Math.floor(p.tijd_min / 60)), tijd_m: String(p.tijd_min % 60),
       materialen: p.filamenten.length ? p.filamenten.map(f => ({ keuze: f.keuze, gram: naarInvoer(f.gram) })) : [{ keuze: '', gram: '' }],
-    })));
+    })), fotos);
   }
 
   return (
@@ -101,6 +104,9 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
             </div>
           ))}
         </div>
+        {gekozen.some(p => p.afbeelding) && (
+          <label className="vinkje" style={{ marginTop: 10 }}><input type="checkbox" checked={fotosMee} onChange={e => setFotosMee(e.target.checked)} /> Afbeeldingen van deze platen bij de foto's van het dossier zetten</label>
+        )}
         {zonderFilament && <p className="note">Niet elk filament is herkend: kies het zelf, of voeg het toe in Voorraad (merk + type als prijsgroep). Zonder keuze telt dat filament niet mee in de prijs.</p>}
       </>}
     </Dialoog>

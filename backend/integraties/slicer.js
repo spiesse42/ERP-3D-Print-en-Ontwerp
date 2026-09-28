@@ -10,7 +10,7 @@
 // - Metadata/project_settings.config (JSON) per slot: merk (filament_vendor),
 //                                   profiel (filament_settings_id), printermodel
 // - Metadata/model_settings.config naam van de plaat (plater_name)
-// - Metadata/plate_N_small.png / plate_N.png: voorbeeldafbeelding
+// - Metadata/plate_N.png (anders plate_N_small.png): afbeelding van de plaat
 import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
 import { DomeinFout } from '../domein/hulp.js';
@@ -65,7 +65,7 @@ export async function leesSlicerBestand(buffer) {
         gram: r2(getal(f['@used_g']) ?? 0),
       };
     }).filter(f => f.gram > 0);
-    const png = zip.file(`Metadata/plate_${nummer}_small.png`) || zip.file(`Metadata/plate_${nummer}.png`);
+    const png = zip.file(`Metadata/plate_${nummer}.png`) || zip.file(`Metadata/plate_${nummer}_small.png`);
     uit.push({
       nummer,
       naam: namen.get(nummer) || (objecten.length === 1 ? objecten[0] : null),
