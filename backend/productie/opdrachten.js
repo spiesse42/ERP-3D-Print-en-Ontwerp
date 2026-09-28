@@ -35,7 +35,8 @@ export function statusVan(o, runs) {
 // eindproduct: het artikel (zelf geprint) waar de goede stuks naartoe gaan —
 // enkel bij een printregel van een dossier "Eigen product" (stap 6c)
 const SELECT = `SELECT o.*, p.naam AS printer, r.dossier_id, r.omschrijving AS regel_omschrijving, d.nummer AS dossier_nummer, d.titel AS dossier_titel,
-    d.soort AS dossier_soort, d.gestart_op AS dossier_gestart_op, CASE WHEN d.soort = 'eigen' THEN ea.id END AS eindproduct_id, CASE WHEN d.soort = 'eigen' THEN ea.naam END AS eindproduct,
+    d.soort AS dossier_soort, d.gestart_op AS dossier_gestart_op, r.slicer_bijlage_id, r.slicer_plaat,
+    (SELECT b.bestandsnaam FROM bijlagen b WHERE b.id = r.slicer_bijlage_id) AS slicer_bestandsnaam, CASE WHEN d.soort = 'eigen' THEN ea.id END AS eindproduct_id, CASE WHEN d.soort = 'eigen' THEN ea.naam END AS eindproduct,
     (SELECT v.id FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id WHERE vr.printopdracht_id = o.id AND v.geannuleerd_op IS NULL) AS verkocht_verkoop_id,
     (SELECT v.nummer FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id WHERE vr.printopdracht_id = o.id AND v.geannuleerd_op IS NULL) AS verkocht_nummer
   FROM printopdrachten o JOIN printers p ON p.id = o.printer_id

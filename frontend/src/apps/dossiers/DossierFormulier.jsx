@@ -20,7 +20,7 @@ import LeveringenTab from './LeveringenTab.jsx';
 import ProductieTab from './ProductieTab.jsx';
 import VolgendeStap from './VolgendeStap.jsx';
 import SlicerDialoog from './SlicerDialoog.jsx';
-import DossierFotos, { bewaarFotos } from './DossierFotos.jsx';
+import DossierFotos, { bewaarFotos, bewaarBestand } from './DossierFotos.jsx';
 
 const LEEG = { soort: 'klant', klant_id: '', titel: '', notities: '' };
 function naarFormulier(d, klantUitUrl) {
@@ -47,7 +47,8 @@ export default function DossierFormulier() {
   const [bezig, setBezig] = useState(false);
   const [versie, setVersie] = useState(0);
   const [dialoog, setDialoog] = useState(null);
-  const [wachtendeFotos, setWachtendeFotos] = useState([]);   // plaatafbeeldingen van een nog niet bewaard dossier   // 'afrekenen' | 'betaald' | 'overname'
+  const [wachtendeFotos, setWachtendeFotos] = useState([]);
+  const [wachtendBestand, setWachtendBestand] = useState(null);   // slicerbestand van een nog niet bewaard dossier   // plaatafbeeldingen van een nog niet bewaard dossier   // 'afrekenen' | 'betaald' | 'overname'
 
   const origineel = useMemo(() => naarFormulier(nieuw ? null : d, params.get('klant')), [d, nieuw, params]);
   useEffect(() => { setForm(origineel); }, [origineel]);
@@ -87,6 +88,15 @@ export default function DossierFormulier() {
         if (wachtendeFotos.length) {
           try { await bewaarFotos(n.id, wachtendeFotos); setWachtendeFotos([]); }
           catch (e) { melding(`Dossier ${n.nummer} is aangemaakt, maar de foto's konden niet bewaard worden: ${e.message}`, 'fout'); }
+        }
+        // slicerbestand: nu pas bewaren (het dossier bestaat), dan de regels koppelen
+        if (wachtendBestand && form.regels.some(r => r.slicer_wacht)) {
+          try {
+            const b = await bewaarBestand(n.id, wachtendBestand);
+            await api.put(`/dossiers/${n.id}`, { ...body(), regels: form.regels.map((r, i) => ({ ...naarApi(r), id: n.regels[i]?.id,
+              ...(r.slicer_wacht ? { slicer_bijlage_id: b.id, slicer_plaat: r.slicer_plaat } : {}) })) });
+            setWachtendBestand(null);
+          } catch (e) { melding(`Dossier ${n.nummer} is aangemaakt, maar het slicerbestand kon niet bewaard worden: ${e.message}`, 'fout'); }
         }
         zetVuil(false); melding(`Dossier ${n.nummer} aangemaakt.`); navigeer(`/dossiers/${n.id}`);
       } else {
@@ -292,8 +302,20 @@ export default function DossierFormulier() {
       {dialoog === 'bonnetje-mail' && <BonnetjeMailDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onVerstuur={bonnetjeMailen} />}
       {dialoog === 'slicer' && <SlicerDialoog printers={printers} filamenten={artikelenZicht.filter(a => a.type === 'filament')} prijsgroepen={prijsgroepen}
         onSluit={() => setDialoog(null)}
-        onToevoegen={async (nieuwe, fotos) => {
-          setForm(f => ({ ...f, regels: [...f.regels, ...nieuwe] })); setDialoog(null); setTab('regels');
+        onToevoegen={async (nieuwe, fotos, bestand) => {
+          setDialoog(null); setTab('regels');
+          // bestaand dossier: slicerbestand meteen bewaren en koppelen; nieuw dossier: bij het eerste opslaan
+          if (bestand && !nieuw) {
+            try {
+              melding('Slicerbestand bewaren…');
+              const b = await bewaarBestand(id, bestand);
+              nieuwe = nieuwe.map(r => (r.slicer_wacht ? { ...r, slicer_wacht: false, slicer_bijlage_id: b.id, slicer_bestandsnaam: b.bestandsnaam } : r));
+            } catch (e) {
+              melding(`Het slicerbestand kon niet bewaard worden: ${e.message}`, 'fout');
+              nieuwe = nieuwe.map(r => ({ ...r, slicer_wacht: false, slicer_plaat: null, slicer_bestandsnaam: '' }));
+            }
+          } else if (bestand) setWachtendBestand(bestand);
+          setForm(f => ({ ...f, regels: [...f.regels, ...nieuwe] }));
           melding(`${nieuwe.length} printregel${nieuwe.length === 1 ? '' : 's'} toegevoegd. Kijk ze na en sla op.`);
           if (!fotos.length) return;
           if (nieuw) { setWachtendeFotos(w => [...w, ...fotos]); return; }

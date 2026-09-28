@@ -11,10 +11,17 @@ import { ENTITEITEN, bestaatRecord, logGebeurtenis } from '../domein/historiek.j
 
 const r = Router();
 const TOEGELATEN = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+// Slicerbestanden (28-09) enkel bij een dossier: het bestand achter de
+// printregels (download; later printen vanuit het ERP). Browsers geven er
+// geen vast mimetype aan, dus op extensie.
+const SLICER = { '.3mf': 'model/3mf', '.gcode': 'text/x-gcode', '.gco': 'text/x-gcode' };
+const slicerType = (req, naam) => (req.params.entiteit === 'dossier' ? SLICER[(String(naam).toLowerCase().match(/\.(3mf|gcode|gco)$/) || [''])[0]] : null);
+const MAX_GEWOON = 20 * 1024 * 1024;
+const MAX_SLICER = 200 * 1024 * 1024;
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024, files: 1 },
-  fileFilter: (req, file, cb) => cb(null, TOEGELATEN.includes(file.mimetype)),
+  limits: { fileSize: MAX_SLICER, files: 1 },
+  fileFilter: (req, file, cb) => cb(null, TOEGELATEN.includes(file.mimetype) || !!slicerType(req, file.originalname)),
 });
 
 function controleer(req, res) {
@@ -31,7 +38,9 @@ r.get('/bestand/:bijlageId', (req, res) => {
   const pad = path.join(bijlagenMap(), b.pad);
   if (!fs.existsSync(pad)) return res.status(404).json({ error: 'Bestand ontbreekt op schijf' });
   res.type(b.mimetype || 'application/octet-stream');
-  res.set('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(b.bestandsnaam)}`);
+  // PDF en foto's openen in de browser; een slicerbestand wordt gedownload
+  const inline = TOEGELATEN.includes(b.mimetype);
+  res.set('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(b.bestandsnaam)}`);
   res.sendFile(pad);
 });
 
@@ -54,9 +63,13 @@ r.get('/:entiteit/:id', (req, res) => {
 
 r.post('/:entiteit/:id', (req, res) => {
   upload.single('bestand')(req, res, (fout) => {
-    if (fout) return res.status(400).json({ error: fout.code === 'LIMIT_FILE_SIZE' ? 'Bestand is groter dan 20 MB' : fout.message });
+    if (fout) return res.status(400).json({ error: fout.code === 'LIMIT_FILE_SIZE' ? 'Bestand is groter dan 200 MB' : fout.message });
     const c = controleer(req, res); if (!c) return;
-    if (!req.file) return res.status(400).json({ error: 'Kies een PDF of een foto (jpg, png, webp, heic)' });
+    if (!req.file) return res.status(400).json({ error: c.entiteit === 'dossier' ? 'Kies een PDF, een foto (jpg, png, webp, heic) of een slicerbestand (.3mf, .gcode)' : 'Kies een PDF of een foto (jpg, png, webp, heic)' });
+    const oorspronkelijkeNaam = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    const slicer = TOEGELATEN.includes(req.file.mimetype) ? null : slicerType(req, oorspronkelijkeNaam);
+    if (!slicer && req.file.size > MAX_GEWOON) return res.status(400).json({ error: 'Bestand is groter dan 20 MB' });
+    const mimetype = slicer || req.file.mimetype;
     const map = bijlagenMap();
     fs.mkdirSync(map, { recursive: true });
     const ext = (path.extname(req.file.originalname) || '').toLowerCase().replace(/[^.a-z0-9]/g, '').slice(0, 6);
@@ -66,7 +79,7 @@ r.post('/:entiteit/:id', (req, res) => {
     const oorspronkelijk = Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200);
     const id = db.transaction(() => {
       const n = db.prepare('INSERT INTO bijlagen (entiteit, entiteit_id, bestandsnaam, pad, mimetype, grootte) VALUES (?,?,?,?,?,?)')
-        .run(c.entiteit, c.id, oorspronkelijk, naam, req.file.mimetype, req.file.size).lastInsertRowid;
+        .run(c.entiteit, c.id, oorspronkelijk, naam, mimetype, req.file.size).lastInsertRowid;
       logGebeurtenis(db, c.entiteit, c.id, 'gewijzigd', `Bijlage toegevoegd: ${oorspronkelijk}`);
       return n;
     })();

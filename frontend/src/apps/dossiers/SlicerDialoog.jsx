@@ -10,7 +10,8 @@ import { verklein } from '../../lib/afbeelding.js';
 // printregel per aangevinkte plaat, met printtijd en gram per kleur. Enkel
 // geslicete platen staan in het bestand ("Slice plate" = die ene plaat).
 // De regels worden pas bewaard als je het dossier opslaat; de afbeeldingen
-// van de platen gaan (optioneel) naar de foto's van het dossier.
+// van de platen gaan (optioneel) naar de foto's van het dossier, en het
+// bestand zelf (optioneel) als bijlage, gekoppeld aan elke regel + plaat.
 const uurMin = min => `${Math.floor(min / 60)} u ${String(min % 60).padStart(2, '0')}`;
 
 export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onToevoegen, onSluit }) {
@@ -21,6 +22,8 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
   const [platen, setPlaten] = useState(null);
   const [fotosMee, setFotosMee] = useState(true);
   const [afbOpOfferte, setAfbOpOfferte] = useState(true);
+  const [bewaren, setBewaren] = useState(true);
+  const [bestand, setBestand] = useState(null);
 
   async function leesIn(bestand) {
     if (!bestand) return;
@@ -29,6 +32,7 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
       const fd = new FormData();
       fd.append('bestand', bestand);
       const d = await api.upload('/slicer', fd);
+      setBestand(bestand);
       setPrinterId(d.printer_id ? String(d.printer_id) : '');
       setPlaten(d.platen.map(p => ({ ...p, mee: true, omschrijving: p.naam || `Plaat ${p.nummer}`, aantal: '1',
         filamenten: p.filamenten.map(f => ({ ...f, keuze: f.keuze || '' })) })));
@@ -46,9 +50,10 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
     const klein = await Promise.all(gekozen.map(p => (afbOpOfferte && p.afbeelding ? verklein(p.afbeelding).catch(() => '') : '')));
     onToevoegen(gekozen.map((p, i) => ({
       ...nieuweRegel('printen'), omschrijving: p.omschrijving, printer_id: printerId, aantal: p.aantal || '1', afbeelding: klein[i],
+      ...(bewaren ? { slicer_wacht: true, slicer_plaat: p.nummer, slicer_bestandsnaam: bestand?.name || '' } : {}),
       tijd_u: String(Math.floor(p.tijd_min / 60)), tijd_m: String(p.tijd_min % 60),
       materialen: p.filamenten.length ? p.filamenten.map(f => ({ keuze: f.keuze, gram: naarInvoer(f.gram) })) : [{ keuze: '', gram: '' }],
-    })), fotos);
+    })), fotos, bewaren ? bestand : null);
   }
 
   return (
@@ -112,6 +117,7 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
           <label className="vinkje"><input type="checkbox" checked={afbOpOfferte} onChange={e => setAfbOpOfferte(e.target.checked)} /> Afbeelding van elke plaat op de offerte en werkbon (bij de regel)</label>
           <label className="vinkje"><input type="checkbox" checked={fotosMee} onChange={e => setFotosMee(e.target.checked)} /> Afbeeldingen ook bij de foto's van het dossier zetten</label>
         </div>}
+        <label className="vinkje" style={{ marginTop: 4 }}><input type="checkbox" checked={bewaren} onChange={e => setBewaren(e.target.checked)} /> Slicerbestand bewaren bij het dossier (downloaden bij de regel en de printopdracht)</label>
         <p className="note">De grammen zijn het totale verbruik volgens de slicer, per filament: model, supports, en bij meerkleurig ook het spoelen (flush) en de prime tower. Dat alles betaalt de klant mee.</p>
         {zonderFilament && <p className="note">Niet elk filament is herkend: kies het zelf, of voeg het toe in Voorraad (merk + type als prijsgroep). Zonder keuze telt dat filament niet mee in de prijs.</p>}
       </>}
