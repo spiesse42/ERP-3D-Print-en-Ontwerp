@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useOmgeving } from '../../schil/Omgeving.jsx';
+import { useEffect, useState } from 'react';
+import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
 import { Link } from '../../schil/Schil.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { aantal, euro, naarInvoer } from '../../lib/formaat.js';
@@ -98,7 +98,10 @@ export default function ProductieTab({ d, vuil, herlaad }) {
                         <td className="r num">{o.status === 'voltooid' ? `${aantal(o.aantal_goed)} / ${aantal(o.aantal)}` : aantal(o.aantal)}</td>
                         <td className="r num">{o.runs.length || ''}</td>
                         <td><OpdrachtBadge status={o.status} /></td>
-                        <td className="r">{o.status === 'te_bevestigen' && <button type="button" className="btn klein primary" onClick={e => { e.stopPropagation(); setDialoog({ soort: 'bevestig', o }); }}>Bevestigen</button>}</td>
+                        <td className="r">
+                          {o.status === 'te_bevestigen' && <button type="button" className="btn klein primary" onClick={e => { e.stopPropagation(); setDialoog({ soort: 'bevestig', o }); }}>Bevestigen</button>}
+                          {(o.status === 'gepland' || o.status === 'mislukt') && <button type="button" className="btn klein" title="Een run (ook van een andere printer) aan deze opdracht koppelen" onClick={e => { e.stopPropagation(); setDialoog({ soort: 'run_kiezen', o }); }}>Run koppelen…</button>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -115,12 +118,70 @@ export default function ProductieTab({ d, vuil, herlaad }) {
         );
       })}
       {d.gestart_op && <p className="note"><b>Automatisch:</b> de printopdrachten volgen de regels. Pas je het aantal, de printer of de omschrijving van een regel aan, dan volgen de opdrachten waarop nog niets geprint is. Is er al geprint en is er meer nodig, dan komt er een extra opdracht bij. Wil je een regel over twee printers spreiden, maak dan zelf een extra opdracht voor een deel: de andere wordt kleiner.</p>}
-      <p className="note">Plan een printopdracht per printregel; ze komt in de wachtrij van de printer (<Link naar="/productie/opdrachten">Productie → Printopdrachten</Link>). Start je de print, koppel dan de run op de printerkaart. Tijd en verbruik van de <b>geslaagde</b> runs komen op de werkbon; mislukte pogingen zijn een kost voor jou (elektriciteit + machinetarief; verloren filament niet meegerekend).</p>
+      <p className="note">Plan een printopdracht per printregel; ze komt in de wachtrij van de printer (<Link naar="/productie/opdrachten">Productie → Printopdrachten</Link>). Start je de print, koppel dan de run hier ("Run koppelen…" bij de opdracht) of op de printerkaart. Tijd en verbruik van de <b>geslaagde</b> runs komen op de werkbon; mislukte pogingen zijn een kost voor jou (elektriciteit + machinetarief; verloren filament niet meegerekend).</p>
       {dialoog?.soort === 'nieuw' && <OpdrachtDialoog vast={dialoog.regel} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'open' && <OpdrachtDialoog opdracht={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'bevestig' && <BevestigDialoog o={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
+      {dialoog?.soort === 'run_kiezen' && <RunKiezen o={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'koppel' && <KoppelDialoog run={dialoog.run} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'run' && <RunVenster runId={dialoog.id} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
     </>
+  );
+}
+
+// Run koppelen vanuit een opdracht (28-09): de recente, nog niet gekoppelde
+// runs van ALLE printers (laatste 7 dagen). Een run van een andere printer
+// koppelen verhuist de opdracht naar die printer. Eerst runs waarvan de
+// bestandsnaam op de opdracht lijkt, dan die op dezelfde printer.
+function RunKiezen({ o, onSluit, onKlaar }) {
+  const { melding } = useOmgeving();
+  const [runs, setRuns] = useState(null);
+  const [bezig, setBezig] = useState(false);
+  useEffect(() => {
+    let weg = false;
+    api.get('/productie/runs?te_koppelen=1').then(lijst => {
+      if (weg) return;
+      const grens = Date.now() - 7 * 24 * 3600e3;
+      const norm = t => String(t ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const lijkt = r => norm(o.naam).length >= 3 && norm(r.bestand).includes(norm(o.naam));
+      const score = r => (lijkt(r) ? 2 : 0) + (r.printer_id === o.printer_id ? 1 : 0);
+      setRuns(lijst.filter(r => Date.parse(r.gestart_op) >= grens).map(r => ({ ...r, lijkt: lijkt(r) }))
+        .sort((a, b) => score(b) - score(a) || String(b.gestart_op).localeCompare(String(a.gestart_op))));
+    }).catch(e => { if (!weg) { melding(e.message, 'fout'); setRuns([]); } });
+    return () => { weg = true; };
+  }, [o, melding]);
+  async function koppel(r) {
+    setBezig(true);
+    try {
+      await api.post(`/productie/runs/${r.id}/koppel`, { printopdracht_id: o.id });
+      melding(`Run gekoppeld aan "${o.naam}"${r.printer_id !== o.printer_id ? `; de opdracht staat nu op ${r.printer}` : ''}.`);
+      await onKlaar();
+    } catch (e) { melding(e.message, 'fout'); setBezig(false); }
+  }
+  return (
+    <Dialoog titel={`Run koppelen aan "${o.naam}"`} breed onSluit={onSluit} voet={<button type="button" className="btn" onClick={onSluit}>Sluiten</button>}>
+      {runs === null ? <p className="sub">Runs laden…</p> : !runs.length ? (
+        <p className="sub">Er zijn geen niet-gekoppelde runs van de laatste 7 dagen. Start de print op de printer: de run verschijnt binnen enkele seconden (Productie → Printers live).</p>
+      ) : (
+        <div className="tabelvak">
+          <table className="mini">
+            <thead><tr><th>Printer</th><th>Start</th><th>Duur</th><th>Bestand</th><th>Status</th><th /></tr></thead>
+            <tbody>
+              {runs.map(r => (
+                <tr key={r.id}>
+                  <td>{r.printer}{r.printer_id !== o.printer_id && <div className="sub">andere printer</div>}</td>
+                  <td className="num">{datumTijd(r.gestart_op)}</td>
+                  <td className="num">{duur(r.duur_min)}</td>
+                  <td className="mono" style={{ wordBreak: 'break-all' }}>{r.bestand || '—'}{r.lijkt && <div><span className="badge b-pos">naam komt overeen</span></div>}</td>
+                  <td><StatusBadge status={r.uitkomst} /></td>
+                  <td className="r"><button type="button" className={`btn klein${r.lijkt ? ' primary' : ''}`} disabled={bezig} onClick={() => koppel(r)}>Koppelen</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="note">Een run van een andere printer koppelen verhuist de opdracht naar die printer (tijd en verbruik tellen dan van die printer).</p>
+    </Dialoog>
   );
 }

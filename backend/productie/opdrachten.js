@@ -393,17 +393,27 @@ export function productieOverzicht(db, dossierId, regels) {
 export function teKoppelenVoorDossier(db, dossierId, ops) {
   const open = ops.filter(o => !o.voltooid_op && !o.geannuleerd_op);
   if (!open.length) return [];
-  const printers = [...new Set(open.map(o => o.printer_id))];
+  const printers = new Set(open.map(o => o.printer_id));
   const grens = new Date(Date.now() - 48 * 3600e3).toISOString();
+  // 28-09: ook een run op een ANDERE printer als de bestandsnaam de naam van
+  // een open opdracht bevat (bv. "Heksenbenen.gcode.3mf" → "Heksenbenen"):
+  // je printte op een andere printer dan gepland; koppelen verhuist de opdracht.
+  const norm = t => String(t ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const opNaam = r => open.find(o => norm(o.naam).length >= 3 && norm(r.bestand).includes(norm(o.naam))
+    && !o.runs.some(x => x.uitkomst === 'bezig') && o.status !== 'te_bevestigen');
   const runs = db.prepare(`SELECT r.*, p.naam AS printer FROM printruns r JOIN printers p ON p.id = r.printer_id
-    WHERE r.printopdracht_id IS NULL AND r.intern IS NULL AND r.gestart_op >= ? AND r.printer_id IN (${printers.map(() => '?').join(',')})
-    ORDER BY r.gestart_op`).all(grens, ...printers);
+    WHERE r.printopdracht_id IS NULL AND r.intern IS NULL AND r.gestart_op >= ? ORDER BY r.gestart_op`).all(grens)
+    .filter(r => printers.has(r.printer_id) || opNaam(r));
   return runs.map(r => {
-    const kandidaat = open.find(o => o.printer_id === r.printer_id && !o.runs.some(x => x.uitkomst === 'bezig') && o.status !== 'te_bevestigen');
+    const opPrinter = open.find(o => o.printer_id === r.printer_id && !o.runs.some(x => x.uitkomst === 'bezig') && o.status !== 'te_bevestigen');
+    const opBestand = opNaam(r);
+    const kandidaat = opBestand && (!opPrinter || opBestand.printer_id !== r.printer_id) ? opBestand : opPrinter;
+    const uitleg = kandidaat?.printer_id === r.printer_id ? 'opdracht van dit dossier op deze printer'
+      : 'bestandsnaam komt overeen (de opdracht verhuist naar deze printer)';
     const einde = r.geeindigd_op ? Date.parse(r.geeindigd_op) : Date.now();
     return { id: r.id, printer_id: r.printer_id, printer: r.printer, bestand: r.bestand, gestart_op: r.gestart_op, geeindigd_op: r.geeindigd_op,
       uitkomst: r.uitkomst, duur_min: Math.round((einde - Date.parse(r.gestart_op)) / 60000),
-      voorstel: kandidaat ? { id: kandidaat.id, naam: kandidaat.naam, uitleg: 'opdracht van dit dossier op deze printer' } : null };
+      voorstel: kandidaat ? { id: kandidaat.id, naam: kandidaat.naam, uitleg } : null };
   });
 }
 
