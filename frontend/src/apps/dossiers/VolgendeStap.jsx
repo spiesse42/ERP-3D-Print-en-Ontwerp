@@ -76,7 +76,7 @@ export function DossierUitleg({ onSluit }) {
       <div className="uitleg">
         <p style={{ marginTop: 0 }}>De balk <b>Volgende stap</b> bovenaan zegt altijd wat er nu moet gebeuren. In het kort:</p>
         <ol>
-          <li><b>Regels</b> invullen: printen, ontwerp, aanpassing, artikel of extra kost. Printwerk kan ook <b>Uit slicerbestand</b> (geslicet 3mf uit Bambu Studio): één printregel per aangevinkte plaat, met printtijd en gram per kleur. Opslaan.</li>
+          <li><b>Regels</b> invullen: printen, ontwerp, aanpassing, artikel of extra kost. Printwerk kan ook <b>Uit slicerbestand</b> (geslicet 3mf uit Bambu Studio): één printregel per aangevinkte plaat, met printtijd en gram per kleur; de afbeeldingen van de platen komen bij de foto's bovenaan. Opslaan.</li>
           <li><i>Optioneel:</i> <b>offerte</b> maken en versturen (tab Offertes). Zegt de klant ja, zet je ze op <b>aanvaard</b>: dan start alles vanzelf.</li>
           <li><b>Starten</b> (zonder offerte): het ERP maakt de werkbon en een printopdracht per printregel. Die opdrachten volgen daarna je regels.</li>
           <li><b>Printen</b>: start de print op de printer. De run verschijnt vanzelf; <b>koppel</b> hem aan de printopdracht (met één klik in het dossier).</li>

@@ -20,6 +20,7 @@ import LeveringenTab from './LeveringenTab.jsx';
 import ProductieTab from './ProductieTab.jsx';
 import VolgendeStap from './VolgendeStap.jsx';
 import SlicerDialoog from './SlicerDialoog.jsx';
+import DossierFotos, { bewaarFotos } from './DossierFotos.jsx';
 
 const LEEG = { soort: 'klant', klant_id: '', titel: '', notities: '' };
 function naarFormulier(d, klantUitUrl) {
@@ -45,7 +46,8 @@ export default function DossierFormulier() {
   const [tab, setTab] = useState(() => params.get('tab') || 'regels');
   const [bezig, setBezig] = useState(false);
   const [versie, setVersie] = useState(0);
-  const [dialoog, setDialoog] = useState(null);   // 'afrekenen' | 'betaald' | 'overname'
+  const [dialoog, setDialoog] = useState(null);
+  const [wachtendeFotos, setWachtendeFotos] = useState([]);   // plaatafbeeldingen van een nog niet bewaard dossier   // 'afrekenen' | 'betaald' | 'overname'
 
   const origineel = useMemo(() => naarFormulier(nieuw ? null : d, params.get('klant')), [d, nieuw, params]);
   useEffect(() => { setForm(origineel); }, [origineel]);
@@ -73,6 +75,10 @@ export default function DossierFormulier() {
     try {
       if (nieuw) {
         const n = await api.post('/dossiers', body());
+        if (wachtendeFotos.length) {
+          try { await bewaarFotos(n.id, wachtendeFotos); setWachtendeFotos([]); }
+          catch (e) { melding(`Dossier ${n.nummer} is aangemaakt, maar de foto's konden niet bewaard worden: ${e.message}`, 'fout'); }
+        }
         zetVuil(false); melding(`Dossier ${n.nummer} aangemaakt.`); navigeer(`/dossiers/${n.id}`);
       } else {
         await api.put(`/dossiers/${id}`, body());
@@ -232,6 +238,7 @@ export default function DossierFormulier() {
             </div>
           </div>
 
+          {!nieuw && <DossierFotos key={versie} id={id} onGewijzigd={() => setVersie(v => v + 1)} />}
           <Tabs tabs={[['regels', `Regels (${form.regels.length})`], ...(nieuw ? [] : [...(d.soort === 'klant' ? [['offertes', `Offertes (${d.offertes.length})`]] : []), ...(d.productie?.regels.length ? [['productie', <>Productie ({d.productie.aantal_opdrachten}){d.productie.te_koppelen_runs?.length > 0 && <span className="tab-stip" title="Run(s) te koppelen" aria-label="runs te koppelen" />}</>]] : []), ['werkbon', 'Werkbon'], ...(d.soort === 'klant' ? [['leveringen', `Leveringen (${d.leveringen.length})`]] : []), ['bijlagen', 'Bijlagen']]), ['notities', 'Notities']]} actief={tab} onKies={setTab} />
           <div className="tabpanel">
             {tab === 'regels' && (
@@ -276,7 +283,14 @@ export default function DossierFormulier() {
       {dialoog === 'bonnetje-mail' && <BonnetjeMailDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onVerstuur={bonnetjeMailen} />}
       {dialoog === 'slicer' && <SlicerDialoog printers={printers} filamenten={artikelenZicht.filter(a => a.type === 'filament')} prijsgroepen={prijsgroepen}
         onSluit={() => setDialoog(null)}
-        onToevoegen={nieuwe => { setForm(f => ({ ...f, regels: [...f.regels, ...nieuwe] })); setDialoog(null); setTab('regels'); melding(`${nieuwe.length} printregel${nieuwe.length === 1 ? '' : 's'} toegevoegd. Kijk ze na en sla op.`); }} />}
+        onToevoegen={async (nieuwe, fotos) => {
+          setForm(f => ({ ...f, regels: [...f.regels, ...nieuwe] })); setDialoog(null); setTab('regels');
+          melding(`${nieuwe.length} printregel${nieuwe.length === 1 ? '' : 's'} toegevoegd. Kijk ze na en sla op.`);
+          if (!fotos.length) return;
+          if (nieuw) { setWachtendeFotos(w => [...w, ...fotos]); return; }
+          try { await bewaarFotos(id, fotos); setVersie(v => v + 1); }
+          catch (e) { melding(`De afbeeldingen van de platen konden niet bewaard worden: ${e.message}`, 'fout'); }
+        }} />}
       {dialoog === 'gratis' && <GratisDialoog dossier={d} onSluit={() => setDialoog(null)}
         onBevestig={async datum => { if (await actie('gratis', 'Gratis geleverd: niets af te rekenen.', { body: { datum } })) setDialoog(null); }} />}
     </>
