@@ -63,6 +63,8 @@ export function documentInhoud(db, dossier, berekening) {
       aantal, per_stuk: b.per_stuk ?? null, bedrag: b.eindbedrag ?? null,
       // printwerk: ter info op de werkbon (werkelijke of geschatte printtijd)
       uren: r.type === 'printen' ? Math.round((b.tijd_u ?? 0) * 100) / 100 : null,
+      // kleine afbeelding van de print (28-09), op offerte en werkbon
+      afbeelding: r.type === 'printen' ? r.afbeelding || null : null,
     };
   });
   return {

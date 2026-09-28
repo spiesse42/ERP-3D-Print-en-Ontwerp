@@ -26,6 +26,15 @@ function nietNegatief(v, wat) {
   return n;
 }
 const datumOk = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) && !Number.isNaN(Date.parse(d));
+// Kleine afbeelding bij een printregel (28-09): data-URI, in de browser verkleind.
+const MAX_AFBEELDING = 400_000;
+function afbeelding(v, nr) {
+  if (v === null || v === undefined || v === '') return null;
+  const t = String(v);
+  if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(t)) throw new DomeinFout(`${nr}: ongeldige afbeelding`);
+  if (t.length > MAX_AFBEELDING) throw new DomeinFout(`${nr}: afbeelding is te groot`);
+  return t;
+}
 
 // ── invoer ──────────────────────────────────────────────────────────────
 export function leesKop(body) {
@@ -45,13 +54,13 @@ export function leesRegels(lijst) {
     const nr = `Regel ${i + 1}`;
     if (!REGELTYPES.includes(r?.type)) throw new DomeinFout(`${nr}: onbekend soort regel`);
     const leeg = { aantal: null, printer_id: null, tijd_min: null, voorbereiding_min: null, nabewerking_min: null,
-      minuten: null, tarief: null, artikel_id: null, bedrag: null, per_stuk: 0, materialen: [] };
+      minuten: null, tarief: null, artikel_id: null, bedrag: null, per_stuk: 0, materialen: [], afbeelding: null };
     const basis = { ...leeg, id: Number.isInteger(r.id) ? r.id : null, type: r.type, omschrijving: tekst(r.omschrijving),
       handmatig_bedrag: nietNegatief(r.handmatig_bedrag, `${nr}: eindbedrag`) };
     if (r.type === 'printen') {
       // artikel_id bij een printregel = eindproduct (enkel bij een dossier
       // "Eigen product": de goede stuks gaan naar de voorraad, stap 6c)
-      return { ...basis, aantal: nietNegatief(r.aantal, `${nr}: aantal`) ?? 1, printer_id: id(r.printer_id, 'printer'), artikel_id: id(r.artikel_id, 'eindproduct'),
+      return { ...basis, afbeelding: afbeelding(r.afbeelding, nr), aantal: nietNegatief(r.aantal, `${nr}: aantal`) ?? 1, printer_id: id(r.printer_id, 'printer'), artikel_id: id(r.artikel_id, 'eindproduct'),
         tijd_min: nietNegatief(r.tijd_min, `${nr}: printtijd`) ?? 0,
         voorbereiding_min: nietNegatief(r.voorbereiding_min, `${nr}: voorbereiding`),
         nabewerking_min: nietNegatief(r.nabewerking_min, `${nr}: nabewerking`),
@@ -73,7 +82,7 @@ export function leesRegels(lijst) {
 // ── regels bewaren: bestaande id's behouden (leveringen/printopdrachten
 // verwijzen er later naar), nieuwe toevoegen, weggelaten regels schrappen.
 const KOL = ['type', 'omschrijving', 'aantal', 'printer_id', 'tijd_min', 'voorbereiding_min', 'nabewerking_min',
-  'minuten', 'tarief', 'artikel_id', 'bedrag', 'per_stuk', 'handmatig_bedrag'];
+  'minuten', 'tarief', 'artikel_id', 'bedrag', 'per_stuk', 'handmatig_bedrag', 'afbeelding'];
 export function bewaarRegels(db, dossierId, regels) {
   const soort = db.prepare('SELECT soort FROM dossiers WHERE id = ?').get(dossierId)?.soort;
   for (const [i, r] of regels.entries()) {
@@ -174,7 +183,8 @@ export function leesDossier(db, dossierId) {
     || (berekening.regels?.length ? documentInhoud(db, basis, berekening) : null);
   // Wijken de regels af van de aanvaarde offerte? (werkbon: "regels terugzetten")
   const aanvaard = offertes.find(o => o.aanvaard_op);
-  const zonderWerkelijk = l => JSON.stringify(l.map(({ id: _i, werkelijk: _w, gemeten: _g, ...x }) => x));
+  // afbeelding telt niet mee (offertes van vóór 28-09 hebben ze niet)
+  const zonderWerkelijk = l => JSON.stringify(l.map(({ id: _i, werkelijk: _w, gemeten: _g, afbeelding: _a, ...x }) => x));
   const wijkt_af_van_offerte = !!aanvaard && zonderWerkelijk(aanvaard.regels_api || []) !== zonderWerkelijk(regels);
   const lever_lijst = d.soort === 'klant' ? leverbaar(db, dossierId, regels) : [];
   const lever = leverStatus(lever_lijst);
