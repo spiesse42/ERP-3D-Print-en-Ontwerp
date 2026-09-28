@@ -19,6 +19,7 @@ import { OffertesTab, WerkbonTab } from './DocumentTabs.jsx';
 import LeveringenTab from './LeveringenTab.jsx';
 import ProductieTab from './ProductieTab.jsx';
 import VolgendeStap from './VolgendeStap.jsx';
+import SlicerDialoog from './SlicerDialoog.jsx';
 
 const LEEG = { soort: 'klant', klant_id: '', titel: '', notities: '' };
 function naarFormulier(d, klantUitUrl) {
@@ -244,6 +245,7 @@ export default function DossierFormulier() {
                 {!kopVast && (
                   <div className="toevoegen">
                     {TYPES.map(([w, l]) => <button key={w} type="button" className="btn" onClick={() => setForm(f => ({ ...f, regels: [...f.regels, nieuweRegel(w)] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}
+                    <button type="button" className="btn" title="Printregels uit een geslicet 3mf-bestand van Bambu Studio" onClick={() => setDialoog('slicer')}><Icoon naam="plus" maat={14} /> Uit slicerbestand</button>
                   </div>
                 )}
                 <Totalen uitkomst={form.regels.length ? uitkomst : null} />
@@ -272,6 +274,9 @@ export default function DossierFormulier() {
       {dialoog === 'overname' && <Overnamefiche dossier={d} onSluit={() => setDialoog(null)} />}
       {dialoog === 'bonnetje' && <BonnetjeDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onBevestig={bonnetjeMaken} />}
       {dialoog === 'bonnetje-mail' && <BonnetjeMailDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onVerstuur={bonnetjeMailen} />}
+      {dialoog === 'slicer' && <SlicerDialoog printers={printers} filamenten={artikelenZicht.filter(a => a.type === 'filament')} prijsgroepen={prijsgroepen}
+        onSluit={() => setDialoog(null)}
+        onToevoegen={nieuwe => { setForm(f => ({ ...f, regels: [...f.regels, ...nieuwe] })); setDialoog(null); setTab('regels'); melding(`${nieuwe.length} printregel${nieuwe.length === 1 ? '' : 's'} toegevoegd. Kijk ze na en sla op.`); }} />}
       {dialoog === 'gratis' && <GratisDialoog dossier={d} onSluit={() => setDialoog(null)}
         onBevestig={async datum => { if (await actie('gratis', 'Gratis geleverd: niets af te rekenen.', { body: { datum } })) setDialoog(null); }} />}
     </>
