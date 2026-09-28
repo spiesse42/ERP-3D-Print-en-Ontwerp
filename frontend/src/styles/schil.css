@@ -561,3 +561,16 @@ label.keuze input { margin-top:3px; }
 .neg { color:var(--crit); }
 .fin > *, .grafieken > * { min-width:0; }
 .fin table.mini td.num, .fin table.mini td.r { white-space:nowrap; }
+
+/* Slicerbestand inlezen (28-09): één kaart per plaat */
+.slicer-platen { display:flex; flex-direction:column; gap:10px; }
+.slicer-plaat { display:flex; gap:12px; align-items:flex-start; padding:10px; border:1px solid var(--line); border-radius:var(--radius-lg); background:var(--surface); }
+.slicer-plaat.uit { opacity:.55; }
+.slicer-plaat img, .slicer-plaat .geen-afb { width:72px; height:72px; object-fit:contain; border-radius:var(--radius); background:var(--bg, #f5f5f0); flex:none; }
+.slicer-plaat .gegevens { flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
+.slicer-plaat .rij { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.slicer-plaat .rij > .inp { flex:1; min-width:140px; }
+.slicer-plaat label.klein { display:flex; align-items:center; gap:6px; font-size:13px; }
+.slicer-plaat label.klein .inp { width:64px; }
+.slicer-plaat .kleurstip { width:14px; height:14px; border-radius:50%; border:1px solid var(--line-strong); flex:none; }
+.slicer-plaat select.let-op { border-color:var(--accent); }

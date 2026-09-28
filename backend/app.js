@@ -26,6 +26,7 @@ import productie from './routes/productie.js';
 import financien from './routes/financien.js';
 import onderhoud from './routes/onderhoud.js';
 import verkopen from './routes/verkopen.js';
+import slicer from './routes/slicer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export function maakApp() {
@@ -100,6 +101,7 @@ export function maakApp() {
   app.use('/api/financien',    financien);     // stap 7
   app.use('/api/onderhoud',    onderhoud);     // stap 8 (backups)
   app.use('/api/verkopen',     verkopen);      // 26-09 (losse verkoop, bonnetjes)
+  app.use('/api/slicer',       slicer);        // 28-09 (slicerbestand → printregels)
 
   // Onbekende API-route: nette JSON-fout i.p.v. de index.html van de frontend.
   app.use('/api', (req, res) => res.status(404).json({ error: 'Onbekende API-route' }));

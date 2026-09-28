@@ -45,7 +45,9 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
     geannuleerd: () => knop('Heropenen', onHeropenen, { primair: false }),
   };
   const klaar = ['afgerond', 'klaar'].includes(s.soort);
-  const tips = [...(s.extra || [])];
+  // na afrekenen of "gratis geleverd" is leveren (pakbon) nog mogelijk: een knop i.p.v. enkel een tip
+  const leverKnop = d.acties?.leveren && ['afgerond', 'betaling'].includes(s.soort);
+  const tips = (s.extra || []).filter(t => !(leverKnop && /^Leveren \(pakbon\)/.test(t)));
   if (s.soort === 'starten' && afrekenReden && d.soort === 'klant') tips.push(`Afrekenen kan nog niet: ${afrekenReden}`);
   return (
     <>
@@ -57,6 +59,7 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
         </div>
         <div className="knoppen">
           {KNOP[s.soort]?.()}
+          {leverKnop && knop('Leveren (pakbon)', () => naarTab('leveringen'), { primair: false })}
           <button type="button" className="btn ghost klein" onClick={() => setUitleg(true)}>Hoe werkt een dossier?</button>
         </div>
       </div>
@@ -73,7 +76,7 @@ export function DossierUitleg({ onSluit }) {
       <div className="uitleg">
         <p style={{ marginTop: 0 }}>De balk <b>Volgende stap</b> bovenaan zegt altijd wat er nu moet gebeuren. In het kort:</p>
         <ol>
-          <li><b>Regels</b> invullen: printen, ontwerp, aanpassing, artikel of extra kost. Opslaan.</li>
+          <li><b>Regels</b> invullen: printen, ontwerp, aanpassing, artikel of extra kost. Printwerk kan ook <b>Uit slicerbestand</b> (geslicet 3mf uit Bambu Studio): één printregel per aangevinkte plaat, met printtijd en gram per kleur. Opslaan.</li>
           <li><i>Optioneel:</i> <b>offerte</b> maken en versturen (tab Offertes). Zegt de klant ja, zet je ze op <b>aanvaard</b>: dan start alles vanzelf.</li>
           <li><b>Starten</b> (zonder offerte): het ERP maakt de werkbon en een printopdracht per printregel. Die opdrachten volgen daarna je regels.</li>
           <li><b>Printen</b>: start de print op de printer. De run verschijnt vanzelf; <b>koppel</b> hem aan de printopdracht (met één klik in het dossier).</li>
