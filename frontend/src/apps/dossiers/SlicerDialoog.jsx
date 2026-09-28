@@ -4,6 +4,7 @@ import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { nieuweRegel } from '../../components/RegelEditor.jsx';
 import { naarInvoer } from '../../lib/formaat.js';
+import { verklein } from '../../lib/afbeelding.js';
 
 // Slicerbestand inlezen (28-09): een geslicet 3mf uit Bambu Studio → één
 // printregel per aangevinkte plaat, met printtijd en gram per kleur. Enkel
@@ -19,6 +20,7 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
   const [printerId, setPrinterId] = useState('');
   const [platen, setPlaten] = useState(null);
   const [fotosMee, setFotosMee] = useState(true);
+  const [afbOpOfferte, setAfbOpOfferte] = useState(true);
 
   async function leesIn(bestand) {
     if (!bestand) return;
@@ -38,10 +40,12 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
 
   const gekozen = (platen || []).filter(p => p.mee);
   const zonderFilament = gekozen.some(p => p.filamenten.some(f => !f.keuze));
-  function toevoegen() {
+  async function toevoegen() {
     const fotos = fotosMee ? gekozen.filter(p => p.afbeelding).map(p => ({ afbeelding: p.afbeelding, naam: `Plaat ${p.nummer} - ${p.omschrijving}.png`.replace(/[\\/:*?"<>|]/g, '') })) : [];
-    onToevoegen(gekozen.map(p => ({
-      ...nieuweRegel('printen'), omschrijving: p.omschrijving, printer_id: printerId, aantal: p.aantal || '1',
+    // kleine versie op de regel zelf: komt op de offerte en de werkbon
+    const klein = await Promise.all(gekozen.map(p => (afbOpOfferte && p.afbeelding ? verklein(p.afbeelding).catch(() => '') : '')));
+    onToevoegen(gekozen.map((p, i) => ({
+      ...nieuweRegel('printen'), omschrijving: p.omschrijving, printer_id: printerId, aantal: p.aantal || '1', afbeelding: klein[i],
       tijd_u: String(Math.floor(p.tijd_min / 60)), tijd_m: String(p.tijd_min % 60),
       materialen: p.filamenten.length ? p.filamenten.map(f => ({ keuze: f.keuze, gram: naarInvoer(f.gram) })) : [{ keuze: '', gram: '' }],
     })), fotos);
@@ -61,12 +65,12 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
           onDrop={e => { e.preventDefault(); setSleep(false); leesIn(e.dataTransfer.files?.[0]); }}>
           {bezig ? <b>Bestand lezen…</b> : <>
             <Icoon naam="plus" maat={28} />
-            <b>Sleep een geslicet 3mf-bestand hierheen</b>
-            <span className="sub">of klik om het te kiezen (.gcode.3mf uit Bambu Studio of OrcaSlicer)</span>
+            <b>Sleep een geslicet 3mf- of gcode-bestand hierheen</b>
+            <span className="sub">of klik om het te kiezen (.gcode.3mf of .gcode uit Bambu Studio, OrcaSlicer of PrusaSlicer)</span>
           </>}
         </label>
-        <input id="slicerbestand" type="file" className="sr-only" accept=".3mf" disabled={bezig} onChange={e => { leesIn(e.target.files?.[0]); e.target.value = ''; }} />
-        <p className="note">In Bambu Studio: <b>Slice plate</b> (enkel de plaat die je nodig hebt) of <b>Slice all</b>, daarna Bestand → Exporteren → <i>Export plate sliced file</i> of <i>Export all sliced file</i>. Enkel geslicete platen staan in het bestand.</p>
+        <input id="slicerbestand" type="file" className="sr-only" accept=".3mf,.gcode,.gco" disabled={bezig} onChange={e => { leesIn(e.target.files?.[0]); e.target.value = ''; }} />
+        <p className="note">In Bambu Studio: <b>Slice plate</b> (enkel de plaat die je nodig hebt) of <b>Slice all</b>, daarna Bestand → Exporteren → <i>Export plate sliced file</i> of <i>Export all sliced file</i>. Enkel geslicete platen staan in het bestand. Een losse <b>.gcode</b> is altijd één plaat.</p>
       </> : <>
         <label className="lbl">Printer
           <select className="inp" value={printerId} onChange={e => setPrinterId(e.target.value)}>
@@ -104,9 +108,11 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
             </div>
           ))}
         </div>
-        {gekozen.some(p => p.afbeelding) && (
-          <label className="vinkje" style={{ marginTop: 10 }}><input type="checkbox" checked={fotosMee} onChange={e => setFotosMee(e.target.checked)} /> Afbeeldingen van deze platen bij de foto's van het dossier zetten</label>
-        )}
+        {gekozen.some(p => p.afbeelding) && <div style={{ marginTop: 10 }}>
+          <label className="vinkje"><input type="checkbox" checked={afbOpOfferte} onChange={e => setAfbOpOfferte(e.target.checked)} /> Afbeelding van elke plaat op de offerte en werkbon (bij de regel)</label>
+          <label className="vinkje"><input type="checkbox" checked={fotosMee} onChange={e => setFotosMee(e.target.checked)} /> Afbeeldingen ook bij de foto's van het dossier zetten</label>
+        </div>}
+        <p className="note">De grammen zijn het totale verbruik volgens de slicer, per filament: model, supports, en bij meerkleurig ook het spoelen (flush) en de prime tower. Dat alles betaalt de klant mee.</p>
         {zonderFilament && <p className="note">Niet elk filament is herkend: kies het zelf, of voeg het toe in Voorraad (merk + type als prijsgroep). Zonder keuze telt dat filament niet mee in de prijs.</p>}
       </>}
     </Dialoog>

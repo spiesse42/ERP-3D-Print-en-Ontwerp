@@ -29,7 +29,7 @@ export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerkin
   const rijen = regels.map(r => `
     <tr>
       <td class="n">${getal(r.aantal)}</td>
-      <td>${esc(r.omschrijving)}${toonUren && r.uren ? `<div class="sub">printtijd ${getal(r.uren)} u</div>` : ''}</td>
+      <td>${r.afbeelding ? `<div class="met-afb"><img class="afb" src="${esc(r.afbeelding)}" alt=""><div>` : ''}${esc(r.omschrijving)}${toonUren && r.uren ? `<div class="sub">printtijd ${getal(r.uren)} u</div>` : ''}${r.afbeelding ? '</div></div>' : ''}</td>
       <td class="r">${euro(r.per_stuk)}</td>
       ${btwKolom ? '<td class="r">0 %</td>' : ''}
       <td class="r">${euro(r.bedrag)}</td>
@@ -54,6 +54,9 @@ export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerkin
   .n{width:60px}.r{text-align:right;width:110px;white-space:nowrap}
   th.r{text-align:right}
   .sub{color:#888;font-size:.75rem;margin-top:2px}
+  .met-afb{display:flex;gap:12px;align-items:center}
+  .afb{width:64px;height:64px;object-fit:contain;border:1px solid #e5e7eb;border-radius:6px;background:#fff;flex:none}
+  tr{page-break-inside:avoid}
   .totaal{background:#16345a;color:#fff;border-radius:8px;padding:16px 22px;display:flex;justify-content:space-between;align-items:center}
   .totaal-label{color:#b8c4d6;font-size:.8rem;letter-spacing:1px}
   .totaal-bedrag{font-size:1.9rem;font-weight:900;color:#2b9484}

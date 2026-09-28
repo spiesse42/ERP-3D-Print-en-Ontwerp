@@ -42,7 +42,8 @@ export function maakApp() {
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     }));
   }
-  app.use(express.json());
+  // 10 MB: regels van een dossier dragen sinds 28-09 kleine afbeeldingen mee
+  app.use(express.json({ limit: '10mb' }));
 
   // CSRF-bescherming voor muterende verzoeken — zelfde patroon als het oude
   // pakket (Ingress deelt dezelfde origin; verzoeken van andere sites geweigerd).

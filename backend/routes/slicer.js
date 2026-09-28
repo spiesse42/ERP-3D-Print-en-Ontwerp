@@ -18,9 +18,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX
 r.post('/', (req, res) => {
   upload.single('bestand')(req, res, async (fout) => {
     if (fout) return res.status(400).json({ error: fout.code === 'LIMIT_FILE_SIZE' ? `Bestand is groter dan ${MAX_MB} MB` : fout.message });
-    if (!req.file) return res.status(400).json({ error: 'Kies een geslicet 3mf-bestand uit Bambu Studio (.gcode.3mf)' });
+    if (!req.file) return res.status(400).json({ error: 'Kies een geslicet 3mf-bestand (.gcode.3mf) of een gcode uit Bambu Studio, OrcaSlicer of PrusaSlicer' });
     try {
-      res.json(koppelSlicer(getDb(), await leesSlicerBestand(req.file.buffer)));
+      const naam = Buffer.from(req.file.originalname || '', 'latin1').toString('utf8');
+      res.json(koppelSlicer(getDb(), await leesSlicerBestand(req.file.buffer, naam)));
     } catch (e) {
       res.status(e instanceof DomeinFout ? 400 : 500).json({ error: e.message });
     }
