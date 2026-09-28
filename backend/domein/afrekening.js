@@ -50,4 +50,14 @@ export function maakBonnetje(db, d0, { datum }) {
   });
 }
 
+// Afrekening ongedaan (dossier-knop, of een losse verkoop die ongedaan
+// gemaakt wordt). De werkbon wordt weer een concept, als nieuwe versie
+// (domeinmodel: wijzigen na afrekenen = nieuwe versie).
+export function maakAfrekeningOngedaan(db, d, { waarom = 'Pas dit ook aan in Accountable.' } = {}) {
+  db.prepare(`UPDATE dossiers SET afgerekend_soort=NULL, afgerekend_nummer=NULL, afgerekend_op=NULL, afgerekend_bedrag=NULL, betaald_op=NULL,
+    afrekening_pdf_op=NULL, afrekening_gemaild_op=NULL, afrekening_klant_mail=NULL WHERE id=?`).run(d.id);
+  if (d.werkbon?.definitief_op) db.prepare('UPDATE werkbonnen SET definitief_op = NULL, momentopname = NULL, totaal = NULL, versie = versie + 1 WHERE id = ?').run(d.werkbon.id);
+  logGebeurtenis(db, 'dossier', d.id, 'status', `Afrekening ongedaan gemaakt (was ${afrekeningWeergave(d.afgerekend_soort, d.afgerekend_nummer)}). ${waarom}`.trim());
+}
+
 export { afrekeningWeergave, isErpBonnetje };

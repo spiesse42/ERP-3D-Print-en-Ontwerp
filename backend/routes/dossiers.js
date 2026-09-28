@@ -11,7 +11,7 @@ import { volgendNummer } from '../domein/nummering.js';
 import { annuleerVoorDossier, synchroniseer } from '../productie/opdrachten.js';
 import { start } from '../domein/uitvoering.js';
 import { maakWerkbon, afrekeningWeergave } from '../domein/documenten.js';
-import { rekenAf } from '../domein/afrekening.js';
+import { rekenAf, maakAfrekeningOngedaan } from '../domein/afrekening.js';
 import { SOORTEN, leesKop, leesRegels, bewaarRegels, leesDossier, leesDossiers, leesAfrekening, datumOk, leesRegelsVan } from '../domein/dossiers.js';
 
 const r = Router();
@@ -137,7 +137,7 @@ const NIET_TOEGELATEN = {
     : !d.regels.length ? 'Voeg eerst regels toe.' : 'Er is niets te starten: geen printregels.'),
   betaald: () => 'Enkel een afgerekend dossier kan als betaald gemarkeerd worden.',
   betaling_ongedaan: () => 'Er is geen betaling om ongedaan te maken (een bonnetje is altijd meteen betaald).',
-  afrekening_ongedaan: () => 'Dit dossier is niet afgerekend.',
+  afrekening_ongedaan: d => (d.afgerekend_via ? `Afgerekend via ${d.afgerekend_via.nummer} (losse verkoop): maak de verkoop ongedaan (Verkoop → ${d.afgerekend_via.nummer}).` : 'Dit dossier is niet afgerekend.'),
   annuleren: d => (d.leveringen?.length ? 'Er is al geleverd voor dit dossier. Maak eerst de leveringen ongedaan.' : 'Een afgerekend dossier kan niet geannuleerd worden. Maak de afrekening eerst ongedaan.'),
   heropenen: () => 'Dit dossier is niet geannuleerd.',
 };
@@ -183,13 +183,7 @@ r.post('/:id/betaling-ongedaan', actie('betaling_ongedaan', (db, d) => {
   db.prepare('UPDATE dossiers SET betaald_op = NULL WHERE id = ?').run(d.id);
   logGebeurtenis(db, 'dossier', d.id, 'status', 'Betaling ongedaan gemaakt');
 }));
-r.post('/:id/afrekening-ongedaan', actie('afrekening_ongedaan', (db, d) => {
-  db.prepare(`UPDATE dossiers SET afgerekend_soort=NULL, afgerekend_nummer=NULL, afgerekend_op=NULL, afgerekend_bedrag=NULL, betaald_op=NULL,
-    afrekening_pdf_op=NULL, afrekening_gemaild_op=NULL, afrekening_klant_mail=NULL WHERE id=?`).run(d.id);
-  // De werkbon wordt weer een concept, als nieuwe versie (domeinmodel: wijzigen na afrekenen = nieuwe versie).
-  if (d.werkbon?.definitief_op) db.prepare('UPDATE werkbonnen SET definitief_op = NULL, momentopname = NULL, totaal = NULL, versie = versie + 1 WHERE id = ?').run(d.werkbon.id);
-  logGebeurtenis(db, 'dossier', d.id, 'status', `Afrekening ongedaan gemaakt (was ${afrekeningWeergave(d.afgerekend_soort, d.afgerekend_nummer)}). Pas dit ook aan in Accountable.`);
-}));
+r.post('/:id/afrekening-ongedaan', actie('afrekening_ongedaan', (db, d) => maakAfrekeningOngedaan(db, d)));
 r.post('/:id/annuleren', actie('annuleren', (db, d) => {
   const n = annuleerVoorDossier(db, d.id);
   db.prepare(`UPDATE dossiers SET geannuleerd_op = date('now') WHERE id = ?`).run(d.id);

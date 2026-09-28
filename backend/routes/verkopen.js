@@ -6,7 +6,7 @@ import { Router } from 'express';
 import { getDb } from '../db/index.js';
 import { DomeinFout, isFkFout } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
-import { leesVerkoop, leesDatum, voorstelNummer, maakVerkoop, leesVerkoopRij, verkoopInhoud, overzicht, annuleerVerkoop } from '../domein/verkopen.js';
+import { leesVerkoop, leesDatum, voorstelNummer, maakVerkoop, leesVerkoopRij, verkoopInhoud, overzicht, annuleerVerkoop, kandidaten } from '../domein/verkopen.js';
 import { htmlNaarPdf, vindBrowser } from '../documenten/pdf.js';
 import { MailFout, mailIngesteld, geldigAdres } from '../documenten/mail.js';
 import { accountableAdres, afzender, DREMPEL_BONNETJE, bonnetjeHtml, bonnetjeBestand, stuurBonnetje } from '../documenten/bonnetje.js';
@@ -52,6 +52,9 @@ r.get('/voorstel', metFouten((req, res) => {
   res.json({ nummer: voorstelNummer(getDb(), datum), datum, accountable: accountableAdres(), afzender: afzender(),
     mail_ingesteld: mailIngesteld(), pdf_mogelijk: !!vindBrowser(), drempel: DREMPEL_BONNETJE });
 }));
+// Wat je kunt koppelen: af te rekenen klantdossiers en voltooide losse
+// printopdrachten (met voorstelprijs van de rekenmotor).
+r.get('/kandidaten', metFouten((req, res) => res.json(kandidaten(getDb()))));
 // Voorbeeld-PDF van wat er in het venster staat (niets bewaard).
 r.post('/voorbeeld', metFouten(async (req, res) => {
   const db = getDb();
@@ -105,6 +108,7 @@ r.put('/:id', metFouten((req, res) => {
     klant = Number(req.body.klant_id);
     if (!Number.isInteger(klant) || !db.prepare('SELECT 1 FROM klanten WHERE id = ?').get(klant)) throw new DomeinFout('Onbekende klant');
   }
+  if (klant !== v.klant_id && v.regels.some(x => x.soort === 'dossier')) throw new DomeinFout('De klant volgt het dossier op dit bonnetje en kan hier niet gewijzigd worden.');
   if (klant !== v.klant_id) db.transaction(() => {
     db.prepare('UPDATE verkopen SET klant_id = ? WHERE id = ?').run(klant, v.id);
     logGebeurtenis(db, 'verkoop', v.id, 'gewijzigd', `Klant ${klant ? 'gekoppeld' : 'weggehaald'}`);

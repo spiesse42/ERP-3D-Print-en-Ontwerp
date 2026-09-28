@@ -14,6 +14,9 @@
 // Drempels (instelbaar, Instellingen → Bedrijfsgegevens): btw-vrijstelling
 // kleine onderneming (omzet) en sociale bijdragen bijberoep (winst), pro
 // rata in het jaar van de startdatum — zoals het oude pakket.
+import { VIA_VERKOOP } from './hulp.js';
+import { kostVan } from './verkopen.js';
+
 const r2 = v => Math.round((v || 0) * 100) / 100;
 
 export const STANDAARD_DREMPELS = { omzet: 25000, winst: 1881.76 };
@@ -57,16 +60,17 @@ export function jaarOverzicht(db, jaar) {
   const maanden = Array.from({ length: 12 }, (_, i) => ({ maand: `${j}-${String(i + 1).padStart(2, '0')}`, omzet: 0, facturen: 0, bonnetjes: 0, ontvangen: 0, aankopen: 0 }));
   const zet = (maand, k, v) => { const m = maanden.find(x => x.maand === maand); if (m) m[k] += v || 0; };
   for (const r of db.prepare(`SELECT substr(afgerekend_op, 1, 7) maand, afgerekend_soort asoort, COUNT(*) n, SUM(afgerekend_bedrag) b FROM dossiers
-    WHERE afgerekend_op IS NOT NULL AND substr(afgerekend_op, 1, 4) = ? GROUP BY maand, afgerekend_soort`).all(j)) {
+    WHERE afgerekend_op IS NOT NULL AND substr(afgerekend_op, 1, 4) = ? AND NOT ${VIA_VERKOOP('dossiers')} GROUP BY maand, afgerekend_soort`).all(j)) {
     zet(r.maand, 'omzet', r.b); zet(r.maand, r.asoort === 'bonnetje' ? 'bonnetjes' : 'facturen', r.n);
   }
-  // losse verkoop = bonnetje: omzet én meteen ontvangen
+  // losse verkoop = bonnetje: omzet én meteen ontvangen (26-09: inclusief de
+  // dossiers die via die verkoop afgerekend werden; die tellen hierboven niet)
   for (const r of db.prepare(`SELECT substr(datum, 1, 7) maand, COUNT(*) n, SUM(totaal) b FROM verkopen
     WHERE geannuleerd_op IS NULL AND substr(datum, 1, 4) = ? GROUP BY maand`).all(j)) {
     zet(r.maand, 'omzet', r.b); zet(r.maand, 'bonnetjes', r.n); zet(r.maand, 'ontvangen', r.b);
   }
   for (const r of db.prepare(`SELECT substr(betaald_op, 1, 7) maand, SUM(afgerekend_bedrag) b FROM dossiers
-    WHERE betaald_op IS NOT NULL AND afgerekend_op IS NOT NULL AND substr(betaald_op, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, 'ontvangen', r.b);
+    WHERE betaald_op IS NOT NULL AND afgerekend_op IS NOT NULL AND substr(betaald_op, 1, 4) = ? AND NOT ${VIA_VERKOOP('dossiers')} GROUP BY maand`).all(j)) zet(r.maand, 'ontvangen', r.b);
   for (const r of db.prepare(`SELECT substr(a.datum, 1, 7) maand, SUM(${AANKOOP_BEDRAG}) b FROM aankopen a
     WHERE a.besteld_op IS NOT NULL AND a.geannuleerd_op IS NULL AND substr(a.datum, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, 'aankopen', r.b);
   const rijen = maanden.map(m => ({ ...m, omzet: r2(m.omzet), ontvangen: r2(m.ontvangen), aankopen: r2(m.aankopen), saldo: r2(m.ontvangen - m.aankopen) }));
@@ -141,19 +145,21 @@ export function marges(db, jaar) {
       marge_pct: d.afgerekend_bedrag > 0 ? Math.round(marge / d.afgerekend_bedrag * 1000) / 10 : null,
       onvolledig, redenen: [...redenen] };
   });
-  // losse verkopen (26-09): kost = partijprijs van wat uitgeboekt werd
-  const verkoopKost = db.prepare(`SELECT SUM(-m.aantal * p.prijs_per_eenheid) kost, SUM(CASE WHEN p.prijs_per_eenheid IS NULL THEN 1 ELSE 0 END) zonder_prijs
-    FROM voorraad_mutaties m JOIN verkoop_regels vr ON vr.id = m.bron_id LEFT JOIN voorraad_partijen p ON p.id = m.partij_id
-    WHERE m.bron_type = 'verkoop_regel' AND m.reden = 'levering' AND m.aantal < 0 AND vr.verkoop_id = ?`);
-  for (const v of db.prepare(`SELECT v.id, v.nummer AS afrekening, v.datum AS afgerekend_op, v.totaal AS afgerekend_bedrag, v.omschrijving, ${KLANTNAAM} klant
+  // losse verkopen (26-09): enkel het deel ZONDER dossierregels (een dossier
+  // dat via de verkoop afgerekend werd, staat hierboven als eigen rij met zijn
+  // eigen kost). Kost = partijprijs uit voorraad + productiekost van de
+  // verkochte printopdrachten.
+  for (const v of db.prepare(`SELECT v.id, v.nummer AS afrekening, v.datum AS afgerekend_op, v.totaal, v.omschrijving, ${KLANTNAAM} klant,
+        (SELECT COUNT(*) FROM verkoop_regels r WHERE r.verkoop_id = v.id AND r.soort <> 'dossier') AS eigen_regels
       FROM verkopen v LEFT JOIN klanten k ON k.id = v.klant_id WHERE v.geannuleerd_op IS NULL AND substr(v.datum, 1, 4) = ?`).all(String(jaar))) {
-    const a = verkoopKost.get(v.id);
-    const kost = r2(a?.kost || 0);
-    const marge = r2(v.afgerekend_bedrag - kost);
+    if (!v.eigen_regels) continue;
+    const k = kostVan(db, v.id);
+    const bedrag = r2(v.totaal - k.dossierdeel);
+    const marge = r2(bedrag - k.kost);
     rijen.push({ id: `v${v.id}`, verkoop_id: v.id, nummer: v.afrekening, titel: v.omschrijving || 'Losse verkoop', afgerekend_op: v.afgerekend_op,
-      afgerekend_bedrag: v.afgerekend_bedrag, afgerekend_soort: 'verkoop', waarde: null, klant: v.klant, kost_print: 0, kost_artikelen: kost, kost, arbeid: 0,
-      marge, marge_met_arbeid: marge, marge_pct: v.afgerekend_bedrag > 0 ? Math.round(marge / v.afgerekend_bedrag * 1000) / 10 : null,
-      onvolledig: !!a?.zonder_prijs, redenen: a?.zonder_prijs ? ['artikel zonder inkoopprijs'] : [] });
+      afgerekend_bedrag: bedrag, afgerekend_soort: 'verkoop', waarde: null, klant: v.klant, kost_print: 0, kost_artikelen: k.kost, kost: k.kost, arbeid: k.arbeid,
+      marge, marge_met_arbeid: r2(marge - k.arbeid), marge_pct: bedrag > 0 ? Math.round(marge / bedrag * 1000) / 10 : null,
+      onvolledig: k.onvolledig, redenen: k.onvolledig ? ['een inkoopprijs of productiekost ontbreekt'] : [] });
   }
   rijen.sort((x, y) => String(y.afgerekend_op).localeCompare(String(x.afgerekend_op)));
   const som = k => r2(rijen.reduce((t, x) => t + (x[k] || 0), 0));

@@ -35,7 +35,9 @@ export function statusVan(o, runs) {
 // eindproduct: het artikel (zelf geprint) waar de goede stuks naartoe gaan —
 // enkel bij een printregel van een dossier "Eigen product" (stap 6c)
 const SELECT = `SELECT o.*, p.naam AS printer, r.dossier_id, r.omschrijving AS regel_omschrijving, d.nummer AS dossier_nummer, d.titel AS dossier_titel,
-    d.soort AS dossier_soort, d.gestart_op AS dossier_gestart_op, CASE WHEN d.soort = 'eigen' THEN ea.id END AS eindproduct_id, CASE WHEN d.soort = 'eigen' THEN ea.naam END AS eindproduct
+    d.soort AS dossier_soort, d.gestart_op AS dossier_gestart_op, CASE WHEN d.soort = 'eigen' THEN ea.id END AS eindproduct_id, CASE WHEN d.soort = 'eigen' THEN ea.naam END AS eindproduct,
+    (SELECT v.id FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id WHERE vr.printopdracht_id = o.id AND v.geannuleerd_op IS NULL) AS verkocht_verkoop_id,
+    (SELECT v.nummer FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id WHERE vr.printopdracht_id = o.id AND v.geannuleerd_op IS NULL) AS verkocht_nummer
   FROM printopdrachten o JOIN printers p ON p.id = o.printer_id
   LEFT JOIN dossier_regels r ON r.id = o.dossier_regel_id LEFT JOIN dossiers d ON d.id = r.dossier_id
   LEFT JOIN artikelen ea ON ea.id = r.artikel_id AND r.type = 'printen'`;
@@ -237,6 +239,7 @@ export function herberekenOnvolledige(db) {
 
 export function heropen(db, o) {
   if (o.status !== 'voltooid' && o.status !== 'geannuleerd') throw new DomeinFout('Deze printopdracht is niet afgesloten');
+  if (o.verkocht_nummer) throw new DomeinFout(`Deze printopdracht is verkocht via ${o.verkocht_nummer}. Maak eerst die verkoop ongedaan.`);
   draaiBoekingTerug(db, o);
   db.prepare('UPDATE printopdrachten SET aantal_goed = NULL, voltooid_op = NULL, geannuleerd_op = NULL, productiekost_stuk = NULL, arbeid_stuk = NULL, kost_onvolledig = 0, kost_ontbreekt = NULL, volgorde = ? WHERE id = ?')
     .run(volgendeVolgorde(db, o.printer_id), o.id);

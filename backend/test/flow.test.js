@@ -44,7 +44,7 @@ test('X0. voorbereiding', async () => {
   await vraag('PUT', `/printers/${mini}`, { naam: 'Bambu Lab A1 Mini', machine_per_uur: 0.2, verbruik_watt: 95 });
   pg = (await vraag('POST', '/filament/types', { merk_id: 1, materiaal_id: 1, verkoopprijs_per_kg: 25 })).data.id;
   klant = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'Sofie', naam: 'Maes' })).data.id;
-  assert.equal(db.pragma('user_version', { simple: true }), 18);
+  assert.equal(db.pragma('user_version', { simple: true }), 19);
 });
 
 let dos;

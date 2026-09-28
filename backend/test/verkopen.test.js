@@ -101,7 +101,7 @@ test('V3. met klant: aan de klant, Accountable in cc; dossier-bonnetjes delen de
 
 test('V4. controles vooraf: geen nummer en geen voorraad verbruikt bij een fout', async () => {
   const voor = await volgendBon();
-  fout(await vraag('POST', '/verkopen', { regels: [] }), /minstens één artikel/);
+  fout(await vraag('POST', '/verkopen', { regels: [] }), /minstens één regel/);
   fout(await vraag('POST', '/verkopen', { regels: [{ artikel_id: hond, aantal: 99 }] }), /Onvoldoende voorraad van Sleutelhanger hond/);
   fout(await vraag('POST', '/verkopen', { regels: [{ artikel_id: hond, aantal: 3 }, { artikel_id: hond, aantal: 1 }] }), /Onvoldoende voorraad/);  // samen 4 > 3
   fout(await vraag('POST', '/verkopen', { regels: [{ artikel_id: zonderPrijs, aantal: 1 }] }), /prijs per stuk/);

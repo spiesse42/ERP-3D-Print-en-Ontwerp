@@ -186,6 +186,10 @@ export function leesDossier(db, dossierId) {
   const uit = { ...d, klant_gegevens, fase: faseVan(d, { offerte, lever, prod }), stappen: stappenVan(d, { lever, prod }), acties: actiesVan(d, opts),
     leverbaar: lever_lijst, lever_status: lever, leveringen, productie,
     regels, berekening, offertes: offertes.map(({ regels_api: _r, document: _doc, ...o }) => o), werkbon, zonder_werkbon, wijkt_af_van_offerte, overname };
+  // afgerekend via een losse verkoop (26-09): enkel daar ongedaan te maken
+  uit.afgerekend_via = db.prepare(`SELECT v.id, v.nummer, v.gemaild_op FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id
+    WHERE vr.dossier_id = ? AND v.geannuleerd_op IS NULL`).get(dossierId) || null;
+  if (uit.afgerekend_via) uit.acties = { ...uit.acties, afrekening_ongedaan: false, betaling_ongedaan: false };
   uit.volgende_stap = volgendeStap(uit);
   return uit;
 }
@@ -201,6 +205,13 @@ export function volgendeStap(d) {
   const extra = [];
   if (klant && ['geen', 'deels'].includes(d.lever_status) && d.fase !== 'geannuleerd') extra.push('Leveren (pakbon) kan nog, maar is niet verplicht.');
   if (d.fase === 'geannuleerd') return { soort: 'geannuleerd', tekst: 'Dit dossier is geannuleerd: niets af te rekenen of te leveren.', extra: [] };
+  // afgerekend via een losse verkoop (26-09)
+  if (d.afgerekend_via) {
+    const v = d.afgerekend_via;
+    return v.gemaild_op
+      ? { soort: 'afgerond', tekst: `Afgerond: afgerekend via ${v.nummer} (losse verkoop), naar Accountable gemaild.`, extra, verkoop_id: v.id }
+      : { soort: 'verkoop_mailen', tekst: `Afgerekend via ${v.nummer} (losse verkoop), maar dat bonnetje is nog NIET naar Accountable gemaild. Open de verkoop en mail het.`, extra: [], verkoop_id: v.id };
+  }
   // bonnetje van het ERP dat nog niet bij Accountable is (mailen mislukt, 26-09)
   if (isErpBonnetje(d) && !d.afrekening_gemaild_op) {
     return { soort: 'bonnetje_mailen', tekst: `${d.afgerekend_nummer} is gemaakt, maar nog NIET naar Accountable gemaild. Mail het nu, anders ontbreekt het in je dagontvangstenboek.`, extra: [] };
