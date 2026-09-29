@@ -166,3 +166,63 @@ test('FA5. opzoeken: VIES naam/adres, Peppol-ID bevestigd in het register, voors
   // via de API: ongeldige invoer
   fout(await vraag('GET', '/klanten/opzoeken?btw='), /btw-nummer/);
 });
+
+test('FA6. losse verkoop met factuur: klant verplicht, nummer uit de factuurreeks, niet betaald; betaald zet ook het dossier op betaald', { skip: !pdfOk && 'geen Chromium' }, async () => {
+  const d = await dossier('Sleutelhangers', nl);
+  const regels = [{ soort: 'dossier', dossier_id: d.id }, { soort: 'vrij', omschrijving: 'Verzending', aantal: 1, prijs_per_stuk: 6.5 }];
+  fout(await vraag('POST', '/verkopen', { soort: 'factuur', datum: vandaag, regels: [{ soort: 'vrij', omschrijving: 'X', prijs_per_stuk: 5 }] }), /altijd op naam/);
+  const vs = ok(await vraag('GET', `/verkopen/voorstel?soort=factuur&datum=${vandaag}&klant=${nl}`));
+  assert.equal(vs.nummer, `Factuur ${jaar}-006`, 'zelfde teller als de dossierfacturen');
+  assert.equal(vs.vervaldatum, plus(vandaag, 7));
+  const pdf = await (await fetch(`${basis}/verkopen/voorbeeld`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ soort: 'factuur', datum: vandaag, regels }) }));
+  assert.match(pdf.headers.get('content-disposition'), /Factuur \d{4}-006 - voorbeeld\.pdf/);
+  const postvak = nepPostvak().length;
+  const v = ok(await vraag('POST', '/verkopen', { soort: 'factuur', datum: vandaag, regels }), 201);
+  assert.equal(v.mail_fout, null);
+  assert.equal(v.nummer, `Factuur ${jaar}-006`); assert.equal(v.soort, 'factuur');
+  assert.equal(v.klant_id, nl, 'klant van het dossier');
+  assert.equal(v.betaald_op, null); assert.equal(v.vervaldatum, plus(vandaag, 7));
+  assert.equal(nepPostvak().slice(postvak)[0].attachments[0].filename, `Factuur ${jaar}-006.pdf`);
+  let dd = ok(await vraag('GET', `/dossiers/${d.id}`));
+  assert.equal(dd.fase, 'afgerekend'); assert.equal(dd.afgerekend_soort, 'factuur'); assert.equal(dd.afgerekend_nummer, v.nummer);
+  assert.equal(dd.acties.betaald, false, 'betalen via de verkoop');
+  assert.match(dd.volgende_stap.tekst, /op betaald zetten in de verkoop/);
+  fout(await vraag('POST', `/dossiers/${d.id}/betaald`, { datum: vandaag }), /betaald/);
+  fout(await vraag('PUT', `/verkopen/${v.id}`, { klant_id: be }), /klant volgt het dossier|op naam/);
+  // opvolging en jaaroverzicht
+  const o = ok(await vraag('GET', '/financien/opvolging')).onbetaald;
+  assert.ok(o.some(x => x.verkoop_id === v.id), 'verkoop-factuur is onbetaald');
+  assert.ok(!o.some(x => x.id === d.id), 'het dossier niet nog eens apart');
+  const maand = ok(await vraag('GET', `/financien/overzicht?jaar=${jaar}`)).maanden.find(m => m.maand === vandaag.slice(0, 7));
+  const ontvangenVoor = maand.ontvangen;
+  // Accountable-export: betaald → wordt betaald gezet
+  const ver = (await import('../domein/accountable.js')).vergelijk(getDb(), [{ rij: 1, nummer: v.nummer, datum: vandaag, bedrag: v.totaal, betaald: true, betaald_op: vandaag }]);
+  assert.equal(ver.rijen[0].status, 'betalen'); assert.equal(ver.rijen[0].verkoop.id, v.id);
+  // betaald in de verkoop
+  fout(await vraag('POST', `/verkopen/${v.id}/betaald`, { datum: plus(vandaag, 1) }), /toekomst/);
+  const b = ok(await vraag('POST', `/verkopen/${v.id}/betaald`, { datum: vandaag }));
+  assert.equal(b.betaald_op, vandaag);
+  dd = ok(await vraag('GET', `/dossiers/${d.id}`));
+  assert.equal(dd.fase, 'betaald'); assert.equal(dd.volgende_stap.soort, 'afgerond');
+  const m2 = ok(await vraag('GET', `/financien/overzicht?jaar=${jaar}`)).maanden.find(m => m.maand === vandaag.slice(0, 7));
+  assert.equal(Math.round((m2.ontvangen - ontvangenVoor) * 100) / 100, v.totaal, 'ontvangen op de betaaldatum');
+  assert.ok(!ok(await vraag('GET', '/financien/opvolging')).onbetaald.some(x => x.verkoop_id === v.id));
+  // betaling ongedaan → dossier weer afgerekend; verkoop ongedaan → dossier weer open
+  ok(await vraag('POST', `/verkopen/${v.id}/betaling-ongedaan`));
+  assert.equal(ok(await vraag('GET', `/dossiers/${d.id}`)).fase, 'afgerekend');
+  ok(await vraag('POST', `/verkopen/${v.id}/annuleer`));
+  assert.equal(ok(await vraag('GET', `/dossiers/${d.id}`)).afgerekend_op, null);
+  // een bonnetje blijft meteen betaald
+  const bon = ok(await vraag('POST', '/verkopen', { datum: vandaag, regels: [{ soort: 'vrij', omschrijving: 'Sticker', prijs_per_stuk: 2 }] }), 201);
+  assert.equal(bon.soort, 'bonnetje'); assert.equal(bon.betaald_op, vandaag);
+  fout(await vraag('POST', `/verkopen/${bon.id}/betaald`, { datum: vandaag }), /altijd meteen betaald/);
+});
+
+test('FA7. Accountable-import zet een factuur van een losse verkoop op betaald', { skip: !pdfOk && 'geen Chromium' }, async () => {
+  const { vergelijk, pasToe } = await import('../domein/accountable.js');
+  const v = ok(await vraag('POST', '/verkopen', { soort: 'factuur', datum: vandaag, klant_id: be, regels: [{ soort: 'vrij', omschrijving: 'Werfbord', prijs_per_stuk: 40 }] }), 201);
+  const ver = vergelijk(getDb(), [{ rij: 1, nummer: v.nummer.replace(/^Factuur /, ''), datum: vandaag, bedrag: 40, betaald: true, betaald_op: vandaag }]);
+  assert.equal(ver.rijen[0].status, 'betalen');
+  assert.equal(pasToe(getDb(), ver, [`v${v.id}`], 'export.xlsx'), 1);
+  assert.equal(ok(await vraag('GET', `/verkopen/${v.id}`)).betaald_op, vandaag);
+});

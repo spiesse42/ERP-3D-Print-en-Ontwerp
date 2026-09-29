@@ -84,6 +84,11 @@ export function geldigheidDagen(db) {
   const n = parseInt(w, 10);
   return Number.isInteger(n) && n > 0 ? n : 30;
 }
+// Betaaltermijn van een factuur in dagen (Instellingen → Bedrijf; standaard 7).
+export function betaaltermijn(db) {
+  const n = parseInt(db.prepare(`SELECT waarde FROM instellingen WHERE sleutel = 'factuur_betaaltermijn'`).get()?.waarde, 10);
+  return Number.isInteger(n) && n >= 0 ? n : 7;
+}
 export function plusDagen(datum, dagen) {
   const d = new Date(`${datum}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + dagen);

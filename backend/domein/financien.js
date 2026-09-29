@@ -66,12 +66,15 @@ export function jaarOverzicht(db, jaar) {
     WHERE afgerekend_op IS NOT NULL AND substr(afgerekend_op, 1, 4) = ? AND NOT ${VIA_VERKOOP('dossiers')} GROUP BY maand, afgerekend_soort`).all(j)) {
     zet(r.maand, 'omzet', r.b); zet(r.maand, r.asoort === 'bonnetje' ? 'bonnetjes' : 'facturen', r.n);
   }
-  // losse verkoop = bonnetje: omzet én meteen ontvangen (26-09: inclusief de
-  // dossiers die via die verkoop afgerekend werden; die tellen hierboven niet)
-  for (const r of db.prepare(`SELECT substr(datum, 1, 7) maand, COUNT(*) n, SUM(totaal) b FROM verkopen
-    WHERE geannuleerd_op IS NULL AND substr(datum, 1, 4) = ? GROUP BY maand`).all(j)) {
-    zet(r.maand, 'omzet', r.b); zet(r.maand, 'bonnetjes', r.n); zet(r.maand, 'ontvangen', r.b);
+  // losse verkoop: omzet op de verkoopdatum (26-09: inclusief de dossiers die
+  // via die verkoop afgerekend werden; die tellen hierboven niet). Ontvangen
+  // op de betaaldatum: een bonnetje meteen, een factuur (29-09) later.
+  for (const r of db.prepare(`SELECT substr(datum, 1, 7) maand, soort, COUNT(*) n, SUM(totaal) b FROM verkopen
+    WHERE geannuleerd_op IS NULL AND substr(datum, 1, 4) = ? GROUP BY maand, soort`).all(j)) {
+    zet(r.maand, 'omzet', r.b); zet(r.maand, r.soort === 'factuur' ? 'facturen' : 'bonnetjes', r.n);
   }
+  for (const r of db.prepare(`SELECT substr(betaald_op, 1, 7) maand, SUM(totaal) b FROM verkopen
+    WHERE geannuleerd_op IS NULL AND betaald_op IS NOT NULL AND substr(betaald_op, 1, 4) = ? GROUP BY maand`).all(j)) zet(r.maand, 'ontvangen', r.b);
   for (const r of db.prepare(`SELECT substr(betaald_op, 1, 7) maand, SUM(afgerekend_bedrag) b FROM dossiers
     WHERE betaald_op IS NOT NULL AND afgerekend_op IS NOT NULL AND substr(betaald_op, 1, 4) = ? AND NOT ${VIA_VERKOOP('dossiers')} GROUP BY maand`).all(j)) zet(r.maand, 'ontvangen', r.b);
   for (const r of db.prepare(`SELECT substr(a.datum, 1, 7) maand, SUM(${AANKOOP_BEDRAG}) b FROM aankopen a
@@ -100,7 +103,17 @@ export function opvolging(db, leesDossiers) {
     WHERE d.afgerekend_op IS NOT NULL AND d.betaald_op IS NULL ORDER BY d.afgerekend_op`).all()
     .map(d => ({ ...d, dagen_open: Math.max(0, Math.round((vandaag - Date.parse(d.afgerekend_op)) / 864e5)),
       // factuur van het ERP (29-09): vervallen na de vervaldatum
-      vervallen: !!d.vervaldatum && Date.parse(d.vervaldatum) < vandaag }));
+      vervallen: !!d.vervaldatum && Date.parse(d.vervaldatum) < vandaag }))
+    // dossier op een factuur van een losse verkoop: die verkoop staat hieronder
+    .filter(d => !db.prepare(`SELECT 1 FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id WHERE vr.dossier_id = ? AND v.geannuleerd_op IS NULL AND v.nummer = ?`).get(d.id, d.afgerekend_nummer));
+  // factuur van een losse verkoop (29-09), nog niet betaald
+  for (const v of db.prepare(`SELECT v.id, v.nummer, v.datum, v.totaal, v.vervaldatum, v.omschrijving, v.klant_id, ${KLANTNAAM} klant, k.email
+    FROM verkopen v LEFT JOIN klanten k ON k.id = v.klant_id WHERE v.soort = 'factuur' AND v.betaald_op IS NULL AND v.geannuleerd_op IS NULL`).all()) {
+    onbetaald.push({ id: `v${v.id}`, verkoop_id: v.id, nummer: null, titel: v.omschrijving || 'Losse verkoop', afgerekend_nummer: v.nummer, afgerekend_op: v.datum,
+      afgerekend_bedrag: v.totaal, vervaldatum: v.vervaldatum, klant_id: v.klant_id, klant: v.klant, email: v.email,
+      dagen_open: Math.max(0, Math.round((vandaag - Date.parse(v.datum)) / 864e5)), vervallen: !!v.vervaldatum && Date.parse(v.vervaldatum) < vandaag });
+  }
+  onbetaald.sort((a, b) => String(a.afgerekend_op).localeCompare(String(b.afgerekend_op)));
   const alle = leesDossiers();
   const teAfrekenen = alle.filter(d => d.soort === 'klant' && ['klaar', 'deels', 'geleverd'].includes(d.fase))
     .map(d => ({ id: d.id, nummer: d.nummer, titel: d.titel, klant: d.klant, klant_id: d.klant_id, fase: d.fase, totaal: d.totaal, volledig: d.volledig }));

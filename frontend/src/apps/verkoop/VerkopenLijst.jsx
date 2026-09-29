@@ -12,7 +12,10 @@ const BRON = { verkoop: 'Losse verkoop', dossier: 'Dossier' };
 export function StatusBadge({ x }) {
   if (x.geannuleerd_op) return <span className="badge b-neutral">Ongedaan</span>;
   if (!x.erp) return <span className="badge b-neutral" title="Gemaakt in Accountable, nummer met de hand ingevuld">Uit Accountable</span>;
-  return x.gemaild_op ? <span className="badge b-pos">Bij Accountable</span> : <span className="badge b-crit">Nog niet gemaild</span>;
+  if (!x.gemaild_op) return <span className="badge b-crit">Nog niet gemaild</span>;
+  // factuur (29-09): open tot ze betaald is
+  if (x.soort === 'factuur' && !x.betaald_op) return <span className="badge b-warn" title={x.vervaldatum ? `Vervalt ${datum(x.vervaldatum)}` : undefined}>Bij Accountable · onbetaald</span>;
+  return <span className="badge b-pos">Bij Accountable</span>;
 }
 
 export default function VerkopenLijst() {
@@ -49,13 +52,13 @@ export default function VerkopenLijst() {
           <Chip aan={soort === 'bonnetje'} onClick={() => setSoort('bonnetje')}>Bonnetjes</Chip>
           <Chip aan={soort === 'factuur'} onClick={() => setSoort('factuur')}>Facturen</Chip>
         </>} />
-      {nietGemaild > 0 && <div className="waarschuwing" style={{ margin: '12px 22px 0', display: 'block' }} role="status">{nietGemaild} bonnetje{nietGemaild > 1 ? 's zijn' : ' is'} nog niet naar Accountable gemaild: open {nietGemaild > 1 ? 'ze' : 'het'} en kies "Bonnetje mailen".</div>}
+      {nietGemaild > 0 && <div className="waarschuwing" style={{ margin: '12px 22px 0', display: 'block' }} role="status">{nietGemaild} {nietGemaild > 1 ? 'bonnetjes of facturen zijn' : 'bonnetje of factuur is'} nog niet naar Accountable gemaild: open {nietGemaild > 1 ? 'ze' : 'het'} en kies "mailen".</div>}
       {fout ? <Fout tekst={fout} /> : !data && laden ? <Laden /> : (
         <Lijst kolommen={kolommen} groepen={[{ titel: null, rijen }]} sleutel={x => x.sleutel} onOpen={open}
           sortering={sortering} onSorteer={i => setSortering(s => ({ kolom: i, op: s.kolom === i ? !s.op : true }))}
           kaart={x => ({ titel: `${x.nummer}`, rechts: <b className="num">{euro(x.bedrag)}</b>, regel: [x.titel, x.klant].filter(Boolean).join(' · ') || BRON[x.bron], onder: <>{datum(x.datum)} <StatusBadge x={x} /></> })}
           leeg={data && data.length === 0
-            ? <><b>Nog geen verkopen of afrekeningen.</b>Verkoop iets uit voorraad met "Nieuwe verkoop", of maak een bonnetje vanuit een dossier.</>
+            ? <><b>Nog geen verkopen of afrekeningen.</b>Verkoop iets met "Nieuwe verkoop" (bonnetje of factuur), of maak een bonnetje of factuur vanuit een dossier.</>
             : <><b>Niets gevonden.</b>Pas je zoekopdracht of filter aan.</>} />
       )}
     </>

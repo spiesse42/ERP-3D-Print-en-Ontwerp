@@ -12,7 +12,7 @@ import { euro, datum, naarInvoer, uitInvoer, vandaag, aantal as fmtAantal } from
 import { klantNaam } from '../klanten/klant.js';
 import { FASE } from '../dossiers/dossier.jsx';
 import { mailTekst } from '../dossiers/MailDialoog.jsx';
-import { BonnetjeMailDialoog } from '../dossiers/AfrekenDialogen.jsx';
+import { BonnetjeMailDialoog, BetaaldDialoog } from '../dossiers/AfrekenDialogen.jsx';
 import { StatusBadge } from './VerkopenLijst.jsx';
 
 // Losse verkoop (26-09). Eén bonnetje met regels van vier soorten:
@@ -24,6 +24,8 @@ import { StatusBadge } from './VerkopenLijst.jsx';
 // - vrije regel    omschrijving + prijs, zonder voorraad
 // "Verkopen" = bonnetje (nummer uit Instellingen → Nummering) + voorraad eraf
 // + dossiers afgerekend + mailen naar Accountable (+ optioneel de klant).
+// 29-09: of een FACTUUR (reeks Factuur, klant verplicht, vervaldatum, later
+// "Betaald" — dat zet ook de dossiers erop op betaald).
 const openUrl = pad => window.open(new URL(`${BASE}${pad}`, document.baseURI).href, '_blank', 'noopener');
 let teller = 0;
 const nieuweRegel = soort => ({ sleutel: `r${++teller}`, soort, artikel_id: '', dossier_id: '', printopdracht_id: '', aantal: '1', prijs: '', omschrijving: '' });
@@ -51,13 +53,16 @@ function NieuweVerkoop() {
   const { data: kand } = useData('/verkopen/kandidaten');
   const { data: instellingen } = useData('/instellingen');
   const bedrijf = (instellingen || []).find(i => i.sleutel === 'bedrijf_naam')?.waarde || '';
-  const [f, setF] = useState({ datum: vandaag(), klant_id: '', omschrijving: '' });
+  const [f, setF] = useState({ soort: 'bonnetje', datum: vandaag(), klant_id: '', omschrijving: '', vervaldatum: '' });
+  const factuur = f.soort === 'factuur';
+  const doc = factuur ? 'de factuur' : 'het bonnetje';
   const [regels, setRegels] = useState(() => [nieuweRegel('artikel')]);
   const [toonFilament, setToonFilament] = useState(false);
   const [naarKlant, setNaarKlant] = useState(false);
   const [mail, setMail] = useState(null);
   const [bezig, setBezig] = useState(false);
-  const { data: v, fout: voorstelFout } = useData(`/verkopen/voorstel?datum=${f.datum}`);
+  const { data: v, fout: voorstelFout } = useData(`/verkopen/voorstel?datum=${f.datum}&soort=${f.soort}${f.klant_id ? `&klant=${f.klant_id}` : ''}`);
+  const vervaldatum = f.vervaldatum || v?.vervaldatum || '';
   const ingevuld = regels.filter(r => (r.soort === 'artikel' && r.artikel_id) || (r.soort === 'dossier' && r.dossier_id)
     || (r.soort === 'printopdracht' && r.printopdracht_id) || (r.soort === 'vrij' && (r.omschrijving || r.prijs)));
   const vuil = ingevuld.length > 0 || !!f.klant_id || !!f.omschrijving;
@@ -109,17 +114,19 @@ function NieuweVerkoop() {
   regels.forEach(r => { const a = r.soort === 'artikel' && perId.get(r.artikel_id); if (a && a.type !== 'dienst') gevraagd.set(r.artikel_id, (gevraagd.get(r.artikel_id) || 0) + (getal(r.aantal) || 0)); });
   const tekort = [...gevraagd].filter(([aid, n]) => n > (perId.get(aid)?.voorraad ?? 0) + 1e-9).map(([aid]) => perId.get(aid).weergave);
   const andereKlant = regels.some(r => r.soort === 'dossier' && r.dossier_id && dossierVan.get(r.dossier_id)?.klant_id && f.klant_id && String(dossierVan.get(r.dossier_id).klant_id) !== f.klant_id);
-  const m = mail || { aan: klant?.email || '', onderwerp: v ? `${v.nummer}${f.omschrijving ? ` – ${f.omschrijving}` : ''}` : '', tekst: mailTekst({ klant, bedrijf, wat: 'je bonnetje', titel: f.omschrijving || 'je aankoop' }) };
+  const m = mail || { aan: klant?.email || '', onderwerp: v ? `${v.nummer}${f.omschrijving ? ` – ${f.omschrijving}` : ''}` : '', tekst: mailTekst({ klant, bedrijf, wat: factuur ? 'je factuur' : 'je bonnetje', titel: f.omschrijving || 'je aankoop' }) };
   const zetMail = (k, w) => setMail({ ...m, [k]: w });
-  const blokkeert = !v ? null : !v.mail_ingesteld ? 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Een bonnetje moet naar Accountable gemaild worden.'
+  const blokkeert = !v ? null : !v.mail_ingesteld ? `Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). ${factuur ? 'Een factuur' : 'Een bonnetje'} moet naar Accountable gemaild worden.`
     : !v.pdf_mogelijk ? 'Geen Chrome, Edge of Chromium gevonden om de PDF te maken.' : null;
   const onvolledig = !ingevuld.length ? 'Voeg minstens één regel toe.'
     : ingevuld.some(r => r.soort === 'vrij' && !r.omschrijving.trim()) ? 'Geef elke vrije regel een omschrijving.'
     : ingevuld.some(r => getal(r.aantal) == null || getal(r.aantal) <= 0) ? 'Vul bij elke regel een aantal in.'
     : ingevuld.some(r => getal(r.prijs) == null) ? 'Vul bij elke regel de prijs in.'
     : tekort.length ? `Onvoldoende voorraad: ${tekort.join(', ')}.`
-    : andereKlant ? 'Een dossier hoort bij een andere klant dan de gekozen klant.' : null;
-  const body = () => ({ datum: f.datum, klant_id: f.klant_id || null, omschrijving: f.omschrijving,
+    : andereKlant ? 'Een dossier hoort bij een andere klant dan de gekozen klant.'
+    : factuur && !f.klant_id ? 'Een factuur is op naam: kies een klant.'
+    : factuur && vervaldatum && vervaldatum < f.datum ? 'De vervaldatum ligt vóór de factuurdatum.' : null;
+  const body = () => ({ soort: f.soort, datum: f.datum, ...(factuur ? { vervaldatum } : {}), klant_id: f.klant_id || null, omschrijving: f.omschrijving,
     regels: ingevuld.map(r => ({ soort: r.soort, artikel_id: r.soort === 'artikel' ? Number(r.artikel_id) : undefined,
       dossier_id: r.soort === 'dossier' ? Number(r.dossier_id) : undefined, printopdracht_id: r.soort === 'printopdracht' ? Number(r.printopdracht_id) : undefined,
       aantal: r.aantal, prijs_per_stuk: r.prijs, omschrijving: r.omschrijving })) });
@@ -136,7 +143,7 @@ function NieuweVerkoop() {
     try {
       const r = await api.post('/verkopen', { ...body(), naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) });
       zetVuil(false);
-      if (r.mail_fout) melding(`${r.nummer} is gemaakt, maar het mailen mislukte: ${r.mail_fout} Het is nog NIET bij Accountable: gebruik "Bonnetje mailen".`, 'fout');
+      if (r.mail_fout) melding(`${r.nummer} is gemaakt, maar het mailen mislukte: ${r.mail_fout} Het is nog NIET bij Accountable: gebruik "${factuur ? 'Factuur' : 'Bonnetje'} mailen".`, 'fout');
       else melding(`${r.nummer} gemaakt en gemaild naar Accountable${naarKlant ? ` en ${m.aan}` : ''}.`);
       navigeer(`/verkoop/${r.id}`);
     } catch (e) { melding(e.message, 'fout'); setBezig(false); }
@@ -201,27 +208,34 @@ function NieuweVerkoop() {
         <div className="sheet">
           <div className="sheet-head">
             <div className="kop">
-              <div className="nr">Nieuwe verkoop · bonnetje</div>
+              <div className="nr">Nieuwe verkoop · {factuur ? 'factuur' : 'bonnetje'}</div>
               <h2 className="mono-titel">{v?.nummer ?? '…'}</h2>
-              <div className="sub">Dit nummer krijgt het bonnetje bij "Verkopen" (Instellingen → Nummering).</div>
+              <div className="sub">Dit nummer krijgt {doc} bij "Verkopen" (Instellingen → Nummering).</div>
+              <div className="seg" role="group" aria-label="Bonnetje of factuur" style={{ marginTop: 8 }}>
+                <button type="button" aria-pressed={!factuur} onClick={() => zet('soort', 'bonnetje')}>Bonnetje</button>
+                <button type="button" aria-pressed={factuur} onClick={() => zet('soort', 'factuur')}>Factuur</button>
+              </div>
             </div>
           </div>
           {(voorstelFout || blokkeert) && <div className="waarschuwing" style={{ margin: '0 22px 10px', display: 'block' }} role="alert">{voorstelFout || blokkeert}</div>}
           <div className="fields">
             <div>
-              <Veld label="Datum" id="vk-datum"><input id="vk-datum" type="date" className="inp" max={vandaag()} value={f.datum} onChange={e => zet('datum', e.target.value || vandaag())} /></Veld>
-              <Veld label="Omschrijving" id="vk-oms" hint="Optioneel, komt bovenaan het bonnetje (bv. Bestelling FB).">
+              <Veld label={factuur ? 'Factuurdatum' : 'Datum'} id="vk-datum"><input id="vk-datum" type="date" className="inp" max={vandaag()} value={f.datum} onChange={e => zet('datum', e.target.value || vandaag())} /></Veld>
+              {factuur && <Veld label="Vervaldatum" id="vk-verval" hint="Volgens de betaaltermijn (Instellingen → Bedrijf); aanpasbaar.">
+                <input id="vk-verval" type="date" className="inp" min={f.datum} value={vervaldatum} onChange={e => zet('vervaldatum', e.target.value)} /></Veld>}
+              <Veld label="Omschrijving" id="vk-oms" hint={`Optioneel, komt bovenaan ${doc} (bv. Bestelling FB).`}>
                 <input id="vk-oms" className="inp" value={f.omschrijving} onChange={e => zet('omschrijving', e.target.value)} placeholder="bv. Bestelling FB" /></Veld>
             </div>
             <div>
-              <Veld label="Klant" id="vk-klant" hint="Optioneel bij een bonnetje; bij een dossier komt de klant van het dossier.">
+              <Veld label="Klant" id="vk-klant" hint={factuur ? 'Verplicht bij een factuur; bij een dossier komt de klant van het dossier.' : 'Optioneel bij een bonnetje; bij een dossier komt de klant van het dossier.'}>
                 <KeuzeMetToevoegen id="vk-klant" ariaLabel="Klant" waarde={f.klant_id} leegLabel="Geen klant" opties={klantOpties(f.klant_id)}
                   onKies={w => zet('klant_id', w)} onNieuw={nieuweKlant} watLabel="klant" />
               </Veld>
-              {klant?.type === 'zakelijk' && <p className="sub" style={{ margin: 0 }}>Zakelijke klant: normaal krijgt die een factuur (voorlopig via Accountable).</p>}
+              {!factuur && klant?.type === 'zakelijk' && <p className="sub" style={{ margin: 0 }}>Zakelijke klant: normaal krijgt die een factuur. <button type="button" className="linkish" onClick={() => zet('soort', 'factuur')}>Factuur maken</button></p>}
+              {factuur && v?.peppol_verplicht && <div className="waarschuwing" style={{ display: 'block' }}>Belgische btw-plichtige klant: deze factuur moet via <b>Peppol</b>. Het ERP mailt ze naar Accountable; verstuur ze daarna vanuit Accountable via Peppol. Mail de PDF dan niet als factuur naar de klant.</div>}
             </div>
           </div>
-          <KlaarOmAfTeRekenen kand={kand} klant={klant} gekozenD={new Set(regels.map(r => r.dossier_id).filter(Boolean))}
+          <KlaarOmAfTeRekenen doc={factuur ? 'factuur' : 'bonnetje'} kand={kand} klant={klant} gekozenD={new Set(regels.map(r => r.dossier_id).filter(Boolean))}
             gekozenO={new Set(regels.map(r => r.printopdracht_id).filter(Boolean))} onVoegToe={voegToe} />
           <div style={{ padding: '0 22px 16px' }}>
             <div className="tabelvak">
@@ -245,7 +259,7 @@ function NieuweVerkoop() {
                     );
                   })}
                 </tbody>
-                <tfoot><tr><th colSpan={4}>Totaal <span className="sub" style={{ fontWeight: 400 }}>btw 0 % (vrijgesteld, art. 56bis)</span></th><th className="r num">{euro(totaal)}</th><th /></tr></tfoot>
+                <tfoot><tr><th colSpan={4}>Totaal <span className="sub" style={{ fontWeight: 400 }}>{factuur ? 'btw niet van toepassing (vrijstellingsregeling kleine ondernemingen)' : 'btw 0 % (vrijgesteld, art. 56bis)'}</span></th><th className="r num">{euro(totaal)}</th><th /></tr></tfoot>
               </table>
             </div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
@@ -257,8 +271,8 @@ function NieuweVerkoop() {
                 <input type="checkbox" checked={toonFilament} onChange={e => setToonFilament(e.target.checked)} /> Ook filamentrollen tonen
               </label>
             </div>
-            {v && totaal > v.drempel && <div className="waarschuwing" style={{ margin: '10px 0 0', display: 'block' }}>Meer dan {euro(v.drempel)}: volgens Accountable is voor zo'n verkoop mogelijk een factuur nodig in plaats van een bonnetje.</div>}
-            {regels.some(r => r.soort === 'dossier' && r.dossier_id) && <p className="note" style={{ marginBottom: 0 }}>Een dossier op dit bonnetje wordt meteen afgerekend en betaald (zelfde nummer); de werkbon wordt definitief. Ongedaan maken kan later via deze verkoop.</p>}
+            {!factuur && v && totaal > v.drempel && <div className="waarschuwing" style={{ margin: '10px 0 0', display: 'block' }}>Meer dan {euro(v.drempel)}: volgens Accountable is voor zo'n verkoop mogelijk een factuur nodig in plaats van een bonnetje.</div>}
+            {regels.some(r => r.soort === 'dossier' && r.dossier_id) && <p className="note" style={{ marginBottom: 0 }}>Een dossier op {factuur ? 'deze factuur' : 'dit bonnetje'} wordt meteen afgerekend{factuur ? '' : ' en betaald'} (zelfde nummer); de werkbon wordt definitief.{factuur ? ' Zet de factuur later op betaald in de verkoop: de dossiers volgen.' : ''} Ongedaan maken kan later via deze verkoop.</p>}
 
             <label className="keuze" style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16 }}>
               <input type="checkbox" checked={naarKlant} onChange={e => setNaarKlant(e.target.checked)} /> Ook naar de klant mailen
@@ -270,7 +284,7 @@ function NieuweVerkoop() {
                 <div style={{ gridColumn: '1/-1' }}><label htmlFor="vk-tekst">Bericht</label><textarea id="vk-tekst" className="inp" rows={5} value={m.tekst} onChange={e => zetMail('tekst', e.target.value)} /></div>
               </div>
             )}
-            <p className="note">Het bonnetje gaat altijd naar <b>{v?.accountable || 'Accountable'}</b>{naarKlant ? ' (in cc)' : ''}{v?.afzender ? <>, verstuurd vanaf <b>{v.afzender}</b></> : null}. De voorraad gaat meteen naar beneden (oudste partij eerst) en de verkoop staat op betaald.</p>
+            <p className="note">{factuur ? 'De factuur' : 'Het bonnetje'} gaat altijd naar <b>{v?.accountable || 'Accountable'}</b>{naarKlant ? ' (in cc)' : ''}{v?.afzender ? <>, verstuurd vanaf <b>{v.afzender}</b></> : null}. De voorraad gaat meteen naar beneden (oudste partij eerst){factuur ? '; de factuur staat open tot je ze op betaald zet' : ' en de verkoop staat op betaald'}.</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <button type="button" className="btn primary" disabled={bezig || !!onvolledig || !!blokkeert || !v || (naarKlant && !m.aan.trim())} onClick={verkopen}>
                 {bezig ? 'Bezig…' : naarKlant ? 'Verkopen en mailen (klant + Accountable)' : 'Verkopen en mailen naar Accountable'}</button>
@@ -290,7 +304,7 @@ function NieuweVerkoop() {
 // (van de gekozen klant, of allemaal als er nog geen klant gekozen is) en de
 // voltooide losse printopdrachten die nog niet verkocht zijn. Eén klik zet
 // het op het bonnetje.
-function KlaarOmAfTeRekenen({ kand, klant, gekozenD, gekozenO, onVoegToe }) {
+function KlaarOmAfTeRekenen({ doc = 'bonnetje', kand, klant, gekozenD, gekozenO, onVoegToe }) {
   const [alles, setAlles] = useState(false);
   if (!kand) return null;
   const vanKlant = klant ? kand.dossiers.filter(d => d.klant_id === klant.id) : kand.dossiers;
@@ -300,8 +314,8 @@ function KlaarOmAfTeRekenen({ kand, klant, gekozenD, gekozenO, onVoegToe }) {
   const opdrachten = kand.printopdrachten;
   if (!kand.dossiers.length && !opdrachten.length) return null;
   const knop = (gekozen, uit, onClick) => (gekozen
-    ? <span className="sub" style={{ whiteSpace: 'nowrap' }}><Icoon naam="vink" maat={12} /> op bonnetje</span>
-    : <button type="button" className="btn klein" style={{ whiteSpace: 'nowrap' }} disabled={uit} onClick={onClick}><Icoon naam="plus" maat={12} /> Op bonnetje</button>);
+    ? <span className="sub" style={{ whiteSpace: 'nowrap' }}><Icoon naam="vink" maat={12} /> op {doc}</span>
+    : <button type="button" className="btn klein" style={{ whiteSpace: 'nowrap' }} disabled={uit} onClick={onClick}><Icoon naam="plus" maat={12} /> Op {doc}</button>);
   return (
     <div className="panel" style={{ margin: '0 22px 14px' }}>
       <h3 style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -356,6 +370,7 @@ function Verkoop({ id }) {
   const { data: instellingen } = useData('/instellingen');
   const bedrijf = (instellingen || []).find(i => i.sleutel === 'bedrijf_naam')?.waarde || '';
   const [mailen, setMailen] = useState(false);
+  const [betalen, setBetalen] = useState(false);
   const [versie, setVersie] = useState(0);
   if (fout) return <><ControlePaneel kruimels={[{ label: 'Verkoop', naar: '/verkoop' }, { label: 'Niet gevonden' }]} /><Fout tekst={fout} /></>;
   if (!v) return <Laden />;
@@ -373,7 +388,17 @@ function Verkoop({ id }) {
     try { await api.post(`/verkopen/${v.id}/mail`, f); await na(); setMailen(false); melding(`${v.nummer} gemaild naar ${[f.naar_klant && f.aan, f.naar_accountable && 'Accountable'].filter(Boolean).join(' en ')}.`); }
     catch (e) { melding(e.message, 'fout'); }
   }
-  const alsDossier = { klant_gegevens: v.klant_gegevens, afrekening_gemaild_op: v.gemaild_op, afrekening_klant_mail: v.klant_mail, afgerekend_nummer: v.nummer, titel: v.omschrijving || 'je aankoop' };
+  const factuur = v.soort === 'factuur';
+  const Doc = factuur ? 'Factuur' : 'Bonnetje';
+  async function betaald(dag) {
+    try { await api.post(`/verkopen/${v.id}/betaald`, { datum: dag }); await na(); setBetalen(false); melding(`${v.nummer} staat op betaald${metDossier ? ' (ook de dossiers erop)' : ''}.`); }
+    catch (e) { melding(e.message, 'fout'); }
+  }
+  async function betalingOngedaan() {
+    if (!await bevestig({ titel: 'Betaling ongedaan maken', tekst: `${v.nummer} weer op "niet betaald" zetten?${metDossier ? ' De dossiers erop volgen.' : ''}`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' })) return;
+    try { await api.post(`/verkopen/${v.id}/betaling-ongedaan`); await na(); melding('Betaling ongedaan gemaakt.'); } catch (e) { melding(e.message, 'fout'); }
+  }
+  const alsDossier = { afgerekend_soort: v.soort, klant_gegevens: v.klant_gegevens, afrekening_gemaild_op: v.gemaild_op, afrekening_klant_mail: v.klant_mail, afgerekend_nummer: v.nummer, titel: v.omschrijving || 'je aankoop' };
   const eigenBedrag = r2(v.totaal - v.dossierdeel);
   const marge = r2(eigenBedrag - v.kost);
   const heeftEigen = v.regels.some(r => r.soort !== 'dossier');
@@ -384,31 +409,35 @@ function Verkoop({ id }) {
         <div className="sheet">
           <div className="sheet-status">
             <div className="btns">
-              <button type="button" className="btn" onClick={() => openUrl(`/verkopen/${v.id}/pdf`)}>Bonnetje (PDF)</button>
-              {!v.geannuleerd_op && <button type="button" className={`btn${v.gemaild_op ? '' : ' primary'}`} onClick={() => setMailen(true)}>Bonnetje mailen</button>}
+              <button type="button" className="btn" onClick={() => openUrl(`/verkopen/${v.id}/pdf`)}>{Doc} (PDF)</button>
+              {!v.geannuleerd_op && <button type="button" className={`btn${v.gemaild_op ? '' : ' primary'}`} onClick={() => setMailen(true)}>{Doc} mailen</button>}
+              {factuur && !v.geannuleerd_op && !v.betaald_op && <button type="button" className={`btn${v.gemaild_op ? ' primary' : ''}`} onClick={() => setBetalen(true)}>Betaald</button>}
+              {factuur && !v.geannuleerd_op && v.betaald_op && <button type="button" className="btn ghost" onClick={betalingOngedaan}>Betaling ongedaan</button>}
               {!v.geannuleerd_op && <button type="button" className="btn ghost" onClick={ongedaan}>Ongedaan maken</button>}
             </div>
             <StatusBadge x={{ ...v, erp: true }} />
           </div>
-          {!v.gemaild_op && !v.geannuleerd_op && <div className="waarschuwing" style={{ margin: '0 22px 10px', display: 'block' }} role="alert">Dit bonnetje is nog NIET naar Accountable gemaild. Kies "Bonnetje mailen", anders ontbreekt het in je dagontvangstenboek.</div>}
+          {!v.gemaild_op && !v.geannuleerd_op && <div className="waarschuwing" style={{ margin: '0 22px 10px', display: 'block' }} role="alert">{factuur ? 'Deze factuur is nog NIET naar Accountable gemaild. Kies "Factuur mailen", anders ontbreekt ze in je inkomsten.' : 'Dit bonnetje is nog NIET naar Accountable gemaild. Kies "Bonnetje mailen", anders ontbreekt het in je dagontvangstenboek.'}</div>}
           <div className="sheet-head">
             <div className="kop">
-              <div className="nr">Losse verkoop · {datum(v.datum)}</div>
+              <div className="nr">Losse verkoop · {factuur ? 'factuur' : 'bonnetje'} · {datum(v.datum)}</div>
               <h2 className="mono-titel">{v.nummer}</h2>
               {v.omschrijving && <div>{v.omschrijving}</div>}
             </div>
           </div>
           <div className="fields">
             <div>
-              <Veld label="Klant" id="vk-klant" hint={metDossier ? 'Volgt het dossier op dit bonnetje.' : undefined}>
-                {metDossier ? <div style={{ padding: '8px 0' }}>{v.klant || '—'}</div> : (
+              <Veld label="Klant" id="vk-klant" hint={metDossier ? `Volgt het dossier op ${factuur ? 'deze factuur' : 'dit bonnetje'}.` : factuur ? 'Staat op de factuur.' : undefined}>
+                {metDossier || factuur ? <div style={{ padding: '8px 0' }}>{v.klant || '—'}</div> : (
                   <KeuzeMetToevoegen id="vk-klant" ariaLabel="Klant" waarde={v.klant_id ? String(v.klant_id) : ''} leegLabel="Geen klant" opties={klantOpties(v.klant_id ? String(v.klant_id) : '')}
                     onKies={klantZetten} onNieuw={nieuweKlant} watLabel="klant" />)}
               </Veld>
               <Veld label="Gemaild"><div style={{ padding: '8px 0' }}>{v.gemaild_op ? `Accountable op ${datum(v.gemaild_op)}` : 'Nog niet naar Accountable'}{v.klant_mail ? ` · klant: ${v.klant_mail}` : ''}</div></Veld>
             </div>
             <div>
-              <Veld label="Totaal"><div className="num" style={{ padding: '8px 0' }}><b>{euro(v.totaal)}</b> <span className="sub">btw 0 %, betaald</span></div></Veld>
+              <Veld label="Totaal"><div className="num" style={{ padding: '8px 0' }}><b>{euro(v.totaal)}</b> <span className="sub">{factuur
+                ? (v.betaald_op ? `betaald op ${datum(v.betaald_op)}` : `nog niet betaald${v.vervaldatum ? `, vervalt ${datum(v.vervaldatum)}` : ''}`)
+                : 'btw 0 %, betaald'}</span></div></Veld>
               {heeftEigen && <Veld label="Kost / marge" hint={`${v.onvolledig ? 'Onvolledig: een inkoopprijs of productiekost ontbreekt. ' : ''}${metDossier ? 'Zonder de dossiers (die staan met hun eigen marge in Financiën → Marges).' : 'Kost = inkoopprijs uit voorraad + productiekost van de printopdrachten.'}`}>
                 <div className="num" style={{ padding: '8px 0' }}>{euro(v.kost)} · marge <b>{euro(marge)}</b></div></Veld>}
             </div>
@@ -436,6 +465,7 @@ function Verkoop({ id }) {
         </div>
         <Historiek entiteit="verkoop" id={v.id} versie={versie} />
       </div>
+      {betalen && <BetaaldDialoog vanaf={v.datum} onSluit={() => setBetalen(false)} onBevestig={betaald} />}
       {mailen && <BonnetjeMailDialoog dossier={alsDossier} bedrijf={bedrijf} onSluit={() => setMailen(false)} onVerstuur={mailVerstuur} />}
     </>
   );

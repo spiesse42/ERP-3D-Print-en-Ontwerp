@@ -33,7 +33,8 @@ export const REEKSEN = {
   // 29-09: factuur door het ERP ("Factuur 2026-004"). Nummers die vroeger met
   // de hand uit Accountable overgenomen werden ("2026-003") tellen ook mee,
   // zodat er nooit een dubbel factuurnummer ontstaat.
-  FAC: { naam: 'Factuur', cijfers: 3, tabel: 'dossiers', kolom: 'afgerekend_nummer', metNaam: true, filter: "afgerekend_soort = 'factuur'", kaalOok: true },
+  FAC: { naam: 'Factuur', cijfers: 3, tabel: 'dossiers', kolom: 'afgerekend_nummer', metNaam: true, filter: "afgerekend_soort = 'factuur'", kaalOok: true,
+    ook: [{ tabel: 'verkopen', kolom: 'nummer' }] },   // 29-09: ook een losse verkoop met factuur
 };
 
 // "BON-" (klassiek) of "Bonnetje " (metNaam) — het stuk vóór "jaar-nummer".
