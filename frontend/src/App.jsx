@@ -7,6 +7,7 @@ import { NietGevonden } from './schil/BinnenKort.jsx';
 // Elke tegel wordt pas geladen als je ze opent (29-09): de eerste keer openen
 // (zeker op gsm via Home Assistant) gaat sneller dan met één groot bestand.
 const KlantenLijst = lazy(() => import('./apps/klanten/KlantenLijst.jsx'));
+const Mail = lazy(() => import('./apps/mail/Mail.jsx'));
 const KlantFormulier = lazy(() => import('./apps/klanten/KlantFormulier.jsx'));
 const Instellingen = lazy(() => import('./apps/instellingen/Instellingen.jsx'));
 const ArtikelenLijst = lazy(() => import('./apps/voorraad/ArtikelenLijst.jsx'));
@@ -47,6 +48,7 @@ export default function App() {
         <Routes>
           <Route element={<Schil />}>
             <Route index element={<Startscherm />} />
+            <Route path="mail" element={<Mail />} />
             <Route path="klanten" element={<KlantenLijst />} />
             <Route path="klanten/:id" element={<KlantFormulier />} />
             <Route path="instellingen" element={<Instellingen />} />

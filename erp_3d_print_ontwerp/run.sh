@@ -17,6 +17,9 @@ if [ -f /data/options.json ]; then
   export SMTP_FROM="$(optie smtp_from)"
   H="$(optie smtp_host)";     [ -n "$H" ] && export SMTP_HOST="$H"
   P="$(optie smtp_port)";     [ -n "$P" ] && export SMTP_PORT="$P"
+  # mailbox lezen (30-09): IMAP; leeg = zelfde server als smtp_host (OVH: ssl0.ovh.net)
+  I="$(optie imap_host)";     [ -n "$I" ] && export IMAP_HOST="$I"
+  IP="$(optie imap_port)";    [ -n "$IP" ] && export IMAP_PORT="$IP"
   T="$(optie tijdzone)";      [ -n "$T" ] && export TZ="$T"
 fi
 # Backup terugzetten: leg het bestand als "terugzetten.db" in de add-on-map
@@ -35,7 +38,7 @@ export HA_URL="http://supervisor/core"
 
 echo "ERP 3D Print & Ontwerp: poort $PORT, databank $DB_PATH"
 [ -n "$GEMINI_API_KEY" ] && echo "Gemini: ingesteld" || echo "Gemini: niet ingesteld"
-[ -n "$SMTP_USER" ] && echo "Mail: $SMTP_USER via ${SMTP_HOST:-Gmail}" || echo "Mail: niet ingesteld"
+[ -n "$SMTP_USER" ] && echo "Mail: $SMTP_USER via ${SMTP_HOST:-Gmail}, mailbox via ${IMAP_HOST:-${SMTP_HOST:-imap.gmail.com}}:${IMAP_PORT:-993}" || echo "Mail: niet ingesteld"
 
 cd /app/backend
 exec node server.js

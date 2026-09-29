@@ -24,8 +24,9 @@ import SamenvoegDialoog from './SamenvoegDialoog.jsx';
 import DossierFotos, { bewaarFotos, bewaarBestand } from './DossierFotos.jsx';
 
 const LEEG = { soort: 'klant', klant_id: '', titel: '', notities: '' };
-function naarFormulier(d, klantUitUrl) {
-  if (!d) return { kop: { ...LEEG, klant_id: klantUitUrl || '' }, regels: [] };
+// klant en titel uit de URL (nieuw dossier vanuit een klant of een mail, 30-09)
+function naarFormulier(d, klantUitUrl, titelUitUrl) {
+  if (!d) return { kop: { ...LEEG, klant_id: klantUitUrl || '', titel: titelUitUrl || LEEG.titel || '' }, regels: [] };
   return { kop: { soort: d.soort, klant_id: d.klant_id ? String(d.klant_id) : '', titel: d.titel, notities: d.notities || '' }, regels: d.regels.map(vanApi) };
 }
 const vergelijk = f => JSON.stringify({ kop: f.kop, regels: f.regels.map(naarApi) });
@@ -43,7 +44,7 @@ export default function DossierFormulier() {
   const { data: tarievenLijst } = useData('/tarieven');
   const { data: instellingen } = useData('/instellingen');
   const bedrijfNaam = (instellingen || []).find(i => i.sleutel === 'bedrijf_naam')?.waarde || '';
-  const [form, setForm] = useState(() => naarFormulier(null, params.get('klant')));
+  const [form, setForm] = useState(() => naarFormulier(null, params.get('klant'), params.get('titel')));
   const [tab, setTab] = useState(() => params.get('tab') || 'regels');
   const [bezig, setBezig] = useState(false);
   const [versie, setVersie] = useState(0);
@@ -52,7 +53,7 @@ export default function DossierFormulier() {
   const [wachtendBestand, setWachtendBestand] = useState(null);   // slicerbestand van een nog niet bewaard dossier
   const [slicerBoven, setSlicerBoven] = useState(false);   // slicerregels bovenaan (knoppenbalk boven) of onderaan
 
-  const origineel = useMemo(() => naarFormulier(nieuw ? null : d, params.get('klant')), [d, nieuw, params]);
+  const origineel = useMemo(() => naarFormulier(nieuw ? null : d, params.get('klant'), params.get('titel')), [d, nieuw, params]);
   useEffect(() => { setForm(origineel); }, [origineel]);
   const vuil = vergelijk(form) !== vergelijk(origineel);
   useEffect(() => { zetVuil(vuil); return () => zetVuil(false); }, [vuil, zetVuil]);

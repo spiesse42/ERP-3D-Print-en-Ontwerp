@@ -11,6 +11,9 @@ export const APPS = [
     menu: [['aankopen', 'Aankopen'], ['inlezen', 'Factuur / bestelbon inlezen'], ['leveranciers', 'Leveranciers']] },
   { id: 'voorraad',     naam: 'Voorraad',     icoon: 'spoel',    kleur: '#8a5a2b', klaar: true,
     menu: [['artikelen', 'Artikelen'], ['te-bestellen', 'Te bestellen'], ['mutaties', 'Mutaties'], ['telling', 'Voorraadtelling'], ['categorieen', 'Categorieën']] },
+  // 30-09: de mailbox (IMAP) met koppelingen naar klanten, dossiers en inkoop
+  { id: 'mail',         naam: 'Mail',         icoon: 'envelop',  kleur: '#2b6f8f', klaar: true,
+    menu: [['', 'Mailbox']] },
   { id: 'klanten',      naam: 'Klanten',      icoon: 'mensen',   kleur: '#7a4f86', klaar: true,
     menu: [['', 'Klanten']] },
   { id: 'financien',    naam: 'Financiën',    icoon: 'euro',     kleur: '#2f7a6a', klaar: true,
