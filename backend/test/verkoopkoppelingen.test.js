@@ -119,7 +119,7 @@ test('K3. verkopen: dossier (prijs aangepast) + printopdracht + vrije regel op Ã
   assert.equal(verkoop.dossierdeel, 50);
   assert.ok(verkoop.kost > 0, 'productiekost van de printopdracht');
   assert.equal(nepPostvak().length, postvak + 1, 'Ã©Ã©n mail');
-  assert.equal(nepPostvak().at(-1).cc, 'inkomsten@accountable.eu');
+  assert.equal(nepPostvak().at(-1).cc, undefined, '30-09: bonnetje niet naar Accountable');
   // het dossier
   const d = ok(await vraag('GET', `/dossiers/${bluey.id}`));
   assert.equal(d.fase, 'betaald');
@@ -128,7 +128,7 @@ test('K3. verkopen: dossier (prijs aangepast) + printopdracht + vrije regel op Ã
   assert.equal(d.afrekening_pdf_op, null, 'het document is dat van de verkoop');
   assert.ok(d.werkbon.definitief_op);
   assert.deepEqual(d.afgerekend_via, { id: verkoop.id, nummer: verkoop.nummer, gemaild_op: d.afgerekend_via.gemaild_op, soort: 'bonnetje', betaald_op: verkoop.datum, vervaldatum: null });
-  assert.ok(d.afgerekend_via.gemaild_op);
+  assert.equal(d.afgerekend_via.gemaild_op, null);
   assert.match(d.volgende_stap.tekst, /afgerekend via Bonnetje \d{4}-040 \(losse verkoop\)/);
   assert.equal(d.acties.afrekening_ongedaan, false);
   fout(await vraag('POST', `/dossiers/${bluey.id}/afrekening-ongedaan`), /maak de verkoop ongedaan/);

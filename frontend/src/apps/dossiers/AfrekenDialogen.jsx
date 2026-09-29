@@ -101,7 +101,9 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
   const [bezig, setBezig] = useState(false);
   const m = mail || { aan: k?.email || '', onderwerp: v ? `${v.nummer} – ${dossier.titel}` : '', tekst: mailTekst({ klant: k, bedrijf, wat: factuur ? 'je factuur' : 'je bonnetje', titel: dossier.titel }) };
   const zetMail = (sl, w) => setMail({ ...m, [sl]: w });
-  const blokkeert = !v ? null : !v.mail_ingesteld ? `Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). ${factuur ? 'Een factuur' : 'Een bonnetje'} moet naar Accountable gemaild worden.`
+  // 30-09: een bonnetje gaat niet naar Accountable; mailen enkel als het naar de klant moet
+  const mailen = factuur || naarKlant;
+  const blokkeert = !v || !mailen ? null : !v.mail_ingesteld ? (factuur ? 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Een factuur moet naar Accountable gemaild worden.' : 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie): vink "ook naar de klant" uit.')
     : !v.pdf_mogelijk ? 'Geen Chrome, Edge of Chromium gevonden om de PDF te maken.' : null;
   const kan = v && !blokkeert && !bezig && (!naarKlant || m.aan.trim()) && (!factuur || vervaldatum >= dag);
   async function ok() {
@@ -115,7 +117,7 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
         <button type="button" className="btn ghost" disabled={!v} onClick={() => openPdf(`/dossiers/${dossier.id}/${soort}/voorbeeld?datum=${dag}${factuur && vervaldatum ? `&vervaldatum=${vervaldatum}` : ''}`)}>Voorbeeld (PDF)</button>
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={onSluit}>Annuleren</button>
-        <button type="button" className="btn primary" disabled={!kan} onClick={ok}>{bezig ? 'Bezig…' : naarKlant ? 'Maken en mailen (klant + Accountable)' : 'Maken en mailen naar Accountable'}</button>
+        <button type="button" className="btn primary" disabled={!kan} onClick={ok}>{bezig ? 'Bezig…' : factuur ? (naarKlant ? 'Maken en mailen (klant + Accountable)' : 'Maken en mailen naar Accountable') : (naarKlant ? 'Maken en mailen naar de klant' : 'Bonnetje maken')}</button>
       </>}>
       {fout && <div className="waarschuwing" style={{ margin: '0 0 12px', display: 'block' }} role="alert">{fout}</div>}
       {blokkeert && <div className="waarschuwing" style={{ margin: '0 0 12px', display: 'block' }} role="alert">{blokkeert}</div>}
@@ -144,7 +146,8 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
           <div style={{ gridColumn: '1/-1' }}><label htmlFor="bn-tekst">Bericht</label><textarea id="bn-tekst" className="inp" rows={5} value={m.tekst} onChange={e => zetMail('tekst', e.target.value)} /></div>
         </div>
       )}
-      <p className="note" style={{ marginBottom: 0 }}>{factuur ? 'De factuur' : 'Het bonnetje'} gaat altijd naar <b>{v?.accountable || 'Accountable'}</b>{naarKlant ? ' (in cc)' : ''}{v?.afzender ? <>, verstuurd vanaf <b>{v.afzender}</b></> : null}. Accountable verwerkt enkel mails vanaf je geregistreerde adres of een goedgekeurde alias; {factuur ? 'de factuur' : 'het bonnetje'} verschijnt er na enkele minuten onder "Te valideren".</p>
+      {!factuur && <p className="note" style={{ marginBottom: 0 }}>Het bonnetje gaat <b>niet</b> naar Accountable (inkomsten@ leest het in als een factuur): zet het zelf in Accountable (dagontvangsten). De PDF download je daarna met "Bonnetje (PDF)".</p>}
+      {factuur && <p className="note" style={{ marginBottom: 0 }}>De factuur gaat altijd naar <b>{v?.accountable || 'Accountable'}</b>{naarKlant ? ' (in cc)' : ''}{v?.afzender ? <>, verstuurd vanaf <b>{v.afzender}</b></> : null}. Accountable verwerkt enkel mails vanaf je geregistreerde adres of een goedgekeurde alias; {factuur ? 'de factuur' : 'het bonnetje'} verschijnt er na enkele minuten onder "Te valideren".</p>}
     </Dialoog>
   );
 }
@@ -153,10 +156,11 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
 // nog niet gebeurd is (nooit twee keer: dat zou een dubbele inkomst geven).
 export function BonnetjeMailDialoog({ dossier, bedrijf, onSluit, onVerstuur }) {
   const k = dossier.klant_gegevens;
-  const nogNietBijAccountable = !dossier.afrekening_gemaild_op;
+  const factuur = dossier.afgerekend_soort === 'factuur';
+  // 30-09: een bonnetje enkel naar de klant (niet naar Accountable)
+  const nogNietBijAccountable = factuur && !dossier.afrekening_gemaild_op;
   const [naarAcc, setNaarAcc] = useState(nogNietBijAccountable);
   const [naarKlant, setNaarKlant] = useState(!nogNietBijAccountable);
-  const factuur = dossier.afgerekend_soort === 'factuur';
   const [m, setM] = useState({ aan: dossier.afrekening_klant_mail || k?.email || '', onderwerp: `${dossier.afgerekend_nummer} – ${dossier.titel}`, tekst: mailTekst({ klant: k, bedrijf, wat: factuur ? 'je factuur' : 'je bonnetje', titel: dossier.titel }) });
   const [bezig, setBezig] = useState(false);
   const zet = (sl, w) => setM(x => ({ ...x, [sl]: w }));
@@ -168,12 +172,12 @@ export function BonnetjeMailDialoog({ dossier, bedrijf, onSluit, onVerstuur }) {
   return (
     <Dialoog titel={`${dossier.afgerekend_nummer} mailen`} onSluit={onSluit} breed
       voet={<><button type="button" className="btn" onClick={onSluit}>Annuleren</button><button type="button" className="btn primary" disabled={!kan} onClick={ok}>{bezig ? 'Bezig…' : 'Versturen'}</button></>}>
-      {nogNietBijAccountable
+      {!factuur ? <p className="note" style={{ marginTop: 0 }}>Het bonnetje gaat <b>niet</b> naar Accountable (inkomsten@ leest het in als een factuur): zet het zelf in Accountable (dagontvangsten).</p> : nogNietBijAccountable
         ? <div className="waarschuwing" style={{ margin: '0 0 12px', display: 'block' }}>{factuur ? 'Deze factuur' : 'Dit bonnetje'} is nog <b>niet</b> naar Accountable gemaild.</div>
         : <p className="note" style={{ marginTop: 0 }}>Al naar Accountable gemaild op {fmtDatum(dossier.afrekening_gemaild_op)}. Nog eens sturen kan niet: dat zou een dubbele inkomst geven.</p>}
-      <label className="keuze" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      {factuur && <label className="keuze" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <input type="checkbox" checked={naarAcc} disabled={!nogNietBijAccountable} onChange={e => setNaarAcc(e.target.checked)} /> Naar Accountable
-      </label>
+      </label>}
       <label className="keuze" style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
         <input type="checkbox" checked={naarKlant} onChange={e => setNaarKlant(e.target.checked)} /> Naar de klant{naarAcc && naarKlant ? ' (Accountable in cc)' : ''}
       </label>

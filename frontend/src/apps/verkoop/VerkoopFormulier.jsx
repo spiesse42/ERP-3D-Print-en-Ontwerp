@@ -116,7 +116,8 @@ function NieuweVerkoop() {
   const andereKlant = regels.some(r => r.soort === 'dossier' && r.dossier_id && dossierVan.get(r.dossier_id)?.klant_id && f.klant_id && String(dossierVan.get(r.dossier_id).klant_id) !== f.klant_id);
   const m = mail || { aan: klant?.email || '', onderwerp: v ? `${v.nummer}${f.omschrijving ? ` – ${f.omschrijving}` : ''}` : '', tekst: mailTekst({ klant, bedrijf, wat: factuur ? 'je factuur' : 'je bonnetje', titel: f.omschrijving || 'je aankoop' }) };
   const zetMail = (k, w) => setMail({ ...m, [k]: w });
-  const blokkeert = !v ? null : !v.mail_ingesteld ? `Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). ${factuur ? 'Een factuur' : 'Een bonnetje'} moet naar Accountable gemaild worden.`
+  // 30-09: een bonnetje gaat niet naar Accountable; mailen enkel als het naar de klant moet
+  const blokkeert = !v || !(factuur || naarKlant) ? null : !v.mail_ingesteld ? (factuur ? 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Een factuur moet naar Accountable gemaild worden.' : 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie): vink "ook naar de klant" uit.')
     : !v.pdf_mogelijk ? 'Geen Chrome, Edge of Chromium gevonden om de PDF te maken.' : null;
   const onvolledig = !ingevuld.length ? 'Voeg minstens één regel toe.'
     : ingevuld.some(r => r.soort === 'vrij' && !r.omschrijving.trim()) ? 'Geef elke vrije regel een omschrijving.'
@@ -144,7 +145,7 @@ function NieuweVerkoop() {
       const r = await api.post('/verkopen', { ...body(), naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) });
       zetVuil(false);
       if (r.mail_fout) melding(`${r.nummer} is gemaakt, maar het mailen mislukte: ${r.mail_fout} Het is nog NIET bij Accountable: gebruik "${factuur ? 'Factuur' : 'Bonnetje'} mailen".`, 'fout');
-      else melding(`${r.nummer} gemaakt en gemaild naar Accountable${naarKlant ? ` en ${m.aan}` : ''}.`);
+      else melding(factuur ? `${r.nummer} gemaakt en gemaild naar Accountable${naarKlant ? ` en ${m.aan}` : ''}.` : `${r.nummer} gemaakt${naarKlant ? ` en gemaild naar ${m.aan}` : ''}. Zet het zelf in Accountable.`);
       navigeer(`/verkoop/${r.id}`);
     } catch (e) { melding(e.message, 'fout'); setBezig(false); }
   }
@@ -284,10 +285,10 @@ function NieuweVerkoop() {
                 <div style={{ gridColumn: '1/-1' }}><label htmlFor="vk-tekst">Bericht</label><textarea id="vk-tekst" className="inp" rows={5} value={m.tekst} onChange={e => zetMail('tekst', e.target.value)} /></div>
               </div>
             )}
-            <p className="note">{factuur ? 'De factuur' : 'Het bonnetje'} gaat altijd naar <b>{v?.accountable || 'Accountable'}</b>{naarKlant ? ' (in cc)' : ''}{v?.afzender ? <>, verstuurd vanaf <b>{v.afzender}</b></> : null}. De voorraad gaat meteen naar beneden (oudste partij eerst){factuur ? '; de factuur staat open tot je ze op betaald zet' : ' en de verkoop staat op betaald'}.</p>
+            <p className="note">{factuur ? <>De factuur gaat altijd naar <b>{v?.accountable || 'Accountable'}</b>{naarKlant ? ' (in cc)' : ''}{v?.afzender ? <>, verstuurd vanaf <b>{v.afzender}</b></> : null}.</> : <>Het bonnetje gaat <b>niet</b> naar Accountable (inkomsten@ leest het in als een factuur): zet het zelf in Accountable (dagontvangsten).</>} De voorraad gaat meteen naar beneden (oudste partij eerst){factuur ? '; de factuur staat open tot je ze op betaald zet' : ' en de verkoop staat op betaald'}.</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <button type="button" className="btn primary" disabled={bezig || !!onvolledig || !!blokkeert || !v || (naarKlant && !m.aan.trim())} onClick={verkopen}>
-                {bezig ? 'Bezig…' : naarKlant ? 'Verkopen en mailen (klant + Accountable)' : 'Verkopen en mailen naar Accountable'}</button>
+                {bezig ? 'Bezig…' : factuur ? (naarKlant ? 'Verkopen en mailen (klant + Accountable)' : 'Verkopen en mailen naar Accountable') : (naarKlant ? 'Verkopen en mailen naar de klant' : 'Verkopen')}</button>
               <button type="button" className="btn" disabled={!!onvolledig} onClick={voorbeeld}>Voorbeeld (PDF)</button>
               <button type="button" className="btn ghost" onClick={() => navigeer('/verkoop')}>Annuleren</button>
               {onvolledig && ingevuld.length > 0 && <span className="sub">{onvolledig}</span>}
@@ -381,7 +382,7 @@ function Verkoop({ id }) {
   }
   async function ongedaan() {
     if (!await bevestig({ titel: 'Verkoop ongedaan maken', gevaarlijk: true, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug',
-      tekst: `${v.nummer} ongedaan maken? De voorraad wordt teruggeboekt${metDossier ? ', de dossiers worden weer "af te rekenen" (werkbon weer concept)' : ''}${v.regels.some(r => r.soort === 'printopdracht') ? ', de printopdrachten komen weer vrij' : ''} en de verkoop telt niet meer mee in Financiën. Het nummer blijft bezet.${v.gemaild_op ? ' Het bonnetje staat al in Accountable: pas het daar ook aan.' : ''}` })) return;
+      tekst: `${v.nummer} ongedaan maken? De voorraad wordt teruggeboekt${metDossier ? ', de dossiers worden weer "af te rekenen" (werkbon weer concept)' : ''}${v.regels.some(r => r.soort === 'printopdracht') ? ', de printopdrachten komen weer vrij' : ''} en de verkoop telt niet meer mee in Financiën. Het nummer blijft bezet.${factuur ? (v.gemaild_op ? ' De factuur staat al in Accountable: maak daar een creditnota.' : '') : ' Zette je het bonnetje al in Accountable? Pas het daar dan ook aan.'}` })) return;
     try { await api.post(`/verkopen/${v.id}/annuleer`); await na(); melding('Verkoop ongedaan gemaakt.'); } catch (e) { melding(e.message, 'fout'); }
   }
   async function mailVerstuur(f) {
@@ -410,14 +411,14 @@ function Verkoop({ id }) {
           <div className="sheet-status">
             <div className="btns">
               <button type="button" className="btn" onClick={() => openUrl(`/verkopen/${v.id}/pdf`)}>{Doc} (PDF)</button>
-              {!v.geannuleerd_op && <button type="button" className={`btn${v.gemaild_op ? '' : ' primary'}`} onClick={() => setMailen(true)}>{Doc} mailen</button>}
+              {!v.geannuleerd_op && <button type="button" className={`btn${factuur && !v.gemaild_op ? ' primary' : ''}`} onClick={() => setMailen(true)}>{Doc} mailen</button>}
               {factuur && !v.geannuleerd_op && !v.betaald_op && <button type="button" className={`btn${v.gemaild_op ? ' primary' : ''}`} onClick={() => setBetalen(true)}>Betaald</button>}
               {factuur && !v.geannuleerd_op && v.betaald_op && <button type="button" className="btn ghost" onClick={betalingOngedaan}>Betaling ongedaan</button>}
               {!v.geannuleerd_op && <button type="button" className="btn ghost" onClick={ongedaan}>Ongedaan maken</button>}
             </div>
             <StatusBadge x={{ ...v, erp: true }} />
           </div>
-          {!v.gemaild_op && !v.geannuleerd_op && <div className="waarschuwing" style={{ margin: '0 22px 10px', display: 'block' }} role="alert">{factuur ? 'Deze factuur is nog NIET naar Accountable gemaild. Kies "Factuur mailen", anders ontbreekt ze in je inkomsten.' : 'Dit bonnetje is nog NIET naar Accountable gemaild. Kies "Bonnetje mailen", anders ontbreekt het in je dagontvangstenboek.'}</div>}
+          {factuur && !v.gemaild_op && !v.geannuleerd_op && <div className="waarschuwing" style={{ margin: '0 22px 10px', display: 'block' }} role="alert">{factuur ? 'Deze factuur is nog NIET naar Accountable gemaild. Kies "Factuur mailen", anders ontbreekt ze in je inkomsten.' : 'Dit bonnetje is nog NIET naar Accountable gemaild. Kies "Bonnetje mailen", anders ontbreekt het in je dagontvangstenboek.'}</div>}
           <div className="sheet-head">
             <div className="kop">
               <div className="nr">Losse verkoop · {factuur ? 'factuur' : 'bonnetje'} · {datum(v.datum)}</div>
@@ -432,7 +433,7 @@ function Verkoop({ id }) {
                   <KeuzeMetToevoegen id="vk-klant" ariaLabel="Klant" waarde={v.klant_id ? String(v.klant_id) : ''} leegLabel="Geen klant" opties={klantOpties(v.klant_id ? String(v.klant_id) : '')}
                     onKies={klantZetten} onNieuw={nieuweKlant} watLabel="klant" />)}
               </Veld>
-              <Veld label="Gemaild"><div style={{ padding: '8px 0' }}>{v.gemaild_op ? `Accountable op ${datum(v.gemaild_op)}` : 'Nog niet naar Accountable'}{v.klant_mail ? ` · klant: ${v.klant_mail}` : ''}</div></Veld>
+              <Veld label="Gemaild"><div style={{ padding: '8px 0' }}>{v.gemaild_op ? `Accountable op ${datum(v.gemaild_op)}` : factuur ? 'Nog niet naar Accountable' : 'Niet naar Accountable (zelf ingeven)'}{v.klant_mail ? ` · klant: ${v.klant_mail}` : ''}</div></Veld>
             </div>
             <div>
               <Veld label="Totaal"><div className="num" style={{ padding: '8px 0' }}><b>{euro(v.totaal)}</b> <span className="sub">{factuur

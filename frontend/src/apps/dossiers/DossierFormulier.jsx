@@ -135,7 +135,7 @@ export default function DossierFormulier() {
       const r = await api.post(`/dossiers/${id}/${soort}`, f);
       await herlaad(); setVersie(v => v + 1); setDialoog(null);
       if (r.mail_fout) melding(`${r.afgerekend_nummer} is gemaakt, maar het mailen mislukte: ${r.mail_fout} Het is nog NIET bij Accountable: gebruik "${soort === 'factuur' ? 'Factuur' : 'Bonnetje'} mailen".`, 'fout');
-      else melding(`${r.afgerekend_nummer} gemaakt en gemaild naar Accountable${f.naar_klant ? ` en ${f.aan}` : ''}.`);
+      else melding(soort === 'factuur' ? `${r.afgerekend_nummer} gemaakt en gemaild naar Accountable${f.naar_klant ? ` en ${f.aan}` : ''}.` : `${r.afgerekend_nummer} gemaakt${f.naar_klant ? ` en gemaild naar ${f.aan}` : ''}. Zet het zelf in Accountable.`);
     } catch (e) { melding(e.message, 'fout'); }
   }
   async function bonnetjeMailen(f) {
@@ -168,7 +168,7 @@ export default function DossierFormulier() {
     : null;
   const toonAfrekenen = !nieuw && d.soort === 'klant' && voorAfrekening;
   const afrekenKnop = toonAfrekenen && (<>
-    <button type="button" className="btn" disabled={!!afrekenReden} title={afrekenReden || 'Het ERP maakt het bonnetje en mailt het naar Accountable (en optioneel naar de klant)'}
+    <button type="button" className="btn" disabled={!!afrekenReden} title={afrekenReden || 'Het ERP maakt het bonnetje (optioneel naar de klant gemaild); zelf in Accountable ingeven'}
       onClick={() => open('bonnetje')}>Bonnetje maken</button>
     <button type="button" className="btn" disabled={!!afrekenReden || !d.klant_id} title={afrekenReden || (!d.klant_id ? 'Een factuur is op naam: kies eerst een klant.' : 'Het ERP maakt de factuur en mailt ze naar Accountable (en optioneel naar de klant)')}
       onClick={() => open('factuur')}>Factuur maken</button>
@@ -180,7 +180,7 @@ export default function DossierFormulier() {
   const Doc = erpDoc === 'factuur' ? 'Factuur' : 'Bonnetje';
   const bonnetjeKnoppen = erpDoc && <>
     <button type="button" className="btn" onClick={() => window.open(new URL(`${BASE}/dossiers/${id}/${erpDoc}/pdf`, document.baseURI).href, '_blank', 'noopener')}>{Doc} (PDF)</button>
-    <button type="button" className={`btn${d.afrekening_gemaild_op ? '' : ' primary'}`} onClick={() => open('bonnetje-mail')}>{Doc} mailen</button>
+    <button type="button" className={`btn${erpDoc === 'factuur' && !d.afrekening_gemaild_op ? ' primary' : ''}`} onClick={() => open('bonnetje-mail')}>{Doc} mailen</button>
   </>;
   // Starten (25-09): werkbon (klantopdracht) + printopdracht per printregel met printer
   const heeftPrint = !nieuw && d.regels.some(r => r.type === 'printen');
@@ -255,8 +255,8 @@ export default function DossierFormulier() {
               <Veld label="Totaal">{uitkomst ? (uitkomst.volledig ? <b className="num">{euro(uitkomst.totaal)}</b> : <span className="badge b-warn">onvolledig</span>) : <span className="sub">—</span>}</Veld>
               {!nieuw && d.afgerekend_op && (
                 <Veld label="Afgerekend">
-                  <span><span className="mono">{String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>{d.afrekening_pdf_op && !d.afrekening_gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}
-                    {d.afgerekend_via && <> · <Link naar={`/verkoop/${d.afgerekend_via.id}`}>via losse verkoop</Link>{!d.afgerekend_via.gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}</>} · {datum(d.afgerekend_op)} · <span className="num">{euro(d.afgerekend_bedrag)}</span></span>
+                  <span><span className="mono">{String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>{d.afrekening_pdf_op && d.afgerekend_soort === 'factuur' && !d.afrekening_gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}
+                    {d.afgerekend_via && <> · <Link naar={`/verkoop/${d.afgerekend_via.id}`}>via losse verkoop</Link>{d.afgerekend_via.soort === 'factuur' && !d.afgerekend_via.gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}</>} · {datum(d.afgerekend_op)} · <span className="num">{euro(d.afgerekend_bedrag)}</span></span>
                 </Veld>
               )}
               {!nieuw && d.samengevoegd_uit?.length > 0 && (

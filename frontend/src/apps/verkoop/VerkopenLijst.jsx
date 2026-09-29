@@ -12,6 +12,8 @@ const BRON = { verkoop: 'Losse verkoop', dossier: 'Dossier' };
 export function StatusBadge({ x }) {
   if (x.geannuleerd_op) return <span className="badge b-neutral">Ongedaan</span>;
   if (!x.erp) return <span className="badge b-neutral" title="Gemaakt in Accountable, nummer met de hand ingevuld">Uit Accountable</span>;
+  // 30-09: een bonnetje zet je zelf in Accountable
+  if (!x.gemaild_op && x.soort !== 'factuur') return <span className="badge b-neutral" title="Bonnetjes gaan niet naar inkomsten@ (daar worden ze een factuur): zelf in Accountable ingeven">Zelf in Accountable</span>;
   if (!x.gemaild_op) return <span className="badge b-crit">Nog niet gemaild</span>;
   // factuur (29-09): open tot ze betaald is
   if (x.soort === 'factuur' && !x.betaald_op) return <span className="badge b-warn" title={x.vervaldatum ? `Vervalt ${datum(x.vervaldatum)}` : undefined}>Bij Accountable · onbetaald</span>;
@@ -41,7 +43,7 @@ export default function VerkopenLijst() {
     return r;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, zoek, soort, sortering]);
-  const nietGemaild = (data || []).filter(x => x.erp && !x.gemaild_op && !x.geannuleerd_op).length;
+  const nietGemaild = (data || []).filter(x => x.erp && x.soort === 'factuur' && !x.gemaild_op && !x.geannuleerd_op).length;
   const open = x => navigeer(x.bron === 'verkoop' ? `/verkoop/${x.id}` : `/dossiers/${x.id}`);
   return (
     <>
@@ -52,7 +54,7 @@ export default function VerkopenLijst() {
           <Chip aan={soort === 'bonnetje'} onClick={() => setSoort('bonnetje')}>Bonnetjes</Chip>
           <Chip aan={soort === 'factuur'} onClick={() => setSoort('factuur')}>Facturen</Chip>
         </>} />
-      {nietGemaild > 0 && <div className="waarschuwing" style={{ margin: '12px 22px 0', display: 'block' }} role="status">{nietGemaild} {nietGemaild > 1 ? 'bonnetjes of facturen zijn' : 'bonnetje of factuur is'} nog niet naar Accountable gemaild: open {nietGemaild > 1 ? 'ze' : 'het'} en kies "mailen".</div>}
+      {nietGemaild > 0 && <div className="waarschuwing" style={{ margin: '12px 22px 0', display: 'block' }} role="status">{nietGemaild} factu{nietGemaild > 1 ? 'ren zijn' : 'ur is'} nog niet naar Accountable gemaild: open {nietGemaild > 1 ? 'ze' : 'ze'} en kies "Factuur mailen".</div>}
       {fout ? <Fout tekst={fout} /> : !data && laden ? <Laden /> : (
         <Lijst kolommen={kolommen} groepen={[{ titel: null, rijen }]} sleutel={x => x.sleutel} onOpen={open}
           sortering={sortering} onSorteer={i => setSortering(s => ({ kolom: i, op: s.kolom === i ? !s.op : true }))}
