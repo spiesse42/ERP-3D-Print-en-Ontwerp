@@ -26,6 +26,7 @@ async function vraag(methode, pad, body) {
   try { data = await res.json(); } catch { /* leeg */ }
   return { status: res.status, data };
 }
+const regelsBody = rs => rs.map(x => ({ id: x.id, soort: x.soort, artikel_id: x.artikel_id, omschrijving: x.omschrijving, aantal: x.aantal, prijs_per_eenheid: x.prijs_per_eenheid }));
 const ok = (r, status = 200) => { assert.equal(r.status, status, JSON.stringify(r.data)); return r.data; };
 const fout = (r, patroon) => { assert.equal(r.status, 400, JSON.stringify(r.data)); if (patroon) assert.match(r.data.error, patroon); };
 
@@ -90,13 +91,14 @@ test('ontvangen: deels, dan de rest; prijzen bijwerken; regel ligt daarna vast',
   // annuleren kan niet meer
   fout(await vraag('POST', `/inkoop/aankopen/${ak}/annuleren`), /al iets ontvangen/);
   // ontvangen regel: prijs vast, aantal niet onder ontvangen, niet verwijderen
-  const regelsBody = rs => rs.map(x => ({ id: x.id, soort: x.soort, artikel_id: x.artikel_id, omschrijving: x.omschrijving, aantal: x.aantal, prijs_per_eenheid: x.prijs_per_eenheid }));
   let rs = regelsBody(a.regels); rs[0].prijs_per_eenheid = 0.06;
   fout(await vraag('PUT', `/inkoop/aankopen/${ak}`, { leverancier_id: action, regels: rs }), /liggen vast/);
   rs = regelsBody(a.regels); rs[0].aantal = 50;
   fout(await vraag('PUT', `/inkoop/aankopen/${ak}`, { leverancier_id: action, regels: rs }), /niet lager/);
+  // al iets van gebruikt → regel kan niet weg (29-09: ongebruikt mag wel, zie hieronder)
+  ok(await vraag('POST', `/voorraad/artikelen/${ring}/boeking`, { richting: 'uit', aantal: 1, reden: 'gebruik' }));
   rs = regelsBody(a.regels).slice(1);
-  fout(await vraag('PUT', `/inkoop/aankopen/${ak}`, { leverancier_id: action, regels: rs }), /kan niet verwijderd/);
+  fout(await vraag('PUT', `/inkoop/aankopen/${ak}`, { leverancier_id: action, regels: rs }), /al 1 .*gebruikt, dus de regel kan niet weg/);
   // rest komt nooit: aantal ring = 60, lijm ontvangen → status ontvangen
   rs = regelsBody(a.regels); rs[0].aantal = 60;
   ok(await vraag('PUT', `/inkoop/aankopen/${ak}`, { leverancier_id: action, extern_factuurnummer: 'F-123', regels: rs }));
@@ -108,7 +110,7 @@ test('ontvangen: deels, dan de rest; prijzen bijwerken; regel ligt daarna vast',
   assert.ok(h.some(g => g.soort === 'status' && /^Ontvangen: 2 × Secondelijm/.test(g.tekst)));
   assert.ok(h.some(g => g.soort === 'status' && /^Deels ontvangen: 60 × Sleutelring/.test(g.tekst)));
   const ha = ok(await vraag('GET', `/historiek/artikel/${ring}`));
-  assert.match(ha[0].tekst, /ontvangen via AK-/);
+  assert.ok(ha.some(g => /ontvangen via AK-/.test(g.tekst)));
 });
 
 test('plaatshouder: merk kiezen bij ontvangst, prijsgroep en artikel worden aangemaakt', async () => {
@@ -218,4 +220,35 @@ test('bijlagen: opladen, lijst, downloaden, weigeren, verwijderen', async () => 
   assert.equal(ok(await vraag('GET', `/bijlagen/aankoop/${ak}`)).length, 0);
   const h = ok(await vraag('GET', `/historiek/aankoop/${ak}`));
   assert.match(h[0].tekst, /Bijlage verwijderd: factuur é\.pdf/);
+});
+
+test('dubbele regel die al ontvangen is: verwijderen boekt de voorraad terug (zolang er niets van gebruikt is)', async () => {
+  const art = ok(await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Magneetje', wordt_gekocht: true }), 201).id;
+  const nieuw = ok(await vraag('POST', '/inkoop/aankopen', { leverancier_id: action, regels: [
+    { soort: 'artikel', artikel_id: art, aantal: 3, prijs_per_eenheid: 0.5 }, { soort: 'artikel', artikel_id: art, aantal: 3, prijs_per_eenheid: 0.5 }] }), 201);
+  let a = ok(await vraag('GET', `/inkoop/aankopen/${nieuw.id}`));
+  a = ok(await vraag('POST', `/inkoop/aankopen/${a.id}/ontvangen`, { lijnen: a.regels.map(r => ({ regel_id: r.id, aantal: 3 })) }));
+  assert.equal(ok(await vraag('GET', `/voorraad/artikelen/${art}`)).voorraad, 6);
+  assert.ok(a.regels.every(r => r.wegbaar));
+  a = ok(await vraag('PUT', `/inkoop/aankopen/${a.id}`, { leverancier_id: action, regels: regelsBody(a.regels).slice(0, 1) }));
+  assert.equal(a.regels.length, 1); assert.equal(a.status, 'ontvangen');
+  assert.equal(ok(await vraag('GET', `/voorraad/artikelen/${art}`)).voorraad, 3, 'voorraad teruggeboekt');
+  const h = ok(await vraag('GET', `/historiek/aankoop/${a.id}`));
+  assert.ok(h.some(g => /Magneetje verwijderd; ontvangst van 3 teruggeboekt/.test(g.tekst)));
+});
+
+test('factuur koppelen aan een bestelling: verzending met een andere naam en regels zonder koppeling worden geen dubbele regels (29-09)', async () => {
+  const { bevestig } = await import('../domein/factuurherkenning.js');
+  const art = ok(await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Rood testrolletje', wordt_gekocht: true }), 201).id;
+  const bestelling = ok(await vraag('POST', '/inkoop/aankopen', { leverancier_id: action, extern_bestelnummer: 'WEB-42', regels: [
+    { soort: 'artikel', artikel_id: art, aantal: 1, prijs_per_eenheid: 8.99 }, { soort: 'kost', omschrijving: 'Verzendkosten', aantal: 1, prijs_per_eenheid: 3.99 }] }), 201);
+  ok(await vraag('POST', `/inkoop/aankopen/${bestelling.id}/bestellen`));
+  // factuur: geen aankoop_regel_id meegegeven (zoals bij filament dat pas bij het inlezen herkend werd), verzending heet anders
+  const r = getDb().transaction(() => bevestig(getDb(), { leverancier: { id: action }, factuurnummer: 'F-WEB-42', aankoop_id: bestelling.id, meteen_ontvangen: true,
+    regels: [{ soort: 'artikel', artikel_id: art, aantal: 1, prijs_per_eenheid: 8.99 }, { soort: 'kost', omschrijving: 'Verzending', aantal: 1, prijs_per_eenheid: 3.99 }] }))();
+  assert.equal(r.bijgewerkt, 2); assert.equal(r.toegevoegd, 0);
+  const a = ok(await vraag('GET', `/inkoop/aankopen/${bestelling.id}`));
+  assert.equal(a.regels.length, 2, 'geen dubbele regels');
+  assert.equal(a.status, 'ontvangen');
+  assert.equal(ok(await vraag('GET', `/voorraad/artikelen/${art}`)).voorraad, 1, 'één rol in voorraad, niet twee');
 });
