@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { useData } from '../../schil/useData.js';
@@ -20,6 +20,7 @@ import LeveringenTab from './LeveringenTab.jsx';
 import ProductieTab from './ProductieTab.jsx';
 import VolgendeStap from './VolgendeStap.jsx';
 import SlicerDialoog from './SlicerDialoog.jsx';
+import SamenvoegDialoog from './SamenvoegDialoog.jsx';
 import DossierFotos, { bewaarFotos, bewaarBestand } from './DossierFotos.jsx';
 
 const LEEG = { soort: 'klant', klant_id: '', titel: '', notities: '' };
@@ -46,9 +47,10 @@ export default function DossierFormulier() {
   const [tab, setTab] = useState(() => params.get('tab') || 'regels');
   const [bezig, setBezig] = useState(false);
   const [versie, setVersie] = useState(0);
-  const [dialoog, setDialoog] = useState(null);
-  const [wachtendeFotos, setWachtendeFotos] = useState([]);
-  const [wachtendBestand, setWachtendBestand] = useState(null);   // slicerbestand van een nog niet bewaard dossier   // plaatafbeeldingen van een nog niet bewaard dossier   // 'afrekenen' | 'betaald' | 'overname'
+  const [dialoog, setDialoog] = useState(null);   // 'afrekenen' | 'betaald' | 'overname' | 'slicer' | 'samenvoegen' | …
+  const [wachtendeFotos, setWachtendeFotos] = useState([]);   // plaatafbeeldingen van een nog niet bewaard dossier
+  const [wachtendBestand, setWachtendBestand] = useState(null);   // slicerbestand van een nog niet bewaard dossier
+  const [slicerBoven, setSlicerBoven] = useState(false);   // slicerregels bovenaan (knoppenbalk boven) of onderaan
 
   const origineel = useMemo(() => naarFormulier(nieuw ? null : d, params.get('klant')), [d, nieuw, params]);
   useEffect(() => { setForm(origineel); }, [origineel]);
@@ -196,6 +198,7 @@ export default function DossierFormulier() {
     {acties.afrekening_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('afrekening-ongedaan', 'Afrekening ongedaan gemaakt.', { vraag: { titel: 'Afrekening ongedaan maken', tekst: `De verwijzing naar ${String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`} wordt gewist en het dossier kan weer gewijzigd worden. Pas dit ook aan in Accountable (bv. een creditnota).`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug', gevaarlijk: true } })}>Afrekening ongedaan</button>}
     {acties.annuleren && <button type="button" className="btn ghost" title="Het hele dossier stopt: niets af te rekenen of te leveren" onClick={() => actie('annuleren', 'Dossier geannuleerd.', { vraag: { titel: 'Dossier annuleren', tekst: `${d.nummer} annuleren? Het hele dossier stopt: er wordt niets afgerekend of geleverd, en open printopdrachten worden mee geannuleerd. Gebruik dit ook als de klant niets hoeft te betalen. Heropenen kan later nog.`, bevestigLabel: 'Dossier annuleren', annuleerLabel: 'Terug' } })}>Dossier annuleren</button>}
     {acties.heropenen && <button type="button" className="btn" onClick={() => actie('heropenen', 'Dossier heropend.')}>Heropenen</button>}
+    {acties.samenvoegen && <button type="button" className="btn ghost" title="Andere open dossiers van deze klant hierin samenvoegen (regels, printopdrachten, runs, leveringen, bijlagen)" onClick={() => open('samenvoegen')}>Samenvoegen…</button>}
   </>;
   const stappen = nieuw ? ['nieuw'] : d.stappen;
 
@@ -212,7 +215,7 @@ export default function DossierFormulier() {
           {!nieuw && (
             <div className="sheet-status">
               <div className="btns">{workflow}</div>
-              {fase !== 'geannuleerd' && stappen.length > 1 && <Statusbalk stappen={stappen.map(s => FASE[s][1])} huidig={stappen.indexOf(fase)} />}
+              {fase !== 'geannuleerd' && fase !== 'samengevoegd' && stappen.length > 1 && <Statusbalk stappen={stappen.map(s => FASE[s][1])} huidig={stappen.indexOf(fase)} />}
             </div>
           )}
           {!nieuw && <VolgendeStap d={d} vuil={vuil} afrekenReden={afrekenReden} onStarten={starten} onAfrekenen={() => open('afrekenen')}
@@ -252,16 +255,26 @@ export default function DossierFormulier() {
                     {d.afgerekend_via && <> · <Link naar={`/verkoop/${d.afgerekend_via.id}`}>via losse verkoop</Link>{!d.afgerekend_via.gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}</>} · {datum(d.afgerekend_op)} · <span className="num">{euro(d.afgerekend_bedrag)}</span></span>
                 </Veld>
               )}
+              {!nieuw && d.samengevoegd_uit?.length > 0 && (
+                <Veld label="Samengevoegd uit"><span>{d.samengevoegd_uit.map((x, i) => <Fragment key={x.id}>{i > 0 && ', '}<Link naar={`/dossiers/${x.id}`}>{x.nummer}</Link> <span className="sub">{x.titel}</span></Fragment>)}</span></Veld>
+              )}
+              {!nieuw && d.samengevoegd_in && <Veld label="Samengevoegd in"><Link naar={`/dossiers/${d.samengevoegd_in}`}>{d.samengevoegd_in_nummer}</Link></Veld>}
               {!nieuw && d.betaald_op && <Veld label="Betaald op"><span className="num">{datum(d.betaald_op)}</span></Veld>}
               {!nieuw && d.gratis_op && <Veld label="Gratis geleverd"><span><span className="num">{datum(d.gratis_op)}</span>{d.gratis_waarde != null && <> · waarde <span className="num">{euro(d.gratis_waarde)}</span></>}</span></Veld>}
             </div>
           </div>
 
-          {!nieuw && <DossierFotos key={versie} id={id} onGewijzigd={() => setVersie(v => v + 1)} />}
+          {!nieuw && fase !== 'samengevoegd' && <DossierFotos key={versie} id={id} onGewijzigd={() => setVersie(v => v + 1)} />}
           <Tabs tabs={[['regels', `Regels (${form.regels.length})`], ...(nieuw ? [] : [...(d.soort === 'klant' ? [['offertes', `Offertes (${d.offertes.length})`]] : []), ...(d.productie?.regels.length ? [['productie', <>Productie ({d.productie.aantal_opdrachten}){d.productie.te_koppelen_runs?.length > 0 && <span className="tab-stip" title="Run(s) te koppelen" aria-label="runs te koppelen" />}</>]] : []), ['werkbon', 'Werkbon'], ...(d.soort === 'klant' ? [['leveringen', `Leveringen (${d.leveringen.length})`]] : []), ['bijlagen', 'Bijlagen']]), ['notities', 'Notities']]} actief={tab} onKies={setTab} />
           <div className="tabpanel">
             {tab === 'regels' && (
               <>
+                {!kopVast && form.regels.length > 0 && (
+                  <div className="toevoegen boven" aria-label="Regel bovenaan toevoegen">
+                    {TYPES.map(([w, l]) => <button key={w} type="button" className="btn" title="Nieuwe regel bovenaan" onClick={() => setForm(f => ({ ...f, regels: [nieuweRegel(w), ...f.regels] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}
+                    <button type="button" className="btn" title="Printregels uit een geslicet 3mf- of gcode-bestand, bovenaan" onClick={() => { setSlicerBoven(true); setDialoog('slicer'); }}><Icoon naam="plus" maat={14} /> Uit slicerbestand</button>
+                  </div>
+                )}
                 <RegelEditor regels={form.regels} onWijzig={regels => setForm(f => ({ ...f, regels: typeof regels === 'function' ? regels(f.regels) : regels }))}
                   uitkomst={uitkomst} tarieven={tarieven} printers={printers} alleenLezen={kopVast}
                   filamenten={artikelenZicht.filter(a => a.type === 'filament')} prijsgroepen={prijsgroepen}
@@ -271,11 +284,12 @@ export default function DossierFormulier() {
                 {!kopVast && (
                   <div className="toevoegen">
                     {TYPES.map(([w, l]) => <button key={w} type="button" className="btn" onClick={() => setForm(f => ({ ...f, regels: [...f.regels, nieuweRegel(w)] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}
-                    <button type="button" className="btn" title="Printregels uit een geslicet 3mf-bestand van Bambu Studio" onClick={() => setDialoog('slicer')}><Icoon naam="plus" maat={14} /> Uit slicerbestand</button>
+                    <button type="button" className="btn" title="Printregels uit een geslicet 3mf-bestand van Bambu Studio" onClick={() => { setSlicerBoven(false); setDialoog('slicer'); }}><Icoon naam="plus" maat={14} /> Uit slicerbestand</button>
                   </div>
                 )}
                 <Totalen uitkomst={form.regels.length ? uitkomst : null} />
-                {kopVast && fase !== 'geannuleerd' && <p className="note">Dit dossier is afgerekend en ligt vast. Wil je nog iets wijzigen, maak dan eerst de afrekening ongedaan.</p>}
+                {kopVast && fase === 'samengevoegd' && <p className="note">Dit dossier is samengevoegd in {d.samengevoegd_in_nummer || 'een ander dossier'}: de regels staan daar.</p>}
+                {kopVast && fase !== 'geannuleerd' && fase !== 'samengevoegd' && <p className="note">Dit dossier is afgerekend en ligt vast. Wil je nog iets wijzigen, maak dan eerst de afrekening ongedaan.</p>}
               </>
             )}
             {tab === 'offertes' && !nieuw && <OffertesTab d={d} vuil={vuil} herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} bedrijf={bedrijfNaam} />}
@@ -297,6 +311,14 @@ export default function DossierFormulier() {
         onBevestig={async f => { if (await actie('afrekenen', f.soort === 'bonnetje' ? 'Afgerekend en betaald.' : 'Afgerekend.', { body: f })) setDialoog(null); }} />}
       {dialoog === 'betaald' && <BetaaldDialoog onSluit={() => setDialoog(null)}
         onBevestig={async datum => { if (await actie('betaald', 'Betaald.', { body: { datum } })) setDialoog(null); }} />}
+      {dialoog === 'samenvoegen' && <SamenvoegDialoog d={d} onSluit={() => setDialoog(null)} onBevestig={async ids => {
+        try {
+          await api.post(`/dossiers/${id}/samenvoegen`, { dossiers: ids });
+          await herlaad(); setVersie(v => v + 1); setDialoog(null);
+          melding(`${ids.length} dossier${ids.length === 1 ? '' : 's'} samengevoegd in ${d.nummer}.`);
+          return true;
+        } catch (e) { melding(e.message, 'fout'); return false; }
+      }} />}
       {dialoog === 'overname' && <Overnamefiche dossier={d} onSluit={() => setDialoog(null)} />}
       {dialoog === 'bonnetje' && <BonnetjeDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onBevestig={bonnetjeMaken} />}
       {dialoog === 'bonnetje-mail' && <BonnetjeMailDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onVerstuur={bonnetjeMailen} />}
@@ -315,7 +337,7 @@ export default function DossierFormulier() {
               nieuwe = nieuwe.map(r => ({ ...r, slicer_wacht: false, slicer_plaat: null, slicer_bestandsnaam: '' }));
             }
           } else if (bestand) setWachtendBestand(bestand);
-          setForm(f => ({ ...f, regels: [...f.regels, ...nieuwe] }));
+          setForm(f => ({ ...f, regels: slicerBoven ? [...nieuwe, ...f.regels] : [...f.regels, ...nieuwe] }));
           melding(`${nieuwe.length} printregel${nieuwe.length === 1 ? '' : 's'} toegevoegd. Kijk ze na en sla op.`);
           if (!fotos.length) return;
           if (nieuw) { setWachtendeFotos(w => [...w, ...fotos]); return; }

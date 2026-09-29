@@ -12,8 +12,9 @@ export const FASE = {
   betaald: ['b-pos', 'Betaald'],
   gratis: ['b-pos', 'Gratis geleverd'],
   geannuleerd: ['b-crit', 'Geannuleerd'],
+  samengevoegd: ['b-neutral', 'Samengevoegd'],
 };
-export const FASE_VOLGORDE = ['nieuw', 'offerte', 'akkoord', 'productie', 'klaar', 'deels', 'geleverd', 'afgerekend', 'betaald', 'gratis', 'geannuleerd'];
+export const FASE_VOLGORDE = ['nieuw', 'offerte', 'akkoord', 'productie', 'klaar', 'deels', 'geleverd', 'afgerekend', 'betaald', 'gratis', 'geannuleerd', 'samengevoegd'];
 export const OFFERTE_STATUS = {
   concept: ['b-neutral', 'Concept'], verstuurd: ['b-info', 'Verstuurd'], aanvaard: ['b-pos', 'Aanvaard'],
   geweigerd: ['b-crit', 'Geweigerd'], verlopen: ['b-warn', 'Verlopen'], vervangen: ['b-neutral', 'Vervangen'],

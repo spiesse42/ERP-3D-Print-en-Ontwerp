@@ -21,10 +21,13 @@ export const FASES = {
   betaald:     'Betaald',
   gratis:      'Gratis geleverd',
   geannuleerd: 'Geannuleerd',
+  samengevoegd: 'Samengevoegd',
 };
 const VOOR_AFREKENING = ['nieuw', 'offerte', 'akkoord', 'productie', 'klaar', 'deels', 'geleverd'];
 
 export function faseVan(d, { offerte = null, lever = null, prod = null } = {}) {
+  // samengevoegd in een ander dossier (29-09): ligt vast, niets meer te doen
+  if (d.samengevoegd_op) return 'samengevoegd';
   if (d.geannuleerd_op) return 'geannuleerd';
   if (d.betaald_op) return 'betaald';
   if (d.gratis_op) return 'gratis';
@@ -68,12 +71,14 @@ export function actiesVan(d, { aantalRegels = 0, offerte = null, werkbon = null,
     betaling_ongedaan: fase === 'betaald' && d.afgerekend_soort === 'factuur',
     afrekening_ongedaan: fase === 'afgerekend' || fase === 'betaald',
     annuleren: open && leveringen === 0,
+    // andere open dossiers (zelfde klant en soort) hierin samenvoegen (29-09)
+    samenvoegen: open,
     heropenen: fase === 'geannuleerd',
     verwijderen: (open || fase === 'geannuleerd') && verstuurdeOffertes === 0 && leveringen === 0 && printopdrachten === 0,
     // printopdracht plannen voor een printregel (Productie-tabblad); kan ook
     // na afrekenen (bv. betaald op de markt, nog te printen)
-    printopdracht: fase !== 'geannuleerd',
+    printopdracht: fase !== 'geannuleerd' && fase !== 'samengevoegd',
     // leveren kan ook na afrekenen (bv. betaald op de markt, later geleverd)
-    leveren: klant && fase !== 'geannuleerd' && (lever === 'geen' || lever === 'deels'),
+    leveren: klant && fase !== 'geannuleerd' && fase !== 'samengevoegd' && (lever === 'geen' || lever === 'deels'),
   };
 }

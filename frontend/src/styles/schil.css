@@ -584,7 +584,11 @@ label.keuze input { margin-top:3px; }
 
 /* Foto's bovenaan een dossier (28-09) */
 .dossier-fotos { display:flex; gap:8px; padding:0 22px 14px; overflow-x:auto; align-items:stretch; }
-.dossier-fotos a, .dossier-fotos .foto-erbij { flex:none; width:88px; height:88px; border-radius:var(--radius); border:1px solid var(--line); background:var(--surface); overflow:hidden; }
+.dossier-fotos .foto { position:relative; flex:none; }
+.dossier-fotos a, .dossier-fotos .foto-erbij { display:block; flex:none; width:88px; height:88px; border-radius:var(--radius); border:1px solid var(--line); background:var(--surface); overflow:hidden; }
+.dossier-fotos .weg { position:absolute; top:4px; right:4px; width:24px; height:24px; border-radius:50%; border:1px solid var(--line-strong); background:var(--surface); color:var(--ink); display:flex; align-items:center; justify-content:center; cursor:pointer; opacity:.85; padding:0; }
+.dossier-fotos .weg:hover { opacity:1; border-color:var(--crit, #c62828); color:var(--crit, #c62828); }
+.toevoegen.boven { margin:0 0 12px; }
 .dossier-fotos img { width:100%; height:100%; object-fit:cover; display:block; }
 .dossier-fotos a:hover { border-color:var(--accent); }
 .dossier-fotos .foto-erbij { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border-style:dashed; color:var(--muted); font-size:12.5px; cursor:pointer; }

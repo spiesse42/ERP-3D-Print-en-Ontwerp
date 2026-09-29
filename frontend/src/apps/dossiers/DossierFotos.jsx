@@ -6,14 +6,13 @@ import Icoon from '../../schil/Icoon.jsx';
 
 // Foto's bovenaan een dossier (28-09): de foto-bijlagen van het dossier
 // (afbeeldingen van de platen uit het slicerbestand, een voorbeeld van de
-// klant, het eindresultaat). Klik = volledige foto; beheren (verwijderen)
-// gebeurt in het tabblad Bijlagen. HEIC tonen browsers niet: die blijven
-// enkel in Bijlagen.
+// klant, het eindresultaat). Klik = volledige foto; ✕ = verwijderen.
+// HEIC tonen browsers niet: die blijven enkel in Bijlagen.
 const TOONBAAR = /^image\/(png|jpe?g|webp|gif)$/;
 
 export default function DossierFotos({ id, onGewijzigd }) {
   const { data, herlaad } = useData(`/bijlagen/dossier/${id}`);
-  const { melding } = useOmgeving();
+  const { melding, bevestig } = useOmgeving();
   const [bezig, setBezig] = useState(false);
   const invoer = useRef(null);
   const fotos = (data || []).filter(b => TOONBAAR.test(b.mimetype || ''));
@@ -33,12 +32,21 @@ export default function DossierFotos({ id, onGewijzigd }) {
     finally { setBezig(false); if (invoer.current) invoer.current.value = ''; }
   }
 
+  async function verwijder(f) {
+    if (!await bevestig({ titel: 'Foto verwijderen', tekst: `${f.bestandsnaam} verwijderen uit het dossier?`, bevestigLabel: 'Verwijderen', annuleerLabel: 'Terug', gevaarlijk: true })) return;
+    try { await api.delete(`/bijlagen/bestand/${f.id}`); await herlaad(); onGewijzigd?.(); melding('Foto verwijderd.'); }
+    catch (e) { melding(e.message, 'fout'); }
+  }
+
   return (
     <div className="dossier-fotos" aria-label="Foto's van het dossier">
       {fotos.map(f => (
-        <a key={f.id} href={`${BASE}/bijlagen/bestand/${f.id}`} target="_blank" rel="noopener noreferrer" title={f.bestandsnaam}>
-          <img src={`${BASE}/bijlagen/bestand/${f.id}`} alt={f.bestandsnaam} loading="lazy" />
-        </a>
+        <div key={f.id} className="foto">
+          <a href={`${BASE}/bijlagen/bestand/${f.id}`} target="_blank" rel="noopener noreferrer" title={f.bestandsnaam}>
+            <img src={`${BASE}/bijlagen/bestand/${f.id}`} alt={f.bestandsnaam} loading="lazy" />
+          </a>
+          <button type="button" className="weg" aria-label={`Foto ${f.bestandsnaam} verwijderen`} title="Foto verwijderen" onClick={() => verwijder(f)}><Icoon naam="kruis" maat={12} /></button>
+        </div>
       ))}
       <label className={`foto-erbij${bezig ? ' bezig' : ''}`} htmlFor={`foto-dossier-${id}`} title="Foto toevoegen (bv. voorbeeld van de klant of het eindresultaat)">
         <Icoon naam="plus" maat={18} /><span>{bezig ? 'Bezig…' : 'Foto'}</span>
