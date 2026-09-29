@@ -5,8 +5,8 @@ import { euro, datum } from '../../lib/formaat.js';
 import { FaseBadge } from '../dossiers/dossier.jsx';
 
 // Financiën → Opvolging (stap 7): facturen die nog niet betaald zijn (hoe
-// lang al) en klantopdrachten die klaar of geleverd zijn maar nog niet
-// afgerekend in Accountable. Betaald zetten gebeurt in het dossier, of in
+// lang al), klantopdrachten die klaar of geleverd zijn maar nog niet
+// afgerekend in Accountable, en (29-09) afgerekende die nog te leveren zijn. Betaald zetten gebeurt in het dossier, of in
 // één keer via de Accountable-export.
 export default function Opvolging() {
   const { navigeer } = useOmgeving();
@@ -20,6 +20,7 @@ export default function Opvolging() {
           <div className="kpis">
             <div className="kpi"><div className="l">Onbetaalde facturen</div><div className="w">{euro(o.onbetaald_totaal)}</div><div className="s">{o.onbetaald.length} factu{o.onbetaald.length === 1 ? 'ur' : 'ren'}</div></div>
             <div className="kpi"><div className="l">Nog af te rekenen</div><div className="w">{euro(o.te_afrekenen_totaal)}</div><div className="s">{o.te_afrekenen.length} klaar of geleverd</div></div>
+            <div className="kpi"><div className="l">Nog te leveren</div><div className="w">{o.te_leveren.length}</div><div className="s">afgerekend, artikelen of rest nog te leveren</div></div>
           </div>
           <div className="panel"><h3>Onbetaalde facturen</h3>
             <Lijst sleutel={d => d.id} onOpen={open} groepen={[{ titel: null, rijen: o.onbetaald }]}
@@ -44,6 +45,18 @@ export default function Opvolging() {
               ]}
               kaart={d => ({ titel: d.titel, rechts: <FaseBadge fase={d.fase} />, regel: `${d.nummer} · ${d.klant || ''}`, onder: d.volledig ? euro(d.totaal) : 'onvolledig' })}
               leeg={<><b>Niets af te rekenen.</b>Klare of geleverde klantopdrachten verschijnen hier tot ze afgerekend zijn.</>} />
+          </div>
+          <div className="panel"><h3>Afgerekend, nog te leveren</h3>
+            <Lijst sleutel={d => d.id} onOpen={open} groepen={[{ titel: null, rijen: o.te_leveren }]}
+              kolommen={[
+                { kop: 'Dossier', cel: d => <><span className="mono">{d.nummer}</span> · {d.titel}</> },
+                { kop: 'Klant', cel: d => d.klant || '—' },
+                { kop: 'Fase', cel: d => <FaseBadge fase={d.fase} /> },
+                { kop: 'Nog te leveren', cel: d => (d.artikelen.length ? d.artikelen.join(', ') : <span className="badge b-warn">deels geleverd</span>) },
+                { kop: 'Sinds', klasse: 'r', cel: d => <span className={`badge ${d.dagen > 14 ? 'b-crit' : d.dagen > 7 ? 'b-warn' : 'b-neutral'}`}>{d.dagen} d</span> },
+              ]}
+              kaart={d => ({ titel: d.titel, rechts: <FaseBadge fase={d.fase} />, regel: `${d.nummer} · ${d.klant || ''}`, onder: `${d.artikelen.length ? d.artikelen.join(', ') : 'deels geleverd'} · ${d.dagen} dagen` })}
+              leeg={<><b>Alles geleverd.</b>Hier komen afgerekende klantopdrachten met artikelen uit voorraad die nog niet geleverd zijn (bv. te weinig voorraad bij het afrekenen), of met een levering die al begonnen is.</>} />
           </div>
           <p className="note" style={{ margin: 0 }}>Een factuur als betaald markeren doe je in het dossier (knop Betaald), of voor veel facturen tegelijk via Financiën → Accountable-import.</p>
         </div>
