@@ -230,7 +230,14 @@ export default function AankoopFormulier() {
                               <td className="r"><input className="inp num" aria-label="Prijs per eenheid" inputMode="decimal" style={{ width: 80 }} disabled={vast} value={r.prijs_per_eenheid} onChange={e => zetRegel(i, 'prijs_per_eenheid')(e.target.value)} /></td>
                               <td className="r num">{a > 0 && p >= 0 && p !== null ? euro(a * p) : <span className="sub">—</span>}</td>
                               {!nieuw && <td className="r num">{oud?.ontvangbaar ? `${aantal(oud.ontvangen)} / ${aantal(oud.aantal)}` : <span className="sub">—</span>}</td>}
-                              <td>{!vast && <button type="button" className="btn ghost" aria-label="Regel weghalen" onClick={() => setForm(f => ({ ...f, regels: f.regels.filter((_, j) => j !== i) }))}><Icoon naam="kruis" maat={14} /></button>}</td>
+                              <td>{!vast && <button type="button" className="btn ghost" aria-label="Regel weghalen" onClick={() => setForm(f => ({ ...f, regels: f.regels.filter((_, j) => j !== i) }))}><Icoon naam="kruis" maat={14} /></button>}
+                                {/* 29-09: al ontvangen, maar nog niets van gebruikt (bv. een dubbele regel) → mag weg, voorraad gaat terug */}
+                                {vast && !alleenLezen && oud?.wegbaar && <button type="button" className="btn ghost" aria-label={`Ontvangen regel ${oud.weergave} weghalen`}
+                                  title="Al ontvangen, maar nog niets van gebruikt: weghalen boekt de voorraad terug"
+                                  onClick={async () => {
+                                    if (!await bevestig({ titel: 'Ontvangen regel weghalen', tekst: `${oud.weergave}: ${aantal(oud.ontvangen)} ${oud.eenheid || 'stuks'} ${oud.ontvangen === 1 ? 'werd' : 'werden'} al ontvangen. Weghalen haalt ze ook uit de voorraad (bv. een dubbele regel). Klik daarna op Opslaan.`, bevestigLabel: 'Weghalen', annuleerLabel: 'Terug', gevaarlijk: true })) return;
+                                    setForm(f => ({ ...f, regels: f.regels.filter((_, j) => j !== i) }));
+                                  }}><Icoon naam="kruis" maat={14} /></button>}</td>
                             </tr>
                           );
                         })}
@@ -243,7 +250,7 @@ export default function AankoopFormulier() {
                     <Icoon naam="plus" maat={16} /> Regel toevoegen
                   </button>
                 )}
-                <p className="note">Prijzen incl. btw. Verzendkosten als aparte kostregel; die tellen niet mee in de kostprijs van de artikelen. Een nieuw artikel maak je eerst aan in <Link naar="/voorraad/artikelen/nieuw">Voorraad → Artikelen</Link>.</p>
+                <p className="note">Prijzen incl. btw. Verzendkosten als aparte kostregel; die tellen niet mee in de kostprijs van de artikelen. Een ontvangen regel kan nog weg zolang er niets van gebruikt is (de voorraad gaat dan mee terug). Een nieuw artikel maak je eerst aan in <Link naar="/voorraad/artikelen/nieuw">Voorraad → Artikelen</Link>.</p>
               </>
             )}
             {tab === 'bijlagen' && !nieuw && <Bijlagen entiteit="aankoop" id={id} onGewijzigd={() => setVersie(v => v + 1)} />}

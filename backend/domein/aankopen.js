@@ -41,7 +41,8 @@ function leesRegels(db, aankoopId) {
     SELECT r.*, a.type AS artikel_type, a.naam AS artikel_naam, a.eenheid,
       m.naam AS merk, mat.naam AS materiaal, k.naam AS kleur, k.hex AS kleur_hex,
       pm.naam AS ph_materiaal, pk.naam AS ph_kleur, pk.hex AS ph_kleur_hex,
-      COALESCE((SELECT SUM(p.aantal_ontvangen) FROM voorraad_partijen p WHERE p.aankoop_regel_id = r.id), 0) AS ontvangen
+      COALESCE((SELECT SUM(p.aantal_ontvangen) FROM voorraad_partijen p WHERE p.aankoop_regel_id = r.id), 0) AS ontvangen,
+      COALESCE((SELECT SUM(p.aantal_ontvangen - p.aantal_resterend) FROM voorraad_partijen p WHERE p.aankoop_regel_id = r.id), 0) AS verbruikt
     FROM aankoop_regels r
     LEFT JOIN artikelen a ON a.id = r.artikel_id
     LEFT JOIN filament_types ft ON ft.id = a.filament_type_id
@@ -57,7 +58,9 @@ function leesRegels(db, aankoopId) {
         ? weergaveNaam({ type: r.artikel_type, naam: r.artikel_naam, merk: r.merk, materiaal: r.materiaal, kleur: r.kleur })
         : soort === 'plaatshouder' ? `${r.ph_materiaal}${r.ph_kleur ? ` · ${r.ph_kleur}` : ''} (merk nog onbekend)` : r.omschrijving;
       return {
-        ...r, soort, weergave, ontvangen: rond(r.ontvangen),
+        ...r, soort, weergave, ontvangen: rond(r.ontvangen), verbruikt: rond(r.verbruikt),
+        // ontvangen maar nog niets van gebruikt (29-09): mag weg, de voorraad gaat mee terug
+        wegbaar: r.ontvangen > 0 && r.verbruikt < 1e-9,
         ontvangbaar: ontvangbaar(r),
         openstaand: ontvangbaar(r) ? rond(Math.max(r.aantal - r.ontvangen, 0)) : 0,
         subtotaal: r.prijs_per_eenheid != null ? rond(r.aantal * r.prijs_per_eenheid) : null,
@@ -164,7 +167,9 @@ export function maakAankoop(db, kop, regels = [], bron = 'manueel') {
 
 // Bewaren van kop + regels. Regels die al (deels) ontvangen zijn, liggen
 // vast: artikel en prijs niet meer wijzigen, aantal niet onder het ontvangen
-// aantal, niet verwijderen. Een geannuleerde aankoop is enkel nog leesbaar.
+// aantal. Verwijderen kan (29-09, bv. een dubbele regel) zolang er van die
+// ontvangst nog niets gebruikt is: de voorraad wordt dan teruggeboekt.
+// Een geannuleerde aankoop is enkel nog leesbaar.
 export function bewaarAankoop(db, aankoopId, kop, regels) {
   const oud = leesAankoop(db, aankoopId);
   if (!oud) throw new DomeinFout('Aankoop niet gevonden');
@@ -185,13 +190,28 @@ export function bewaarAankoop(db, aankoopId, kop, regels) {
     }
   });
   for (const o of oud.regels) {
-    if (!gezien.has(o.id) && o.ontvangen > 0) throw new DomeinFout(`${o.weergave} is al (deels) ontvangen en kan niet verwijderd worden`);
+    if (!gezien.has(o.id) && o.ontvangen > 0 && !o.wegbaar) {
+      throw new DomeinFout(`${o.weergave}: van deze ontvangst ${o.verbruikt === 1 ? 'is' : 'zijn'} al ${String(o.verbruikt).replace('.', ',')} ${o.eenheid || 'stuks'} gebruikt, dus de regel kan niet weg. Corrigeer de voorraad via Voorraad → artikel.`);
+    }
   }
   if (!kop.leverancier_id && oud.status !== 'concept') throw new DomeinFout('Een bestelde of ontvangen aankoop heeft een leverancier nodig');
 
   db.prepare(`UPDATE aankopen SET leverancier_id = ?, datum = COALESCE(?, datum), extern_factuurnummer = ?, extern_bestelnummer = ?, notities = ? WHERE id = ?`)
     .run(kop.leverancier_id, kop.datum, kop.extern_factuurnummer, kop.extern_bestelnummer ?? null, kop.notities, aankoopId);
-  for (const o of oud.regels) if (!gezien.has(o.id)) db.prepare('DELETE FROM aankoop_regels WHERE id = ?').run(o.id);
+  for (const o of oud.regels) {
+    if (gezien.has(o.id)) continue;
+    if (o.ontvangen > 0) {
+      // ontvangst terugdraaien: correctie in het logboek, partij weg
+      for (const p of db.prepare('SELECT * FROM voorraad_partijen WHERE aankoop_regel_id = ?').all(o.id)) {
+        db.prepare(`INSERT INTO voorraad_mutaties (artikel_id, partij_id, aantal, reden, bron_type, bron_id, notitie) VALUES (?,?,?,?,?,?,?)`)
+          .run(p.artikel_id, p.id, -p.aantal_ontvangen, 'correctie', 'aankoop', aankoopId, `Regel verwijderd uit ${oud.nummer}: ontvangst ongedaan`);
+        db.prepare('DELETE FROM voorraad_partijen WHERE id = ?').run(p.id);
+        logGebeurtenis(db, 'artikel', p.artikel_id, 'voorraad', `-${String(p.aantal_ontvangen).replace('.', ',')}: regel verwijderd uit ${oud.nummer} (ontvangst ongedaan)`);
+      }
+      wijzigingen.push(`${o.weergave} verwijderd; ontvangst van ${String(o.ontvangen).replace('.', ',')} teruggeboekt`);
+    }
+    db.prepare('DELETE FROM aankoop_regels WHERE id = ?').run(o.id);
+  }
   const upd = db.prepare(`UPDATE aankoop_regels SET volgorde=?, artikel_id=?, plaatshouder_materiaal_id=?, plaatshouder_kleur_id=?, omschrijving=?, aantal=?, prijs_per_eenheid=? WHERE id=?`);
   const ins = db.prepare(`INSERT INTO aankoop_regels (aankoop_id, volgorde, artikel_id, plaatshouder_materiaal_id, plaatshouder_kleur_id, omschrijving, aantal, prijs_per_eenheid)
     VALUES (?,?,?,?,?,?,?,?)`);
