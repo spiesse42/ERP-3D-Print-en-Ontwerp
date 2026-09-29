@@ -54,6 +54,16 @@ export function leverStatusVan(db, dossierId) {
   return leverStatus(regels.map(r => { const n = g.get(r.id) || 0; return { geleverd: n, rest: Number(r.aantal ?? 1) - n }; }));
 }
 
+// Wat na afrekenen / gratis geleverd nog opgevolgd moet worden (29-09):
+// artikelen uit VOORRAAD die nog niet geleverd zijn (voorraad en marge
+// kloppen dan niet), en bij een begonnen levering (deels) ook de rest van
+// het printwerk. Printwerk zonder pakbon telt niet: leveren is daar optioneel.
+export function nogTeLeveren(lijst, status) {
+  if (status !== 'geen' && status !== 'deels') return [];
+  return lijst.filter(x => x.rest > 1e-9 && (status === 'deels' || x.boekt_voorraad))
+    .map(x => `${String(x.rest).replace('.', ',')} × ${x.omschrijving}`);
+}
+
 export function leveringenVan(db, dossierId) {
   const lijst = db.prepare('SELECT * FROM leveringen WHERE dossier_id = ? ORDER BY datum, id').all(dossierId);
   const regels = db.prepare('SELECT dossier_regel_id, aantal, omschrijving FROM levering_regels WHERE levering_id = ? ORDER BY id');

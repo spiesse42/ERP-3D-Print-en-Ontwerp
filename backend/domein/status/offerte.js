@@ -4,7 +4,10 @@
 export const OFFERTE_STATUS = {
   concept: 'Concept', verstuurd: 'Verstuurd', aanvaard: 'Aanvaard', geweigerd: 'Geweigerd', verlopen: 'Verlopen', vervangen: 'Vervangen',
 };
-export const vandaag = () => new Date().toISOString().slice(0, 10);
+// Datum van vandaag in België (29-09): niet UTC, anders is het tussen
+// middernacht en 2 u 's nachts voor het ERP nog "gisteren" (en weigert het
+// bv. een bonnetje van vandaag als "in de toekomst").
+export const vandaag = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });
 
 export function offerteStatus(o, { nieuwereVersie = false, op = vandaag() } = {}) {
   if (o.aanvaard_op) return 'aanvaard';

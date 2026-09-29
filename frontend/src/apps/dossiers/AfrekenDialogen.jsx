@@ -18,6 +18,19 @@ const openPdf = pad => window.open(new URL(`${BASE}${pad}`, document.baseURI).hr
 const blijftOngeleverd = (dossier, leveren) => ['geen', 'deels'].includes(dossier.lever_status)
   && (dossier.leverbaar || []).some(x => x.rest > 0 && (!leveren || !x.boekt_voorraad));
 
+// Regels gewijzigd na een aanvaarde offerte (29-09): afgerekend wordt de
+// offerteprijs, dus wat erbij kwam zou niet aangerekend worden.
+export function AfwijkingOfferte({ dossier }) {
+  const o = dossier.wijkt_af_van_offerte && dossier.offertes?.find(x => x.aanvaard_op);
+  if (!o) return null;
+  return (
+    <div className="waarschuwing" style={{ margin: '0 0 12px', display: 'block' }} role="alert">
+      De regels wijken af van de aanvaarde offerte {o.weergave}: afgerekend wordt de <b>offerteprijs {euro(o.totaal)}</b>, niet de regels ({euro(dossier.berekening.totaal ?? 0)}).
+      Kwam er iets bij? Maak eerst het antwoord op de offerte ongedaan (tab Offertes) en stuur een nieuwe versie.
+    </div>
+  );
+}
+
 export function VoorraadLeveren({ dossier, aan, onWijzig }) {
   const lijst = (dossier.leverbaar || []).filter(x => x.boekt_voorraad && x.rest > 0);
   if (!lijst.length) return null;
@@ -46,6 +59,7 @@ export function AfrekenDialoog({ dossier, onSluit, onBevestig }) {
         <button type="button" className="btn primary" disabled={bezig || !f.nummer.trim()} onClick={ok}>Afgerekend</button>
       </>}>
       <p className="note" style={{ marginTop: 0 }}>Maak de {f.soort === 'factuur' ? 'factuur' : 'het bonnetje'} in Accountable (gebruik de overnamefiche) en vul hier het nummer in dat Accountable gaf. {dossier.werkbon ? ` De werkbon ${dossier.werkbon.weergave} wordt daarmee definitief.` : ' Er wordt meteen een werkbon gemaakt en definitief gezet.'}</p>
+      <AfwijkingOfferte dossier={dossier} />
       {blijftOngeleverd(dossier, f.voorraad_leveren) && (
         <div className="waarschuwing" style={{ margin: '0 0 12px' }}>Nog niet alles geleverd{dossier.lever_status === 'deels' ? ' (deels geleverd)' : ''}. Afrekenen kan, bv. als de klant al betaald heeft; lever daarna verder via het tabblad Leveringen.</div>
       )}
@@ -59,7 +73,7 @@ export function AfrekenDialoog({ dossier, onSluit, onBevestig }) {
           <div className="sub" style={{ marginTop: 4 }}>{f.soort === 'bonnetje' ? 'Een bonnetje staat meteen op betaald (dagontvangsten). Liever het bonnetje door het ERP laten maken en mailen? Gebruik "Bonnetje maken".' : 'Een factuur zet je later op betaald.'}</div>
         </div>
         <div><label htmlFor="af-nr">Nummer in Accountable</label><input id="af-nr" className="inp mono" value={f.nummer} onChange={e => zet('nummer', e.target.value)} autoFocus /></div>
-        <div><label htmlFor="af-datum">Datum</label><input id="af-datum" type="date" className="inp" value={f.datum} onChange={e => zet('datum', e.target.value)} /></div>
+        <div><label htmlFor="af-datum">Datum</label><input id="af-datum" type="date" className="inp" max={vandaag()} value={f.datum} onChange={e => zet('datum', e.target.value)} /></div>
         <div><label htmlFor="af-bedrag">Bedrag</label><div className="unit"><input id="af-bedrag" className="inp num" inputMode="decimal" value={f.bedrag} onChange={e => zet('bedrag', e.target.value)} /><span>€</span></div></div>
       </div>
       <VoorraadLeveren dossier={dossier} aan={f.voorraad_leveren} onWijzig={v => zet('voorraad_leveren', v)} />
@@ -100,6 +114,7 @@ export function BonnetjeDialoog({ dossier, bedrijf, onSluit, onBevestig }) {
       </>}>
       {fout && <div className="waarschuwing" style={{ margin: '0 0 12px', display: 'block' }} role="alert">{fout}</div>}
       {blokkeert && <div className="waarschuwing" style={{ margin: '0 0 12px', display: 'block' }} role="alert">{blokkeert}</div>}
+      <AfwijkingOfferte dossier={dossier} />
       <div className="fgrid">
         <div><label htmlFor="bn-datum">Datum (ontvangen)</label><input id="bn-datum" type="date" className="inp" max={vandaag()} value={dag} onChange={e => setDag(e.target.value || vandaag())} /></div>
         <div><span className="lbl">Nummer</span><div className="mono" style={{ padding: '8px 0' }}>{v?.nummer ?? '…'}</div></div>
@@ -175,22 +190,23 @@ export function GratisDialoog({ dossier, onSluit, onBevestig }) {
       voet={<><button type="button" className="btn" onClick={onSluit}>Terug</button><button type="button" className="btn primary" onClick={() => onBevestig(d, leveren)}>Gratis geleverd</button></>}>
       <p className="note" style={{ marginTop: 0 }}>De klant krijgt dit zonder te betalen (bv. goodwill of een test). Er komt <b>geen</b> factuur of bonnetje in Accountable en het telt <b>niet</b> als omzet.
         Je kost blijft zichtbaar in Financiën → Marges en in het overzicht. {dossier.werkbon ? `De werkbon ${dossier.werkbon.weergave} wordt definitief.` : 'Er wordt een werkbon gemaakt en definitief gezet.'}</p>
+      <AfwijkingOfferte dossier={dossier} />
       {waarde != null && <p style={{ margin: '0 0 10px' }}>Waarde volgens de werkbon: <b className="num">{euro(waarde)}</b></p>}
       <label className="lbl" htmlFor="gr-datum">Datum</label>
-      <input id="gr-datum" type="date" className="inp" value={d} onChange={e => setD(e.target.value)} />
+      <input id="gr-datum" type="date" className="inp" max={vandaag()} value={d} onChange={e => setD(e.target.value)} />
       <VoorraadLeveren dossier={dossier} aan={leveren} onWijzig={setLeveren} />
       <p className="sub" style={{ marginBottom: 0 }}>Gaat de opdracht helemaal niet door? Gebruik dan "Dossier annuleren".</p>
     </Dialoog>
   );
 }
 
-export function BetaaldDialoog({ onSluit, onBevestig }) {
+export function BetaaldDialoog({ vanaf, onSluit, onBevestig }) {
   const [d, setD] = useState(vandaag());
   return (
     <Dialoog titel="Betaald" onSluit={onSluit}
       voet={<><button type="button" className="btn" onClick={onSluit}>Annuleren</button><button type="button" className="btn primary" onClick={() => onBevestig(d)}>Betaald</button></>}>
       <label className="lbl" htmlFor="bt-datum">Betaald op</label>
-      <input id="bt-datum" type="date" className="inp" value={d} onChange={e => setD(e.target.value)} autoFocus />
+      <input id="bt-datum" type="date" className="inp" min={vanaf || undefined} max={vandaag()} value={d} onChange={e => setD(e.target.value)} autoFocus />
     </Dialoog>
   );
 }
