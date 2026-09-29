@@ -17,6 +17,9 @@
 import { VIA_VERKOOP } from './hulp.js';
 import { kostVan } from './verkopen.js';
 
+import { leverbaar } from './leveringen.js';
+import { leesRegelsVan } from './dossiers.js';
+
 const r2 = v => Math.round((v || 0) * 100) / 100;
 
 export const STANDAARD_DREMPELS = { omzet: 25000, winst: 1881.76 };
@@ -87,19 +90,33 @@ export function jaarOverzicht(db, jaar) {
 const KLANTNAAM = `CASE WHEN k.type = 'zakelijk' AND NULLIF(k.bedrijfsnaam,'') IS NOT NULL THEN k.bedrijfsnaam
   ELSE TRIM(COALESCE(k.voornaam,'') || ' ' || COALESCE(k.naam,'')) END`;
 
-// Opvolging: facturen die nog niet betaald zijn (met ouderdom) en
-// klantopdrachten die klaar zijn maar nog niet afgerekend.
+// Opvolging: facturen die nog niet betaald zijn (met ouderdom),
+// klantopdrachten die klaar zijn maar nog niet afgerekend, en (29-09)
+// klantopdrachten die afgerekend/gratis zijn maar nog niet geleverd.
 export function opvolging(db, leesDossiers) {
   const vandaag = Date.parse(new Date().toISOString().slice(0, 10));
   const onbetaald = db.prepare(`SELECT d.id, d.nummer, d.titel, d.afgerekend_nummer, d.afgerekend_op, d.afgerekend_bedrag, d.klant_id, ${KLANTNAAM} klant, k.email
     FROM dossiers d LEFT JOIN klanten k ON k.id = d.klant_id
     WHERE d.afgerekend_op IS NOT NULL AND d.betaald_op IS NULL ORDER BY d.afgerekend_op`).all()
     .map(d => ({ ...d, dagen_open: Math.max(0, Math.round((vandaag - Date.parse(d.afgerekend_op)) / 864e5)) }));
-  const teAfrekenen = leesDossiers().filter(d => d.soort === 'klant' && ['klaar', 'deels', 'geleverd'].includes(d.fase))
+  const alle = leesDossiers();
+  const teAfrekenen = alle.filter(d => d.soort === 'klant' && ['klaar', 'deels', 'geleverd'].includes(d.fase))
     .map(d => ({ id: d.id, nummer: d.nummer, titel: d.titel, klant: d.klant, klant_id: d.klant_id, fase: d.fase, totaal: d.totaal, volledig: d.volledig }));
+  // 29-09: afgerekend (of gratis) maar nog niet geleverd — enkel als het
+  // ertoe doet: artikelen uit VOORRAAD die nog niet geleverd zijn (voorraad en
+  // marge kloppen dan niet), of een levering die al begonnen is (deels).
+  // Printwerk zonder pakbon telt niet: leveren is daar optioneel.
+  const teLeveren = alle.filter(d => d.soort === 'klant' && ['afgerekend', 'betaald', 'gratis'].includes(d.fase) && ['geen', 'deels'].includes(d.lever_status))
+    .map(d => ({ d, artikelen: leverbaar(db, d.id, leesRegelsVan(db, d.id)).filter(x => x.boekt_voorraad && x.rest > 1e-9) }))
+    .filter(({ d, artikelen }) => d.lever_status === 'deels' || artikelen.length)
+    .map(({ d, artikelen }) => ({ id: d.id, nummer: d.nummer, titel: d.titel, klant: d.klant, klant_id: d.klant_id, fase: d.fase, lever_status: d.lever_status,
+      artikelen: artikelen.map(x => `${String(x.rest).replace('.', ',')} × ${x.omschrijving}`),
+      sinds: d.afgerekend_op || d.gratis_op, dagen: Math.max(0, Math.round((vandaag - Date.parse(d.afgerekend_op || d.gratis_op)) / 864e5)) }))
+    .sort((a, b) => String(a.sinds).localeCompare(String(b.sinds)));
   return {
     onbetaald, onbetaald_totaal: r2(onbetaald.reduce((t, d) => t + (d.afgerekend_bedrag || 0), 0)),
     te_afrekenen: teAfrekenen, te_afrekenen_totaal: r2(teAfrekenen.reduce((t, d) => t + (d.totaal || 0), 0)),
+    te_leveren: teLeveren,
   };
 }
 

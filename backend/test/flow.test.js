@@ -483,3 +483,24 @@ test('X19. dossier naar de browser: afbeelding enkel bij de regels, niet dubbel;
   const m = JSON.parse(getDb().prepare('SELECT momentopname FROM offertes WHERE id = ?').get(od.offertes[0].id).momentopname);
   assert.equal(m.document.regels[0].afbeelding, afb, 'de verstuurde offerte houdt de afbeelding');
 });
+
+test('X20. opvolging "nog te leveren": artikelen uit voorraad niet geleverd, of een begonnen levering; printwerk zonder pakbon niet', async () => {
+  const vandaag = new Date().toISOString().slice(0, 10);
+  const lijst = async () => (await vraag('GET', '/financien/opvolging')).data.te_leveren;
+  // printwerk, geen pakbon → niet in de lijst; deels geleverd → wel; alles → weg
+  let d = (await vraag('POST', '/dossiers', { titel: 'Nog leveren', klant_id: klant, regels: [
+    { type: 'printen', omschrijving: 'Draak', printer_id: mini, aantal: 2, tijd_min: 30, materialen: [{ filament_type_id: pg, gram: 10 }] }] })).data;
+  d = (await vraag('POST', `/dossiers/${d.id}/afrekenen`, { soort: 'factuur', nummer: 'F-X20', datum: vandaag })).data;
+  assert.equal(d.fase, 'afgerekend', JSON.stringify(d.error || ''));
+  assert.equal((await lijst()).find(x => x.id === d.id), undefined, 'printwerk zonder pakbon: niet opvolgen');
+  await vraag('POST', `/dossiers/${d.id}/leveringen`, { datum: vandaag, regels: [{ regel_id: d.regels[0].id, aantal: 1 }] });
+  assert.equal((await lijst()).find(x => x.id === d.id)?.lever_status, 'deels');
+  await vraag('POST', `/dossiers/${d.id}/leveringen`, { datum: vandaag, regels: [{ regel_id: d.regels[0].id, aantal: 1 }] });
+  assert.equal((await lijst()).find(x => x.id === d.id), undefined, 'volledig geleverd → weg');
+  // artikel zonder voorraad bij het afrekenen → in de lijst, met het artikel
+  const lamp = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Lampje X20', wordt_gekocht: true, wordt_verkocht: true, verkoopprijs: 3 })).data.id;
+  let e = (await vraag('POST', '/dossiers', { titel: 'Met lampje', klant_id: klant, regels: [{ type: 'artikel', artikel_id: lamp, aantal: 2 }] })).data;
+  e = (await vraag('POST', `/dossiers/${e.id}/afrekenen`, { soort: 'factuur', nummer: 'F-X20b', datum: vandaag })).data;
+  const rij = (await lijst()).find(x => x.id === e.id);
+  assert.ok(rij); assert.deepEqual(rij.artikelen, ['2 × Lampje X20']); assert.equal(rij.dagen, 0);
+});
