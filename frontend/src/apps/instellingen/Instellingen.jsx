@@ -220,6 +220,11 @@ const BEDRIJF_VELDEN = [
   ['bedrijf_adres', 'Adres', 'Straat nr, postcode gemeente'],
   ['bedrijf_email', 'E-mail', ''],
   ['bedrijf_iban', 'IBAN', 'BE00 0000 0000 0000'],
+  // 29-09: factuur door het ERP
+  ['bedrijf_bic', 'BIC', 'bv. GEBABEBB'],
+  ['bedrijf_rekeninghouder', 'Rekeninghouder (op de factuur)', 'bv. David Spiesschaert'],
+  ['bedrijf_telefoon', 'Telefoon (op de factuur)', '+32 …'],
+  ['factuur_betaaltermijn', 'Betaaltermijn factuur (dagen)', '7'],
   ['offerte_geldig_dagen', 'Offerte geldig (dagen)', '30'],   // stap 5b
   // stap 7: drempels bijberoep (Financiën → Overzicht); leeg = standaard
   ['bedrijf_startdatum', 'Startdatum onderneming (JJJJ-MM-DD)', 'bv. 2025-07-01'],

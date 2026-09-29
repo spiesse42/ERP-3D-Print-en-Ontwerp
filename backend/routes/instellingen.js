@@ -14,6 +14,7 @@ const r = Router();
 // bv. ha_url/backup-sleutels toe).
 const INSTELLING_SLEUTELS = new Set([
   'bedrijf_naam', 'bedrijf_btw', 'bedrijf_adres', 'bedrijf_email', 'bedrijf_iban',
+  'bedrijf_bic', 'bedrijf_telefoon', 'bedrijf_rekeninghouder', 'factuur_betaaltermijn',   // 29-09: factuur door het ERP
   'offerte_geldig_dagen',   // stap 5b: standaard geldigheid van een offerte
   'bedrijf_startdatum', 'drempel_omzet_jaar', 'drempel_winst_jaar',   // stap 7: drempels bijberoep
 ]);
@@ -22,6 +23,7 @@ const CONTROLE = {
   bedrijf_startdatum: w => /^\d{4}-\d{2}-\d{2}$/.test(w) && !Number.isNaN(Date.parse(w)) ? null : 'Startdatum: gebruik de vorm JJJJ-MM-DD',
   drempel_omzet_jaar: w => (Number.isFinite(parseFloat(w.replace(',', '.'))) && parseFloat(w.replace(',', '.')) > 0 ? null : 'Drempel btw-vrijstelling moet een bedrag zijn'),
   drempel_winst_jaar: w => (Number.isFinite(parseFloat(w.replace(',', '.'))) && parseFloat(w.replace(',', '.')) > 0 ? null : 'Drempel sociale bijdragen moet een bedrag zijn'),
+  factuur_betaaltermijn: w => (/^\d+$/.test(w) && Number(w) <= 120 ? null : 'Betaaltermijn factuur: een aantal dagen (0 tot 120)'),
   offerte_geldig_dagen: w => (/^\d+$/.test(w) && Number(w) > 0 ? null : 'Offerte geldig: een aantal dagen'),
 };
 

@@ -30,6 +30,10 @@ export const REEKSEN = {
   // ook: nog een tabel met nummers van dezelfde reeks (26-09: losse verkoop)
   BON: { naam: 'Bonnetje', cijfers: 3, tabel: 'dossiers', kolom: 'afgerekend_nummer', metNaam: true, filter: "afgerekend_soort = 'bonnetje'",
     ook: [{ tabel: 'verkopen', kolom: 'nummer' }] },
+  // 29-09: factuur door het ERP ("Factuur 2026-004"). Nummers die vroeger met
+  // de hand uit Accountable overgenomen werden ("2026-003") tellen ook mee,
+  // zodat er nooit een dubbel factuurnummer ontstaat.
+  FAC: { naam: 'Factuur', cijfers: 3, tabel: 'dossiers', kolom: 'afgerekend_nummer', metNaam: true, filter: "afgerekend_soort = 'factuur'", kaalOok: true },
 };
 
 // "BON-" (klassiek) of "Bonnetje " (metNaam) — het stuk vóór "jaar-nummer".
@@ -58,6 +62,10 @@ function hoogsteUitgegeven(db, reeks, jaar) {
   const waar = r.filter ? `${r.kolom} LIKE ? AND ${r.filter}` : `${r.kolom} LIKE ?`;
   const rijen = [
     ...db.prepare(`SELECT ${r.kolom} AS n FROM ${r.tabel} WHERE ${waar}`).all(`${prefix}%`),
+    // "2026-003" of "FACTUUR 2026-003" zonder onze schrijfwijze
+    ...(r.kaalOok ? db.prepare(`SELECT ${r.kolom} AS n FROM ${r.tabel} WHERE ${r.filter}`).all()
+      .map(x => String(x.n ?? '').match(new RegExp(`^\\s*(?:${r.naam}\\s+)?${jaar}-(\\d+)\\s*$`, 'i')))
+      .filter(Boolean).map(m => ({ n: `${prefix}${m[1]}` })) : []),
     ...(r.ook || []).flatMap(o => db.prepare(`SELECT ${o.kolom} AS n FROM ${o.tabel} WHERE ${o.kolom} LIKE ?`).all(`${prefix}%`)),
   ];
   return rijen.reduce((m, x) => Math.max(m, parseInt(String(x.n).slice(prefix.length), 10) || 0), 0);

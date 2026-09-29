@@ -5,7 +5,7 @@ import { useData } from '../../schil/useData.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
 import { ControlePaneel, FormKnoppen, SlimmeKnop, Veld, Tabs, Laden, Fout } from '../../schil/Weergaven.jsx';
 import Historiek from '../../schil/Historiek.jsx';
-import { klantNaam, peppolVoorstel, naarFormulier, LEGE_KLANT } from './klant.js';
+import { klantNaam, peppolVoorstel, naarFormulier, LEGE_KLANT, LANDEN } from './klant.js';
 
 // Invoerveld op moduleniveau (niet genest), anders verliest het de focus
 // bij elke toetsaanslag.
@@ -32,7 +32,26 @@ export default function KlantFormulier() {
 
   const zet = (veld) => (w) => setForm(f => ({ ...f, [veld]: w }));
   const zakelijk = form.type === 'zakelijk';
-  const voorstel = zakelijk && !form.peppol_id ? peppolVoorstel(form.btw_nummer) : null;
+  const [gevonden, setGevonden] = useState(null);   // resultaat van "Opzoeken" (btw-nummer)
+  const [zoekt, setZoekt] = useState(false);
+  const voorstel = zakelijk && !form.peppol_id && !gevonden ? peppolVoorstel(form.btw_nummer, form.land) : null;
+
+  // Opzoeken op btw-nummer (29-09): naam + adres (VIES) en Peppol-ID.
+  async function zoekOp() {
+    if (!form.btw_nummer.trim()) { melding('Vul eerst het btw-nummer in (bv. BE0123456789 of NL123456789B01).', 'fout'); return; }
+    setZoekt(true);
+    try { setGevonden(await api.get(`/klanten/opzoeken?btw=${encodeURIComponent(form.btw_nummer)}&land=${encodeURIComponent(form.land || 'BE')}`)); }
+    catch (e) { melding(e.message, 'fout'); }
+    finally { setZoekt(false); }
+  }
+  function neemOver() {
+    const v = gevonden?.vies || {};
+    setForm(f => ({ ...f, type: 'zakelijk', btw_nummer: gevonden.btw, land: gevonden.land === 'BE' ? '' : gevonden.land,
+      ...(v.naam ? { bedrijfsnaam: v.naam } : {}),
+      ...(v.straat ? { straat: v.straat, huisnummer: v.huisnummer || '' } : {}),
+      ...(v.postcode ? { postcode: v.postcode, gemeente: v.gemeente || '' } : {}),
+      ...(gevonden.peppol ? { peppol_id: gevonden.peppol.id } : {}) }));
+  }
 
   // Vorige/volgende in de (actieve) klantenlijst, zoals de pijltjes in Odoo.
   const actieve = (alle || []).filter(k => !k.gearchiveerd).sort((a, b) => klantNaam(a).localeCompare(klantNaam(b), 'nl'));
@@ -154,9 +173,41 @@ export default function KlantFormulier() {
                   <Invoer id="k-gemeente" waarde={form.gemeente || ''} onWijzig={zet('gemeente')} placeholder="Gemeente" aria-label="Gemeente" />
                 </div>
               </Veld>
-              <Veld label="Ondernemingsnr." id="k-btw" hint={zakelijk ? null : 'Enkel als een particulier toch een nummer heeft.'}>
-                <Invoer id="k-btw" waarde={form.btw_nummer || ''} onWijzig={zet('btw_nummer')} placeholder="BE0123.456.789" />
+              <Veld label="Land" id="k-land">
+                <select id="k-land" className="inp" value={form.land || ''} onChange={e => zet('land')(e.target.value)}>
+                  {LANDEN.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+                  {form.land && !LANDEN.some(([c]) => c === form.land) && <option value={form.land}>{form.land}</option>}
+                </select>
               </Veld>
+              <Veld label="Btw-nummer" id="k-btw" hint={zakelijk ? 'Met landcode (BE0123456789, NL123456789B01). "Opzoeken" haalt naam, adres en Peppol-ID op.' : 'Enkel als een particulier toch een nummer heeft.'}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Invoer id="k-btw" waarde={form.btw_nummer || ''} onWijzig={w => { zet('btw_nummer')(w); setGevonden(null); }} placeholder="BE0123456789" />
+                  <button type="button" className="btn" disabled={zoekt} onClick={zoekOp}>{zoekt ? 'Zoeken…' : 'Opzoeken'}</button>
+                </div>
+              </Veld>
+              {gevonden && (
+                <div className="opzoek" role="status" aria-label="Gevonden gegevens">
+                  {gevonden.vies ? (gevonden.vies.geldig
+                    ? <div><b>✓ Geldig btw-nummer {gevonden.btw}</b>{gevonden.vies.naam ? <> · {gevonden.vies.naam}</> : null}{gevonden.vies.adres ? <div className="sub">{gevonden.vies.adres}</div> : <div className="sub">Dit land geeft naam en adres niet vrij via VIES: vul ze zelf in.</div>}</div>
+                    : <div className="waarschuwing" style={{ display: 'block' }}>{gevonden.btw} is volgens VIES (Europese Commissie) <b>geen geldig btw-nummer</b>.</div>) : null}
+                  <div style={{ marginTop: 6 }}>{gevonden.peppol
+                    ? <><b>✓ Op Peppol:</b> <span className="mono">{gevonden.peppol.id}</span></>
+                    : <>Niet op Peppol gevonden met het btw-nummer{gevonden.gecontroleerd?.length ? <span className="sub"> (gecontroleerd: {gevonden.gecontroleerd.join(', ')})</span> : null}.</>}</div>
+                  {gevonden.suggesties.length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      <span className="sub">Mogelijk (Peppol Directory, controleer de naam):</span>
+                      <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                        {gevonden.suggesties.map(x => <li key={x.id}><button type="button" className="linkish mono" onClick={() => zet('peppol_id')(x.id)}>{x.id}</button> {x.naam}{x.land ? ` (${x.land})` : ''}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {gevonden.fouten.map(f => <div key={f} className="sub">{f}</div>)}
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                    {(gevonden.vies?.geldig || gevonden.peppol) && <button type="button" className="btn primary klein" onClick={neemOver}>Overnemen</button>}
+                    <button type="button" className="btn ghost klein" onClick={() => setGevonden(null)}>Sluiten</button>
+                  </div>
+                </div>
+              )}
               {zakelijk && (
                 <Veld label="Peppol-ID" id="k-peppol"
                   hint={voorstel ? <>Voorstel op basis van het ondernemingsnummer: <button type="button" className="linkish" onClick={() => zet('peppol_id')(voorstel)}>{voorstel}</button> (controleer of de klant op Peppol staat)</> : null}>
@@ -169,7 +220,7 @@ export default function KlantFormulier() {
               <Veld label="Gsm" id="k-gsm"><Invoer id="k-gsm" type="tel" waarde={form.gsm || ''} onWijzig={zet('gsm')} /></Veld>
               <Veld label="Telefoon" id="k-tel"><Invoer id="k-tel" type="tel" waarde={form.telefoon || ''} onWijzig={zet('telefoon')} /></Veld>
               <Veld label="Afrekening">
-                <span className="sub">{zakelijk ? `Factuur${form.peppol_id ? ' via Peppol' : ''} (in Accountable)` : 'Bonnetje of factuur (in Accountable)'}</span>
+                <span className="sub">{zakelijk ? `Factuur (het ERP maakt ze en mailt ze naar Accountable)${form.peppol_id && (form.land || 'BE') === 'BE' ? '; via Peppol te versturen vanuit Accountable' : ''}` : 'Bonnetje of factuur (het ERP maakt ze en mailt ze naar Accountable)'}</span>
               </Veld>
             </div>
           </div>

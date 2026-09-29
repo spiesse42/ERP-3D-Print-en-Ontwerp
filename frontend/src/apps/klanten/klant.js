@@ -8,7 +8,9 @@ export function klantNaam(k) {
 // Belgisch Peppol-ID = schema 0208 + ondernemingsnummer (10 cijfers).
 // Enkel een VOORSTEL op basis van het ingevulde nummer; niet gecontroleerd
 // of de klant effectief op Peppol staat.
-export function peppolVoorstel(btw) {
+export function peppolVoorstel(btw, land) {
+  if (land && land !== 'BE') return null;
+  if (/^[A-Z]{2}/i.test(String(btw || '').trim()) && !/^BE/i.test(String(btw).trim())) return null;
   const cijfers = String(btw || '').replace(/\D/g, '');
   if (cijfers.length === 10) return `0208:${cijfers}`;
   if (cijfers.length === 9) return `0208:0${cijfers}`;
@@ -17,7 +19,7 @@ export function peppolVoorstel(btw) {
 
 export const LEGE_KLANT = {
   type: 'particulier', naam: '', voornaam: '', bedrijfsnaam: '',
-  email: '', telefoon: '', gsm: '', straat: '', huisnummer: '', postcode: '', gemeente: '',
+  email: '', telefoon: '', gsm: '', straat: '', huisnummer: '', postcode: '', gemeente: '', land: '',
   btw_nummer: '', peppol_id: '', notities: '',
 };
 
@@ -26,3 +28,8 @@ export function naarFormulier(k) {
   for (const s of Object.keys(LEGE_KLANT)) f[s] = k?.[s] ?? LEGE_KLANT[s];
   return f;
 }
+
+// Landen voor het adres (29-09): leeg = België.
+export const LANDEN = [['', 'België'], ['NL', 'Nederland'], ['FR', 'Frankrijk'], ['DE', 'Duitsland'], ['LU', 'Luxemburg'],
+  ['ES', 'Spanje'], ['IT', 'Italië'], ['AT', 'Oostenrijk'], ['PT', 'Portugal'], ['IE', 'Ierland'], ['DK', 'Denemarken'], ['SE', 'Zweden'],
+  ['FI', 'Finland'], ['PL', 'Polen'], ['CZ', 'Tsjechië'], ['GB', 'Verenigd Koninkrijk'], ['CH', 'Zwitserland'], ['NO', 'Noorwegen'], ['US', 'Verenigde Staten']];

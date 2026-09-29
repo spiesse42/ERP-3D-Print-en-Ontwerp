@@ -7,8 +7,10 @@ import { DomeinFout } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { volgendNummer } from '../domein/nummering.js';
 import { leesDossier, leesRegelsVan, berekenDossier, datumOk, bewaarRegels, leesRegels } from '../domein/dossiers.js';
-import { offertesVan, nummerMetVersie, documentInhoud, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje } from '../domein/documenten.js';
-import { maakBonnetje } from '../domein/afrekening.js';
+import { offertesVan, nummerMetVersie, documentInhoud, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje, isErpFactuur } from '../domein/documenten.js';
+import { getBedrijfsgegevens } from '../domein/hulp.js';
+import { factuurHtml, factuurBestand, peppolVerplicht } from '../documenten/factuur.js';
+import { maakBonnetje, maakFactuur } from '../domein/afrekening.js';
 import { overzicht as nummerOverzicht } from '../domein/nummering.js';
 import { start } from '../domein/uitvoering.js';
 import { synchroniseer } from '../productie/opdrachten.js';
@@ -315,30 +317,52 @@ r.post('/werkbonnen/:id/mail', metFouten(async (req, res) => {
   res.json(leesDossier(db, d.id));
 }));
 
-// ── Bonnetje door het ERP (26-09) ──────────────────────────────────────
+// ── Bonnetje en factuur door het ERP (26-09, factuur 29-09) ─────────────
 // Herziening van "optie A" (claude/beslissingen-2026-09-26.md): het ERP maakt
-// het bonnetje (reeks BON: "Bonnetje 2026-020"), mailt het ALTIJD naar
-// Accountable (dagontvangstenboek) en optioneel naar de klant (Accountable
-// dan in cc). Accountable krijgt elk bonnetje exact één keer: een tweede mail
-// zou een dubbele inkomst geven. Het PDF wordt niet bewaard maar opnieuw
-// opgebouwd uit de definitieve werkbon + nummer/datum van de afrekening.
+// het bonnetje (reeks BON: "Bonnetje 2026-020") of de factuur (reeks FAC:
+// "Factuur 2026-004"), mailt het ALTIJD naar Accountable (inkomsten@) en
+// optioneel naar de klant (Accountable dan in cc). Accountable krijgt elk
+// document exact één keer: een tweede mail zou een dubbele inkomst geven. Het
+// PDF wordt niet bewaard maar opnieuw opgebouwd uit de definitieve werkbon +
+// nummer/datum van de afrekening. Routes: /dossiers/:id/bonnetje/… en
+// /dossiers/:id/factuur/… (zelfde werking).
 const TERUG = Symbol('terugdraaien');
-function erpBonnetje(d) {
-  if (!isErpBonnetje(d)) throw new DomeinFout('Dit dossier heeft geen bonnetje dat door het ERP gemaakt werd.');
-  if (!d.werkbon?.document) throw new DomeinFout('De definitieve werkbon ontbreekt: het bonnetje kan niet opgebouwd worden.');
-  return bonnetjeHtml({ inhoud: d.werkbon.document, nummer: d.afgerekend_nummer, datum: d.afgerekend_op });
+const SOORT = {
+  bonnetje: { wat: 'het bonnetje', Wat: 'Bonnetje', reeks: 'BON', isErp: isErpBonnetje, bestand: bonnetjeBestand },
+  factuur: { wat: 'de factuur', Wat: 'Factuur', reeks: 'FAC', isErp: isErpFactuur, bestand: factuurBestand },
+};
+function betaaltermijn(db) {
+  const n = parseInt(db.prepare(`SELECT waarde FROM instellingen WHERE sleutel = 'factuur_betaaltermijn'`).get()?.waarde, 10);
+  return Number.isInteger(n) && n >= 0 ? n : 7;
 }
-function bonnetjeDatum(v) {
+// Datum van de laatste levering (datum uitvoering), anders de factuurdatum.
+const uitvoering = (d, datum) => d.leveringen?.map(l => l.datum).filter(x => x <= datum).sort().at(-1) || datum;
+async function erpDocumentHtml(soort, d) {
+  const S = SOORT[soort];
+  if (!S.isErp(d)) throw new DomeinFout(`Dit dossier heeft geen ${S.Wat.toLowerCase()} dat door het ERP gemaakt werd.`);
+  if (!d.werkbon?.document) throw new DomeinFout(`De definitieve werkbon ontbreekt: ${S.wat} kan niet opgebouwd worden.`);
+  return soort === 'factuur'
+    ? factuurHtml({ inhoud: d.werkbon.document, nummer: d.afgerekend_nummer, datum: d.afgerekend_op, vervaldatum: d.afrekening_vervaldatum || d.afgerekend_op, uitvoering: uitvoering(d, d.afgerekend_op) })
+    : bonnetjeHtml({ inhoud: d.werkbon.document, nummer: d.afgerekend_nummer, datum: d.afgerekend_op });
+}
+function documentDatum(v, soort) {
   const datum = tekst(v) || vandaag();
   if (!datumOk(datum)) throw new DomeinFout('Vul een geldige datum in');
-  if (datum > vandaag()) throw new DomeinFout('Een bonnetje kan niet in de toekomst liggen.');
+  if (datum > vandaag()) throw new DomeinFout(`${SOORT[soort].Wat === 'Factuur' ? 'Een factuur' : 'Een bonnetje'} kan niet in de toekomst liggen.`);
   return datum;
 }
-// Wat het bonnetje ZOU worden (venster + voorbeeld-PDF), zonder iets te
+function vervalDatum(db, v, datum) {
+  const verval = tekst(v) || plusDagen(datum, betaaltermijn(db));
+  if (!datumOk(verval)) throw new DomeinFout('Vul een geldige vervaldatum in');
+  if (verval < datum) throw new DomeinFout('De vervaldatum kan niet vóór de factuurdatum liggen.');
+  return verval;
+}
+// Wat het document ZOU worden (venster + voorbeeld-PDF), zonder iets te
 // bewaren: de werkbon wordt zo nodig gemaakt in een transactie die daarna
 // teruggedraaid wordt, zodat het exact hetzelfde is als bij het echte maken.
-function bonnetjeVoorstel(db, d0, datum) {
+function documentVoorstel(db, d0, datum, soort) {
   if (!d0.acties.afrekenen) throw new DomeinFout(d0.soort !== 'klant' ? 'Enkel een klantopdracht wordt afgerekend.' : 'Dit dossier is al afgerekend, gratis geleverd of geannuleerd.');
+  if (soort === 'factuur' && !d0.klant_id) throw new DomeinFout('Een factuur is altijd op naam: kies eerst de klant van dit dossier (of maak een bonnetje).');
   let uit = null;
   try {
     db.transaction(() => {
@@ -349,69 +373,98 @@ function bonnetjeVoorstel(db, d0, datum) {
       throw TERUG;
     })();
   } catch (e) { if (e !== TERUG) throw e; }
-  const nummer = nummerOverzicht(db, Number(datum.slice(0, 4))).find(x => x.reeks === 'BON').voorbeeld;
+  const nummer = nummerOverzicht(db, Number(datum.slice(0, 4))).find(x => x.reeks === SOORT[soort].reeks).voorbeeld;
   return { ...uit, nummer, datum };
 }
-async function mailBonnetje(db, d, body) {
+async function mailDocument(db, soort, d, body) {
+  const S = SOORT[soort];
   const uit = await stuurBonnetje({ nummer: d.afgerekend_nummer, titel: d.titel, bedrag: d.afgerekend_bedrag, context: `dossier ${d.nummer}`,
-    html: erpBonnetje(d), ...body, al_bij_accountable: !!d.afrekening_gemaild_op });
+    html: await erpDocumentHtml(soort, d), ...body, al_bij_accountable: !!d.afrekening_gemaild_op, wat: S.wat, bestand: S.bestand(d.afgerekend_nummer) });
   db.transaction(() => {
     if (uit.accountable) db.prepare('UPDATE dossiers SET afrekening_gemaild_op = ? WHERE id = ?').run(new Date().toISOString(), d.id);
     if (uit.klantAdres) db.prepare('UPDATE dossiers SET afrekening_klant_mail = ? WHERE id = ?').run(uit.klantAdres, d.id);
     log(db, d.id, uit.tekst);
   })();
 }
+const soortVan = req => {
+  if (!SOORT[req.params.soort]) throw nietGevonden('Pagina');
+  return req.params.soort;
+};
 
-// Gegevens voor het venster "Bonnetje maken".
-r.get('/dossiers/:id/bonnetje/voorstel', metFouten((req, res) => {
+// Gegevens voor het venster "Bonnetje maken" / "Factuur maken".
+r.get('/dossiers/:id/:soort(bonnetje|factuur)/voorstel', metFouten((req, res) => {
   const db = getDb();
+  const soort = soortVan(req);
   const d = dossier(db, idVan(req.params.id));
-  const v = bonnetjeVoorstel(db, d, bonnetjeDatum(req.query.datum));
+  const datum = documentDatum(req.query.datum, soort);
+  const v = documentVoorstel(db, d, datum, soort);
+  const k = d.klant_gegevens;
+  const b = getBedrijfsgegevens(db);
   res.json({ nummer: v.nummer, datum: v.datum, bedrag: v.bedrag, werkbon: v.werkbon, accountable: accountableAdres(), afzender: afzender(),
-    mail_ingesteld: mailIngesteld(), pdf_mogelijk: !!vindBrowser(), drempel: DREMPEL_BONNETJE, klant_email: d.klant_gegevens?.email || null });
+    mail_ingesteld: mailIngesteld(), pdf_mogelijk: !!vindBrowser(), drempel: DREMPEL_BONNETJE, klant_email: k?.email || null,
+    ...(soort === 'factuur' ? {
+      vervaldatum: plusDagen(v.datum, betaaltermijn(db)), betaaltermijn: betaaltermijn(db),
+      peppol_verplicht: peppolVerplicht(k),
+      // wat er ontbreekt op de factuur (bedrijfsgegevens, adres van de klant)
+      ontbreekt: [!b.naam && 'je bedrijfsnaam', !b.adres && 'je adres', !b.btw && 'je ondernemingsnummer', !b.iban && 'je IBAN',
+        !(k?.straat && k?.gemeente) && 'het adres van de klant', k?.type === 'zakelijk' && !k?.btw_nummer && (k?.land || 'BE') === 'BE' && 'het btw-nummer van de klant'].filter(Boolean),
+    } : {}) });
 }));
-r.get('/dossiers/:id/bonnetje/voorbeeld', metFouten(async (req, res) => {
+r.get('/dossiers/:id/:soort(bonnetje|factuur)/voorbeeld', metFouten(async (req, res) => {
   const db = getDb();
+  const soort = soortVan(req);
   const d = dossier(db, idVan(req.params.id));
-  const v = bonnetjeVoorstel(db, d, bonnetjeDatum(req.query.datum));
-  await stuurPdf(res, bonnetjeHtml({ inhoud: v.inhoud, nummer: v.nummer, datum: v.datum, concept: true }), bonnetjeBestand(v.nummer, ' - voorbeeld'));
+  const datum = documentDatum(req.query.datum, soort);
+  const v = documentVoorstel(db, d, datum, soort);
+  const html = soort === 'factuur'
+    ? await factuurHtml({ inhoud: v.inhoud, nummer: v.nummer, datum, vervaldatum: vervalDatum(db, req.query.vervaldatum, datum), uitvoering: uitvoering(d, datum), concept: true })
+    : bonnetjeHtml({ inhoud: v.inhoud, nummer: v.nummer, datum: v.datum, concept: true });
+  await stuurPdf(res, html, SOORT[soort].bestand(v.nummer, ' - voorbeeld'));
 }));
-// Maken (afrekenen + betaald) en meteen mailen. Eerst alles controleren wat
-// het mailen kan tegenhouden, zodat er geen nummer "verbruikt" wordt voor
-// niets. Mislukt het mailen toch (bv. geen verbinding), dan blijft het
-// bonnetje bestaan en meldt de volgende stap dat het nog gemaild moet worden.
-r.post('/dossiers/:id/bonnetje', metFouten(async (req, res) => {
+// Maken (afrekenen; bonnetje = ook betaald) en meteen mailen. Eerst alles
+// controleren wat het mailen kan tegenhouden, zodat er geen nummer
+// "verbruikt" wordt voor niets. Mislukt het mailen toch (bv. geen
+// verbinding), dan blijft het document bestaan en meldt de volgende stap dat
+// het nog gemaild moet worden.
+r.post('/dossiers/:id/:soort(bonnetje|factuur)', metFouten(async (req, res) => {
   const db = getDb();
+  const soort = soortVan(req);
   const d0 = dossier(db, idVan(req.params.id));
-  const datum = bonnetjeDatum(req.body?.datum);
-  bonnetjeVoorstel(db, d0, datum);   // zelfde controles als het venster
+  const datum = documentDatum(req.body?.datum, soort);
+  const verval = soort === 'factuur' ? vervalDatum(db, req.body?.vervaldatum, datum) : null;
+  documentVoorstel(db, d0, datum, soort);   // zelfde controles als het venster
   const naarKlant = !!req.body?.naar_klant;
   if (naarKlant && !geldigAdres(req.body?.aan)) throw new DomeinFout('Vul een geldig e-mailadres van de klant in (of vink "ook naar de klant" uit).');
-  if (!mailIngesteld()) throw new DomeinFout('Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Een bonnetje moet naar Accountable gemaild worden.');
+  if (!mailIngesteld()) throw new DomeinFout(`Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). ${soort === 'factuur' ? 'Een factuur' : 'Een bonnetje'} moet naar Accountable gemaild worden.`);
   if (!vindBrowser()) throw new DomeinFout('Geen Chrome, Edge of Chromium gevonden om de PDF te maken.');
-  db.transaction(() => maakBonnetje(db, d0, { datum, leverVoorraad: req.body?.voorraad_leveren !== false }))();
+  const leverVoorraad = req.body?.voorraad_leveren !== false;
+  db.transaction(() => (soort === 'factuur'
+    ? maakFactuur(db, d0, { datum, vervaldatum: verval, leverVoorraad })
+    : maakBonnetje(db, d0, { datum, leverVoorraad })))();
   let mail_fout = null;
   try {
-    await mailBonnetje(db, leesDossier(db, d0.id), { naar_klant: naarKlant, aan: req.body?.aan, onderwerp: req.body?.onderwerp, tekst: req.body?.tekst, naar_accountable: true });
+    await mailDocument(db, soort, leesDossier(db, d0.id), { naar_klant: naarKlant, aan: req.body?.aan, onderwerp: req.body?.onderwerp, tekst: req.body?.tekst, naar_accountable: true });
   } catch (e) {
     mail_fout = e.message;
-    console.error('[bonnetje]', e);
-    log(db, d0.id, `Mailen van het bonnetje mislukt: ${e.message}. Het is NOG NIET naar Accountable gestuurd.`);
+    console.error(`[${soort}]`, e);
+    log(db, d0.id, `Mailen van ${SOORT[soort].wat} mislukt: ${e.message}. Het is NOG NIET naar Accountable gestuurd.`);
   }
   res.status(201).json({ ...leesDossier(db, d0.id), mail_fout });
 }));
-r.get('/dossiers/:id/bonnetje/pdf', metFouten(async (req, res) => {
+r.get('/dossiers/:id/:soort(bonnetje|factuur)/pdf', metFouten(async (req, res) => {
   const db = getDb();
+  const soort = soortVan(req);
   const d = dossier(db, idVan(req.params.id));
-  await stuurPdf(res, erpBonnetje(d), bonnetjeBestand(d.afgerekend_nummer));
+  await stuurPdf(res, await erpDocumentHtml(soort, d), SOORT[soort].bestand(d.afgerekend_nummer));
 }));
 // Opnieuw mailen: naar de klant (altijd mogelijk) en/of naar Accountable
 // (enkel als dat nog niet gebeurd is).
-r.post('/dossiers/:id/bonnetje/mail', metFouten(async (req, res) => {
+r.post('/dossiers/:id/:soort(bonnetje|factuur)/mail', metFouten(async (req, res) => {
   const db = getDb();
+  const soort = soortVan(req);
   const d = dossier(db, idVan(req.params.id));
-  erpBonnetje(d);
-  await mailBonnetje(db, d, { naar_klant: !!req.body?.naar_klant, aan: req.body?.aan, onderwerp: req.body?.onderwerp, tekst: req.body?.tekst,
+  await erpDocumentHtml(soort, d);
+  await mailDocument(db, soort, d, { naar_klant: !!req.body?.naar_klant, aan: req.body?.aan, onderwerp: req.body?.onderwerp, tekst: req.body?.tekst,
     naar_accountable: !!req.body?.naar_accountable });
   res.json(leesDossier(db, d.id));
 }));
