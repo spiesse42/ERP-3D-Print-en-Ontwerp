@@ -2,11 +2,12 @@
 // elke app), bovenaan appnaam + menu van de app, daaronder de pagina. Op gsm
 // verdwijnt de app-balk en toont de knop Menu eerst alle apps, daarna het
 // menu van de huidige app.
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { APPS, appVoorPad } from '../apps.js';
 import { useOmgeving } from './Omgeving.jsx';
 import Icoon from './Icoon.jsx';
+import { Laden } from './Weergaven.jsx';
 
 // Interne link die de navigatiebewaking respecteert (niet-opgeslagen werk).
 export function Link({ naar, children, className, ...rest }) {
@@ -88,7 +89,7 @@ export default function Schil() {
           )}
         </div>
         <main className="app-body">
-          <Outlet />
+          <Suspense fallback={<Laden />}><Outlet /></Suspense>
         </main>
       </div>
     </div>

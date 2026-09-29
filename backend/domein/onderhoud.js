@@ -13,7 +13,8 @@
 // BACKUP=uit schakelt de automatische backup uit (bv. lokaal).
 import fs from 'fs';
 import path from 'path';
-import { getDb, databankPad, huidigeVersie } from '../db/index.js';
+import { getDb, databankPad, huidigeVersie, bijlagenMap } from '../db/index.js';
+import { logGebeurtenis } from './historiek.js';
 import { DomeinFout } from './hulp.js';
 
 const BEWAAR = { automatisch: 14, manueel: 20 };
@@ -73,3 +74,40 @@ export function startAutoBackup() {
   timer.unref?.();
 }
 export function stopAutoBackup() { if (timer) clearInterval(timer); timer = null; }
+
+// ── Bijlagen: ruimte en opruimen (29-09) ───────────────────────────────
+// Foto's, PDF's en slicerbestanden (tot 200 MB per stuk) staan in de map
+// "bijlagen" naast de databank en zitten mee in de back-ups van Home
+// Assistant. Slicerbestanden van dossiers die al lang afgesloten zijn
+// (afgerekend, gratis geleverd, geannuleerd of samengevoegd) kunnen weg:
+// de regels verliezen dan enkel hun downloadlink (ON DELETE SET NULL).
+const SOORT_SQL = `CASE WHEN mimetype LIKE 'image/%' THEN 'fotos' WHEN mimetype = 'application/pdf' THEN 'pdf'
+  WHEN mimetype IN ('model/3mf', 'text/x-gcode') THEN 'slicer' ELSE 'overig' END`;
+const OUD_SLICER = `SELECT b.id, b.pad, b.bestandsnaam, b.grootte, b.entiteit_id FROM bijlagen b JOIN dossiers d ON d.id = b.entiteit_id
+  WHERE b.entiteit = 'dossier' AND b.mimetype IN ('model/3mf', 'text/x-gcode')
+    AND COALESCE(d.afgerekend_op, d.gratis_op, d.geannuleerd_op, d.samengevoegd_op) IS NOT NULL
+    AND substr(COALESCE(d.afgerekend_op, d.gratis_op, d.geannuleerd_op, d.samengevoegd_op), 1, 10) < date('now', ?)`;
+const maandenTerug = m => `-${Math.max(1, Math.min(120, Math.round(Number(m) || 6)))} months`;
+
+export function bijlagenInfo(maanden = 6) {
+  const db = getDb();
+  const per = Object.fromEntries(['fotos', 'pdf', 'slicer', 'overig'].map(k => [k, { aantal: 0, grootte: 0 }]));
+  for (const r of db.prepare(`SELECT ${SOORT_SQL} soort, COUNT(*) n, COALESCE(SUM(grootte), 0) g FROM bijlagen GROUP BY soort`).all()) per[r.soort] = { aantal: r.n, grootte: r.g };
+  const oud = db.prepare(OUD_SLICER).all(maandenTerug(maanden));
+  return { per, totaal: Object.values(per).reduce((t, x) => t + x.grootte, 0),
+    opruimbaar: { maanden: Number(maanden) || 6, aantal: oud.length, grootte: oud.reduce((t, x) => t + (x.grootte || 0), 0) } };
+}
+
+export function ruimSlicerbestandenOp(maanden = 6) {
+  const db = getDb();
+  const oud = db.prepare(OUD_SLICER).all(maandenTerug(maanden));
+  const map = bijlagenMap();
+  db.transaction(() => {
+    for (const b of oud) {
+      db.prepare('DELETE FROM bijlagen WHERE id = ?').run(b.id);
+      logGebeurtenis(db, 'dossier', b.entiteit_id, 'gewijzigd', `Slicerbestand ${b.bestandsnaam} opgeruimd (Instellingen → Onderhoud)`);
+    }
+  })();
+  for (const b of oud) { try { fs.unlinkSync(path.join(map, b.pad)); } catch { /* al weg */ } }
+  return { aantal: oud.length, grootte: oud.reduce((t, x) => t + (x.grootte || 0), 0) };
+}

@@ -296,7 +296,7 @@ function Integraties() {
 /* ── Onderhoud (stap 8): versie en backups ─────────────────────────────── */
 function Onderhoud() {
   const { data, fout, herlaad } = useData('/onderhoud');
-  const { melding } = useOmgeving();
+  const { melding, bevestig } = useOmgeving();
   const [bezig, setBezig] = useState(false);
   const kb = n => `${Math.max(1, Math.round(n / 1024)).toLocaleString('nl-BE')} kB`;
   async function nu() {
@@ -305,8 +305,18 @@ function Onderhoud() {
     catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
   }
+  const mb = n => `${(n / 1024 / 1024).toLocaleString('nl-BE', { maximumFractionDigits: 1 })} MB`;
+  async function ruimOp() {
+    const o = data.bijlagen.opruimbaar;
+    if (!await bevestig({ titel: 'Slicerbestanden opruimen', tekst: `${o.aantal} slicerbestand${o.aantal === 1 ? '' : 'en'} (${mb(o.grootte)}) van dossiers die al meer dan ${o.maanden} maanden afgesloten zijn, definitief verwijderen? Foto's, PDF's en de dossiers zelf blijven. Bij de printregels verdwijnt enkel de downloadlink.`, bevestigLabel: 'Opruimen', annuleerLabel: 'Terug', gevaarlijk: true })) return;
+    setBezig(true);
+    try { const r = await api.post('/onderhoud/slicer-opruimen', { maanden: o.maanden }); melding(`${r.aantal} slicerbestand${r.aantal === 1 ? '' : 'en'} opgeruimd (${mb(r.grootte)} vrij).`); await herlaad(); }
+    catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
   if (fout) return <Fout tekst={fout} />;
   if (!data) return <Laden />;
+  const bij = data.bijlagen;
   return (
     <div className="panel">
       <h3>Onderhoud</h3>
@@ -320,6 +330,20 @@ function Onderhoud() {
         <p className="note" style={{ margin: 0 }}>{data.automatisch ? 'Elke dag wordt automatisch een backup gemaakt (de laatste 14 blijven bewaard); ' : 'Automatische backups staan uit; '}
           backups met de hand: de laatste 20. Ze staan in <span className="mono">{data.backup_map || '—'}</span>{' '}
           (in de add-on zitten ze ook in de back-ups van Home Assistant). Download er af en toe één naar je pc. Terugzetten: hernoem de backup naar <span className="mono">terugzetten.db</span>, zet hem in de map van de add-on (addon_configs, via Samba of SSH) en herstart de add-on; de huidige databank gaat eerst naar de backups. Zie de README.</p>
+        {bij && <>
+          <h4 className="tussenkop" style={{ margin: '8px 0 0' }}>Bijlagen ({mb(bij.totaal)})</h4>
+          <dl className="pwaarden" style={{ maxWidth: 520 }}>
+            <dt>Foto's</dt><dd className="num">{bij.per.fotos.aantal} · {mb(bij.per.fotos.grootte)}</dd>
+            <dt>PDF's</dt><dd className="num">{bij.per.pdf.aantal} · {mb(bij.per.pdf.grootte)}</dd>
+            <dt>Slicerbestanden</dt><dd className="num">{bij.per.slicer.aantal} · {mb(bij.per.slicer.grootte)}</dd>
+            {bij.per.overig.aantal > 0 && <><dt>Overige</dt><dd className="num">{bij.per.overig.aantal} · {mb(bij.per.overig.grootte)}</dd></>}
+          </dl>
+          <p className="note" style={{ margin: 0 }}>Bijlagen staan naast de databank (map <span className="mono">bijlagen</span>) en zitten niet in de backups hierboven, wel in de back-ups van Home Assistant. Grote slicerbestanden maken die back-ups groter.</p>
+          {bij.opruimbaar.aantal > 0
+            ? <div><button type="button" className="btn" disabled={bezig} onClick={ruimOp}>{bij.opruimbaar.aantal} oude slicerbestand{bij.opruimbaar.aantal === 1 ? '' : 'en'} opruimen ({mb(bij.opruimbaar.grootte)})</button>
+                <div className="sub" style={{ marginTop: 4 }}>Van dossiers die al meer dan {bij.opruimbaar.maanden} maanden afgerekend, gratis geleverd, geannuleerd of samengevoegd zijn.</div></div>
+            : <p className="sub" style={{ margin: 0 }}>Geen slicerbestanden van dossiers die al meer dan {bij.opruimbaar.maanden} maanden afgesloten zijn.</p>}
+        </>}
         {data.backups.length > 0 && (
           <div className="tabelvak">
             <table className="mini">

@@ -1,36 +1,39 @@
+import { lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { OmgevingProvider } from './schil/Omgeving.jsx';
 import Schil from './schil/Schil.jsx';
 import Startscherm from './schil/Startscherm.jsx';
 import { NietGevonden } from './schil/BinnenKort.jsx';
-import KlantenLijst from './apps/klanten/KlantenLijst.jsx';
-import KlantFormulier from './apps/klanten/KlantFormulier.jsx';
-import Instellingen from './apps/instellingen/Instellingen.jsx';
-import ArtikelenLijst from './apps/voorraad/ArtikelenLijst.jsx';
-import ArtikelFormulier from './apps/voorraad/ArtikelFormulier.jsx';
-import TeBestellen from './apps/voorraad/TeBestellen.jsx';
-import Mutaties from './apps/voorraad/Mutaties.jsx';
-import Voorraadtelling from './apps/voorraad/Voorraadtelling.jsx';
-import Categorieen from './apps/voorraad/Categorieen.jsx';
-import AankopenLijst from './apps/inkoop/AankopenLijst.jsx';
-import AankoopFormulier from './apps/inkoop/AankoopFormulier.jsx';
-import LeveranciersLijst from './apps/inkoop/LeveranciersLijst.jsx';
-import LeverancierFormulier from './apps/inkoop/LeverancierFormulier.jsx';
-import FactuurInlezen from './apps/inkoop/FactuurInlezen.jsx';
-import DossiersLijst from './apps/dossiers/DossiersLijst.jsx';
-import DossierFormulier from './apps/dossiers/DossierFormulier.jsx';
-import OffertesLijst from './apps/dossiers/OffertesLijst.jsx';
-import LeveringenLijst from './apps/dossiers/LeveringenLijst.jsx';
-import PrintersLive from './apps/productie/PrintersLive.jsx';
-import RunsLijst from './apps/productie/RunsLijst.jsx';
-import Printopdrachten from './apps/productie/Printopdrachten.jsx';
-import FinOverzicht from './apps/financien/Overzicht.jsx';
-import FinOpvolging from './apps/financien/Opvolging.jsx';
-import FinMarges from './apps/financien/Marges.jsx';
-import FinStatistieken from './apps/financien/Statistieken.jsx';
-import AccountableImport from './apps/financien/AccountableImport.jsx';
-import VerkopenLijst from './apps/verkoop/VerkopenLijst.jsx';
-import VerkoopFormulier from './apps/verkoop/VerkoopFormulier.jsx';
+// Elke tegel wordt pas geladen als je ze opent (29-09): de eerste keer openen
+// (zeker op gsm via Home Assistant) gaat sneller dan met één groot bestand.
+const KlantenLijst = lazy(() => import('./apps/klanten/KlantenLijst.jsx'));
+const KlantFormulier = lazy(() => import('./apps/klanten/KlantFormulier.jsx'));
+const Instellingen = lazy(() => import('./apps/instellingen/Instellingen.jsx'));
+const ArtikelenLijst = lazy(() => import('./apps/voorraad/ArtikelenLijst.jsx'));
+const ArtikelFormulier = lazy(() => import('./apps/voorraad/ArtikelFormulier.jsx'));
+const TeBestellen = lazy(() => import('./apps/voorraad/TeBestellen.jsx'));
+const Mutaties = lazy(() => import('./apps/voorraad/Mutaties.jsx'));
+const Voorraadtelling = lazy(() => import('./apps/voorraad/Voorraadtelling.jsx'));
+const Categorieen = lazy(() => import('./apps/voorraad/Categorieen.jsx'));
+const AankopenLijst = lazy(() => import('./apps/inkoop/AankopenLijst.jsx'));
+const AankoopFormulier = lazy(() => import('./apps/inkoop/AankoopFormulier.jsx'));
+const LeveranciersLijst = lazy(() => import('./apps/inkoop/LeveranciersLijst.jsx'));
+const LeverancierFormulier = lazy(() => import('./apps/inkoop/LeverancierFormulier.jsx'));
+const FactuurInlezen = lazy(() => import('./apps/inkoop/FactuurInlezen.jsx'));
+const DossiersLijst = lazy(() => import('./apps/dossiers/DossiersLijst.jsx'));
+const DossierFormulier = lazy(() => import('./apps/dossiers/DossierFormulier.jsx'));
+const OffertesLijst = lazy(() => import('./apps/dossiers/OffertesLijst.jsx'));
+const LeveringenLijst = lazy(() => import('./apps/dossiers/LeveringenLijst.jsx'));
+const PrintersLive = lazy(() => import('./apps/productie/PrintersLive.jsx'));
+const RunsLijst = lazy(() => import('./apps/productie/RunsLijst.jsx'));
+const Printopdrachten = lazy(() => import('./apps/productie/Printopdrachten.jsx'));
+const FinOverzicht = lazy(() => import('./apps/financien/Overzicht.jsx'));
+const FinOpvolging = lazy(() => import('./apps/financien/Opvolging.jsx'));
+const FinMarges = lazy(() => import('./apps/financien/Marges.jsx'));
+const FinStatistieken = lazy(() => import('./apps/financien/Statistieken.jsx'));
+const AccountableImport = lazy(() => import('./apps/financien/AccountableImport.jsx'));
+const VerkopenLijst = lazy(() => import('./apps/verkoop/VerkopenLijst.jsx'));
+const VerkoopFormulier = lazy(() => import('./apps/verkoop/VerkoopFormulier.jsx'));
 
 // De app kan onder een voorvoegsel draaien (Home Assistant Ingress). De
 // backend zet dat voorvoegsel als <base href> in index.html; React Router
