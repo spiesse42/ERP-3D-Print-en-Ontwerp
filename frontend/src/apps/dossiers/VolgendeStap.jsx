@@ -46,15 +46,16 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
     verkoop_mailen: () => knop('Naar de verkoop', () => navigeer(`/verkoop/${s.verkoop_id}`)),
     betaling: () => knop('Betaald', onBetaald),
     geannuleerd: () => knop('Heropenen', onHeropenen, { primair: false }),
+    samengevoegd: () => knop(`Naar ${d.samengevoegd_in_nummer || 'het dossier'}`, () => navigeer(`/dossiers/${s.dossier_id}`), { nav: true }),
   };
-  const klaar = ['afgerond', 'klaar'].includes(s.soort);
+  const klaar = ['afgerond', 'klaar'].includes(s.soort);  // samengevoegd: gewone (blauwe) balk met een knop naar het doel
   // na afrekenen of "gratis geleverd" is leveren (pakbon) nog mogelijk: een knop i.p.v. enkel een tip
   const leverKnop = d.acties?.leveren && ['afgerond', 'betaling'].includes(s.soort);
   const tips = (s.extra || []).filter(t => !(leverKnop && /^Leveren \(pakbon\)/.test(t)));
   if (s.soort === 'starten' && afrekenReden && d.soort === 'klant') tips.push(`Afrekenen kan nog niet: ${afrekenReden}`);
   return (
     <>
-      <div className={`volgende-stap${klaar ? ' ok' : ''}${s.soort === 'geannuleerd' ? ' uit' : ''}`} role="status" aria-label="Volgende stap">
+      <div className={`volgende-stap${klaar ? ' ok' : ''}${s.soort === 'geannuleerd' || s.soort === 'samengevoegd' ? ' uit' : ''}`} role="status" aria-label="Volgende stap">
         <div className="tekst">
           <span className="kop"><Icoon naam={klaar ? 'vink' : 'pijlRechts'} maat={14} /> {klaar ? 'Klaar' : 'Volgende stap'}</span>
           <span>{s.tekst}</span>

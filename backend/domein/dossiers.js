@@ -205,7 +205,10 @@ export function leesDossier(db, dossierId) {
   const prod = productie.status;
   const opts = { aantalRegels: regels.length, offerte, werkbon, verstuurdeOffertes: offertes.filter(o => o.verstuurd_op).length, lever, leveringen: leveringen.length,
     prod, printopdrachten: productie.aantal_opdrachten };
-  const uit = { ...d, klant_gegevens, fase: faseVan(d, { offerte, lever, prod }), stappen: stappenVan(d, { lever, prod }), acties: actiesVan(d, opts),
+  // samenvoegen (29-09): waarin dit dossier opging, of wat hierin opging
+  const samengevoegd_in_nummer = d.samengevoegd_in ? db.prepare('SELECT nummer FROM dossiers WHERE id = ?').get(d.samengevoegd_in)?.nummer ?? null : null;
+  const samengevoegd_uit = db.prepare('SELECT id, nummer, titel, samengevoegd_op FROM dossiers WHERE samengevoegd_in = ? ORDER BY id').all(dossierId);
+  const uit = { ...d, klant_gegevens, samengevoegd_in_nummer, samengevoegd_uit, fase: faseVan(d, { offerte, lever, prod }), stappen: stappenVan(d, { lever, prod }), acties: actiesVan(d, opts),
     leverbaar: lever_lijst, lever_status: lever, leveringen, productie,
     regels, berekening, offertes: offertes.map(({ regels_api: _r, document: _doc, ...o }) => o), werkbon, zonder_werkbon, wijkt_af_van_offerte, overname };
   // afgerekend via een losse verkoop (26-09): enkel daar ongedaan te maken
@@ -226,6 +229,9 @@ export function volgendeStap(d) {
   const klant = d.soort === 'klant';
   const extra = [];
   if (klant && ['geen', 'deels'].includes(d.lever_status) && d.fase !== 'geannuleerd') extra.push('Leveren (pakbon) kan nog, maar is niet verplicht.');
+  if (d.fase === 'samengevoegd') {
+    return { soort: 'samengevoegd', dossier_id: d.samengevoegd_in, tekst: `Samengevoegd in ${d.samengevoegd_in_nummer || 'een ander dossier'}${d.samengevoegd_op ? ` op ${String(d.samengevoegd_op).split('-').reverse().join('-')}` : ''}: de regels, printopdrachten, leveringen en bijlagen staan daar.`, extra: [] };
+  }
   if (d.fase === 'geannuleerd') return { soort: 'geannuleerd', tekst: 'Dit dossier is geannuleerd: niets af te rekenen of te leveren.', extra: [] };
   // afgerekend via een losse verkoop (26-09)
   if (d.afgerekend_via) {

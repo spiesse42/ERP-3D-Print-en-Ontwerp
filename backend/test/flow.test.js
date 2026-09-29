@@ -44,7 +44,7 @@ test('X0. voorbereiding', async () => {
   await vraag('PUT', `/printers/${mini}`, { naam: 'Bambu Lab A1 Mini', machine_per_uur: 0.2, verbruik_watt: 95 });
   pg = (await vraag('POST', '/filament/types', { merk_id: 1, materiaal_id: 1, verkoopprijs_per_kg: 25 })).data.id;
   klant = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'Sofie', naam: 'Maes' })).data.id;
-  assert.equal(db.pragma('user_version', { simple: true }), 21);
+  assert.equal(db.pragma('user_version', { simple: true }), 22);
 });
 
 let dos;
@@ -371,4 +371,64 @@ test('X16. run op een andere printer met de naam van de opdracht in het bestand 
   // de andere run op de A1 Mini hoort nu bij een printer van het dossier, zonder voorstel (opdracht is te bevestigen)
   assert.deepEqual(d.productie.te_koppelen_runs.map(r => [r.id, r.voorstel]), [[ander.id, null]]);
   await vraag('POST', `/productie/runs/${ander.id}/koppel`, { intern: 'test' });
+});
+
+test('X17. dossiers samenvoegen: regels, printopdrachten, runs, leveringen en bijlagen naar het doel; bron samengevoegd', async () => {
+  getDb().prepare(`UPDATE printruns SET intern = 'test' WHERE printopdracht_id IS NULL AND intern IS NULL`).run();
+  const vandaag = new Date().toISOString().slice(0, 10);
+  const print = (oms, extra = {}) => ({ type: 'printen', omschrijving: oms, printer_id: mini, aantal: 1, tijd_min: 20, materialen: [{ filament_type_id: pg, gram: 5 }], ...extra });
+  // A: gestart, met een geprinte en bevestigde opdracht
+  let a = (await vraag('POST', '/dossiers', { titel: 'Bestelling maandag', klant_id: klant, notities: 'Blauw graag', regels: [print('Hond')] })).data;
+  a = (await vraag('POST', `/dossiers/${a.id}/starten`)).data;
+  const oA = a.productie.regels[0].opdrachten[0];
+  await run(mini, oA.id);
+  await vraag('POST', `/productie/opdrachten/${oA.id}/bevestig`, { aantal_goed: 1 });
+  // B: niet gestart, een printregel + ontwerp
+  const b = (await vraag('POST', '/dossiers', { titel: 'Bestelling woensdag', klant_id: klant, notities: 'Met naam', regels: [print('Kat'), { type: 'ontwerp', minuten: 15 }] })).data;
+  // C: gestart, geleverd, met een bijlage
+  let c = (await vraag('POST', '/dossiers', { titel: 'Bestelling vrijdag', klant_id: klant, regels: [print('Vis')] })).data;
+  c = (await vraag('POST', `/dossiers/${c.id}/starten`)).data;
+  const oC = c.productie.regels[0].opdrachten[0];
+  await run(mini, oC.id);
+  await vraag('POST', `/productie/opdrachten/${oC.id}/bevestig`, { aantal_goed: 1 });
+  const lev = await vraag('POST', `/dossiers/${c.id}/leveringen`, { datum: vandaag, regels: [{ regel_id: c.regels[0].id, aantal: 1 }] });
+  assert.equal(lev.status, 201, JSON.stringify(lev.data));
+  const fd = new FormData(); fd.append('bestand', new Blob([Buffer.from('iVBORw0KGgo=', 'base64')], { type: 'image/png' }), 'foto.png');
+  assert.equal((await fetch(`${basis}/bijlagen/dossier/${c.id}`, { method: 'POST', body: fd })).status, 201);
+
+  // weigeren: andere klant, zichzelf, niets
+  const ander = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'Jan', naam: 'Peeters' })).data.id;
+  const x = (await vraag('POST', '/dossiers', { titel: 'Van iemand anders', klant_id: ander, regels: [print('X')] })).data;
+  assert.match((await vraag('POST', `/dossiers/${a.id}/samenvoegen`, { dossiers: [x.id] })).data.error, /andere klant/);
+  assert.match((await vraag('POST', `/dossiers/${a.id}/samenvoegen`, { dossiers: [a.id] })).data.error, /met zichzelf/);
+  assert.equal((await vraag('POST', `/dossiers/${a.id}/samenvoegen`, { dossiers: [] })).status, 400);
+
+  const r = await vraag('POST', `/dossiers/${a.id}/samenvoegen`, { dossiers: [b.id, c.id] });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const d = r.data;
+  assert.deepEqual(d.regels.map(x => x.omschrijving || x.type), ['Hond', 'Kat', 'ontwerp', 'Vis']);
+  const opdr = d.productie.regels.map(x => x.opdrachten.map(o => [o.naam, o.status]));
+  assert.deepEqual(opdr, [[['Hond', 'voltooid']], [['Kat', 'gepland']], [['Vis', 'voltooid']]], 'bestaande opdrachten en runs mee, nieuwe regel krijgt een opdracht');
+  assert.equal(d.productie.regels[0].opdrachten[0].runs.length, 1);
+  assert.equal(d.leveringen.length, 1); assert.equal(d.leverbaar.find(x => x.omschrijving === 'Vis').geleverd, 1);
+  assert.ok(d.werkbon, 'werkbon blijft');
+  assert.match(d.notities, /Blauw graag[\s\S]*Uit D-\d+-\d+ \(Bestelling woensdag\):\nMet naam/);
+  assert.deepEqual(d.samengevoegd_uit.map(x => x.id), [b.id, c.id]);
+  assert.equal((await vraag('GET', `/bijlagen/dossier/${a.id}`)).data.length, 1);
+  // bron: samengevoegd, gearchiveerd, leeg, niets meer mogelijk
+  const bb = (await vraag('GET', `/dossiers/${b.id}`)).data;
+  assert.equal(bb.fase, 'samengevoegd'); assert.equal(bb.gearchiveerd, 1); assert.equal(bb.regels.length, 0);
+  assert.equal(bb.samengevoegd_in, a.id); assert.equal(bb.volgende_stap.soort, 'samengevoegd');
+  assert.ok(Object.values(bb.acties).every(v => !v), JSON.stringify(bb.acties));
+  assert.match((await vraag('POST', `/dossiers/${a.id}/samenvoegen`, { dossiers: [b.id] })).data.error, /al samengevoegd/);
+  const h = (await vraag('GET', `/historiek/dossier/${a.id}`)).data.map(y => y.tekst);
+  assert.ok(h.some(t => /Bestelling woensdag" hierin samengevoegd \(2 regels\)/.test(t)));
+  assert.ok(h.some(t => /Bestelling vrijdag" hierin samengevoegd \(1 regel, 1 levering, 1 bijlage\)/.test(t)));
+
+  // aanvaarde offerte → geweigerd
+  const e = (await vraag('POST', '/dossiers', { titel: 'Met offerte', klant_id: klant, regels: [{ type: 'ontwerp', minuten: 10 }] })).data;
+  let od = (await vraag('POST', `/dossiers/${e.id}/offertes`)).data;
+  od = (await vraag('POST', `/offertes/${od.offertes[0].id}/versturen`)).data;
+  await vraag('POST', `/offertes/${od.offertes[0].id}/aanvaard`);
+  assert.match((await vraag('POST', `/dossiers/${a.id}/samenvoegen`, { dossiers: [e.id] })).data.error, /aanvaarde offerte/);
 });
