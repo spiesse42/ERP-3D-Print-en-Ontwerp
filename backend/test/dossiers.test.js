@@ -103,7 +103,9 @@ test('E4. afrekenen (factuur) → vast → betaald → ongedaan', async () => {
   assert.equal(r.status, 200);
   assert.equal((await vraag('POST', `/dossiers/${d.id}/annuleren`)).status, 400);
   assert.equal((await vraag('DELETE', `/dossiers/${d.id}`)).status, 400);
-  r = await vraag('POST', `/dossiers/${d.id}/betaald`, { datum: '2026-09-30' });
+  r = await vraag('POST', `/dossiers/${d.id}/betaald`, { datum: '2026-09-24' });
+  assert.match(r.data.error, /niet vóór de afrekening/);
+  r = await vraag('POST', `/dossiers/${d.id}/betaald`, { datum: '2026-09-26' });
   assert.equal(r.data.fase, 'betaald');
   r = await vraag('POST', `/dossiers/${d.id}/betaling-ongedaan`);
   assert.equal(r.data.fase, 'afgerekend');

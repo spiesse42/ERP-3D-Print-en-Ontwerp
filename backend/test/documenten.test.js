@@ -181,6 +181,19 @@ test('F5. PDF en mail', { skip: !vindBrowser() && 'geen Chromium in deze omgevin
   const x = (await vraag('POST', '/dossiers', { titel: 'Mail', klant_id: klant, regels: [{ type: 'extra', bedrag: 5 }] })).data;
   const o = (await vraag('POST', `/dossiers/${x.id}/offertes`)).data.offertes[0];
   assert.match((await vraag('POST', `/offertes/${o.id}/mail`, { aan: 'geen-adres' })).data.error, /geldig e-mailadres/);
+  // mailen mislukt (geen verbinding): de offerte blijft een concept (29-09)
+  const bewaard = { ...process.env };
+  delete process.env.MAIL_NEP;
+  Object.assign(process.env, { SMTP_USER: 'x@voorbeeld.be', SMTP_PASS: 'x', SMTP_HOST: '127.0.0.1', SMTP_PORT: '1' });
+  try {
+    r = await vraag('POST', `/offertes/${o.id}/mail`, { aan: 'sofie@voorbeeld.be' });
+  } finally {
+    for (const k of ['SMTP_USER', 'SMTP_PASS', 'SMTP_HOST', 'SMTP_PORT']) { if (bewaard[k] === undefined) delete process.env[k]; else process.env[k] = bewaard[k]; }
+    process.env.MAIL_NEP = '1';
+  }
+  assert.ok(r.status >= 400, JSON.stringify(r.data));
+  const na = (await vraag('GET', `/dossiers/${x.id}`)).data.offertes[0];
+  assert.equal(na.status, 'concept'); assert.equal(na.verstuurd_op, null);
   r = await vraag('POST', `/offertes/${o.id}/mail`, { aan: 'sofie@voorbeeld.be', onderwerp: 'Uw offerte', tekst: 'Beste Sofie' });
   assert.equal(r.status, 200);
   assert.equal(r.data.offertes[0].status, 'verstuurd');

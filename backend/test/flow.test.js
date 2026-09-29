@@ -504,3 +504,53 @@ test('X20. opvolging "nog te leveren": artikelen uit voorraad niet geleverd, of 
   const rij = (await lijst()).find(x => x.id === e.id);
   assert.ok(rij); assert.deepEqual(rij.artikelen, ['2 × Lampje X20']); assert.equal(rij.dagen, 0);
 });
+
+test('X21. controles (29-09): aantal 0, soort na offerte, datums, factuur zonder klant, antwoord op een afgesloten dossier; volgende stap met rest te leveren of afwijking van de offerte', async () => {
+  const vandaag = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });
+  const morgen = new Date(Date.now() + 864e5).toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });
+  const pr = (aantal = 2) => ({ type: 'printen', omschrijving: 'Vaas', printer_id: mini, aantal, tijd_min: 60, materialen: [{ filament_type_id: pg, gram: 20 }] });
+  let r = await vraag('POST', '/dossiers', { titel: 'Nul', klant_id: klant, regels: [pr(0)] });
+  assert.match(r.data.error, /Regel 1: aantal moet groter dan 0/);
+  // aanvaarde offerte → geen eigen product meer
+  let d = (await vraag('POST', '/dossiers', { titel: 'Soort', klant_id: klant, regels: [pr()] })).data;
+  const o = (await vraag('POST', `/dossiers/${d.id}/offertes`)).data.offertes[0];
+  await vraag('POST', `/offertes/${o.id}/versturen`);
+  r = await vraag('PUT', `/dossiers/${d.id}`, { soort: 'eigen', klant_id: klant, titel: 'Soort' });
+  assert.match(r.data.error, /blijft een klantopdracht/);
+  d = (await vraag('POST', `/offertes/${o.id}/aanvaard`, {})).data;
+  // regels gewijzigd na aanvaarden → waarschuwing bij het afrekenen
+  d = (await opslaan(d, [...zonderLees(d.regels), { type: 'extra', omschrijving: 'Extra doosje', bedrag: 5 }])).data;
+  assert.equal(d.wijkt_af_van_offerte, true);
+  // datums
+  r = await vraag('POST', `/dossiers/${d.id}/afrekenen`, { soort: 'factuur', nummer: 'F-X21', datum: morgen });
+  assert.match(r.data.error, /niet in de toekomst/);
+  r = await vraag('POST', `/dossiers/${d.id}/gratis`, { datum: morgen });
+  assert.match(r.data.error, /niet in de toekomst/);
+  d = (await vraag('POST', `/dossiers/${d.id}/afrekenen`, { soort: 'factuur', nummer: 'F-X21', datum: vandaag })).data;
+  assert.equal(d.fase, 'afgerekend');
+  r = await vraag('POST', `/dossiers/${d.id}/betaald`, { datum: morgen });
+  assert.match(r.data.error, /niet in de toekomst/);
+  // antwoord op de offerte verandert niets meer na afrekenen
+  r = await vraag('POST', `/offertes/${o.id}/antwoord-ongedaan`);
+  assert.match(r.data.error, /al afgerekend/);
+  // factuur zonder klant: geweigerd; bonnetje zonder klant mag
+  const z = (await vraag('POST', '/dossiers', { titel: 'Zonder klant', regels: [pr()] })).data;
+  r = await vraag('POST', `/dossiers/${z.id}/afrekenen`, { soort: 'factuur', nummer: 'F-X21b', datum: vandaag });
+  assert.match(r.data.error, /factuur is altijd op naam/);
+  r = await vraag('POST', `/dossiers/${z.id}/afrekenen`, { soort: 'bonnetje', nummer: 'B-X21', datum: vandaag });
+  assert.equal(r.data.fase, 'betaald');
+  // betaald maar deels geleverd → volgende stap = leveren (niet "afgerond")
+  let e = (await vraag('POST', '/dossiers', { titel: 'Deels', klant_id: klant, regels: [pr(4)] })).data;
+  await vraag('POST', `/dossiers/${e.id}/leveringen`, { datum: vandaag, regels: [{ regel_id: e.regels[0].id, aantal: 1 }] });
+  e = (await vraag('POST', `/dossiers/${e.id}/afrekenen`, { soort: 'bonnetje', nummer: 'B-X21b', datum: vandaag })).data;
+  assert.equal(e.volgende_stap.soort, 'leveren');
+  assert.match(e.volgende_stap.tekst, /3 × Vaas/);
+  const rij = (await vraag('GET', '/financien/opvolging')).data.te_leveren.find(x => x.id === e.id);
+  assert.deepEqual(rij.artikelen, ['3 × Vaas']);
+  // samengevoegd: duidelijke melding
+  const a = (await vraag('POST', '/dossiers', { titel: 'A', klant_id: klant, regels: [pr()] })).data;
+  const b = (await vraag('POST', '/dossiers', { titel: 'B', klant_id: klant, regels: [pr()] })).data;
+  await vraag('POST', `/dossiers/${a.id}/samenvoegen`, { dossiers: [b.id] });
+  r = await vraag('PUT', `/dossiers/${b.id}`, { soort: 'klant', klant_id: klant, titel: 'B2' });
+  assert.match(r.data.error, /samengevoegd in een ander dossier/);
+});

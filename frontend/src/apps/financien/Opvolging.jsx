@@ -52,10 +52,10 @@ export default function Opvolging() {
                 { kop: 'Dossier', cel: d => <><span className="mono">{d.nummer}</span> · {d.titel}</> },
                 { kop: 'Klant', cel: d => d.klant || '—' },
                 { kop: 'Fase', cel: d => <FaseBadge fase={d.fase} /> },
-                { kop: 'Nog te leveren', cel: d => (d.artikelen.length ? d.artikelen.join(', ') : <span className="badge b-warn">deels geleverd</span>) },
+                { kop: 'Nog te leveren', cel: d => <>{d.artikelen.join(', ')}{d.lever_status === 'deels' && <> <span className="badge b-warn">deels geleverd</span></>}</> },
                 { kop: 'Sinds', klasse: 'r', cel: d => <span className={`badge ${d.dagen > 14 ? 'b-crit' : d.dagen > 7 ? 'b-warn' : 'b-neutral'}`}>{d.dagen} d</span> },
               ]}
-              kaart={d => ({ titel: d.titel, rechts: <FaseBadge fase={d.fase} />, regel: `${d.nummer} · ${d.klant || ''}`, onder: `${d.artikelen.length ? d.artikelen.join(', ') : 'deels geleverd'} · ${d.dagen} dagen` })}
+              kaart={d => ({ titel: d.titel, rechts: <FaseBadge fase={d.fase} />, regel: `${d.nummer} · ${d.klant || ''}`, onder: `${d.artikelen.join(', ')}${d.lever_status === 'deels' ? ' (deels geleverd)' : ''} · ${d.dagen} dagen` })}
               leeg={<><b>Alles geleverd.</b>Hier komen afgerekende klantopdrachten met artikelen uit voorraad die nog niet geleverd zijn (bv. te weinig voorraad bij het afrekenen), of met een levering die al begonnen is.</>} />
           </div>
           <p className="note" style={{ margin: 0 }}>Een factuur als betaald markeren doe je in het dossier (knop Betaald), of voor veel facturen tegelijk via Financiën → Accountable-import.</p>

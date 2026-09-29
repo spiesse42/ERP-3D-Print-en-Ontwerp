@@ -50,7 +50,7 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
   };
   const klaar = ['afgerond', 'klaar'].includes(s.soort);  // samengevoegd: gewone (blauwe) balk met een knop naar het doel
   // na afrekenen of "gratis geleverd" is leveren (pakbon) nog mogelijk: een knop i.p.v. enkel een tip
-  const leverKnop = d.acties?.leveren && ['afgerond', 'betaling'].includes(s.soort);
+  const leverKnop = d.acties?.leveren && ['afgerond', 'betaling', 'leveren'].includes(s.soort);
   const tips = (s.extra || []).filter(t => !(leverKnop && /^Leveren \(pakbon\)/.test(t)));
   if (s.soort === 'starten' && afrekenReden && d.soort === 'klant') tips.push(`Afrekenen kan nog niet: ${afrekenReden}`);
   return (
