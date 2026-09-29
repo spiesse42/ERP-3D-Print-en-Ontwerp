@@ -185,3 +185,31 @@ test('S6. slicerbestand als bijlage van het dossier, gekoppeld aan de printregel
   // andere bestandstypes: niet bij een dossier
   assert.equal((await upload(d0.id, 'notities.txt', Buffer.from('x'))).status, 400);
 });
+
+test('S7. Onderhoud: ruimte per soort bijlage; slicerbestanden van lang afgesloten dossiers opruimen', async () => {
+  const json = (m, pad, body) => fetch(`${basis}${pad}`, { method: m, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) })
+    .then(async r => ({ status: r.status, data: await r.json() }));
+  const upload = async (dossierId, naam, inhoud) => {
+    const fd = new FormData(); fd.append('bestand', new Blob([inhoud]), naam);
+    return (await fetch(`${basis}/bijlagen/dossier/${dossierId}`, { method: 'POST', body: fd })).json();
+  };
+  const maak = async titel => (await json('POST', '/dossiers', { titel, regels: [{ type: 'printen', omschrijving: 'X', printer_id: 2, tijd_min: 10, materialen: [] }] })).data;
+  const oud = await maak('Oud'), recent = await maak('Recent');
+  const bOud = await upload(oud.id, 'oud.gcode', Buffer.from('; filament used [g] = 1\n'.repeat(100)));
+  await upload(recent.id, 'recent.gcode', Buffer.from('; x\n'));
+  await json('PUT', `/dossiers/${oud.id}`, { titel: 'Oud', soort: 'klant', regels: oud.regels.map(r => ({ ...r, slicer_bijlage_id: bOud.id, slicer_plaat: 1 })) });
+  // oud: afgerekend acht maanden geleden; recent: vorige week
+  getDb().prepare(`UPDATE dossiers SET afgerekend_soort = 'factuur', afgerekend_nummer = 'F-oud', afgerekend_bedrag = 1, afgerekend_op = date('now', '-8 months') WHERE id = ?`).run(oud.id);
+  getDb().prepare(`UPDATE dossiers SET afgerekend_soort = 'factuur', afgerekend_nummer = 'F-new', afgerekend_bedrag = 1, afgerekend_op = date('now', '-7 days') WHERE id = ?`).run(recent.id);
+  let o = (await json('GET', '/onderhoud')).data;
+  assert.ok(o.versie, 'versie getoond');
+  assert.ok(o.bijlagen.per.slicer.aantal >= 2);
+  assert.equal(o.bijlagen.opruimbaar.aantal, 1); assert.equal(o.bijlagen.opruimbaar.maanden, 6);
+  const r = (await json('POST', '/onderhoud/slicer-opruimen', { maanden: 6 })).data;
+  assert.equal(r.aantal, 1); assert.ok(r.grootte > 0);
+  o = (await json('GET', '/onderhoud')).data;
+  assert.equal(o.bijlagen.opruimbaar.aantal, 0);
+  const d = (await json('GET', `/dossiers/${oud.id}`)).data;
+  assert.equal(d.regels[0].slicer_bijlage_id, null, 'regel verliest enkel de link');
+  assert.equal((await json('GET', `/bijlagen/dossier/${recent.id}`)).data.length, 1, 'recent dossier blijft');
+});
