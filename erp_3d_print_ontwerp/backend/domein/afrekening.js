@@ -10,7 +10,7 @@
 // werkbon → eerst automatisch aanmaken (25-09).
 import { DomeinFout } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
-import { maakWerkbon, afrekeningWeergave, isErpBonnetje } from './documenten.js';
+import { maakWerkbon, afrekeningWeergave, isErpBonnetje, isErpFactuur, isErpDocument } from './documenten.js';
 import { leesDossier, leesRegelsVan } from './dossiers.js';
 import { volgendNummer } from './nummering.js';
 import { leverRestUitVoorraad } from './leveringen.js';
@@ -33,8 +33,8 @@ export function rekenAf(db, d0, { waarom = 'bij het afrekenen', afrekening, logT
   // Een bonnetje = afgerekend én betaald in één keer (dagontvangsten).
   const betaald = a.soort === 'bonnetje' ? a.datum : null;
   db.prepare(`UPDATE dossiers SET afgerekend_soort=?, afgerekend_nummer=?, afgerekend_op=?, afgerekend_bedrag=?, betaald_op=?,
-      afrekening_pdf_op = ? WHERE id=?`)
-    .run(a.soort, a.nummer, a.datum, a.bedrag, betaald, a.pdf ? new Date().toISOString() : null, d.id);
+      afrekening_pdf_op = ?, afrekening_vervaldatum = ? WHERE id=?`)
+    .run(a.soort, a.nummer, a.datum, a.bedrag, betaald, a.pdf ? new Date().toISOString() : null, a.vervaldatum || null, d.id);
   logGebeurtenis(db, 'dossier', d.id, 'status', logTekst ? logTekst(a, betaald)
     : `Afgerekend in Accountable: ${afrekeningWeergave(a.soort, a.nummer)} van ${dmj(a.datum)}, ${euro(a.bedrag)}${betaald ? ' (meteen betaald)' : ''}`);
   if (leverVoorraad) a.levering = leverRestUitVoorraad(db, d, a.datum, waarom);
@@ -53,14 +53,26 @@ export function maakBonnetje(db, d0, { datum, leverVoorraad = true }) {
   });
 }
 
+// ── Factuur door het ERP (29-09) ────────────────────────────────────────
+// Zelfde als het bonnetje, maar: nummer uit de reeks FAC, NIET meteen betaald,
+// met een vervaldatum. Het bedrag is altijd dat van de werkbon.
+export function maakFactuur(db, d0, { datum, vervaldatum, leverVoorraad = true }) {
+  if (!d0.klant_id) throw new DomeinFout('Een factuur is altijd op naam: kies eerst de klant van dit dossier (of maak een bonnetje).');
+  return rekenAf(db, d0, {
+    waarom: 'bij het maken van de factuur', leverVoorraad,
+    afrekening: wb => ({ soort: 'factuur', nummer: volgendNummer(db, 'FAC', { jaar: Number(String(datum).slice(0, 4)) }), datum, vervaldatum, bedrag: wb.bedrag, pdf: true }),
+    logTekst: a => `${a.nummer} gemaakt door het ERP (${dmj(a.datum)}, ${euro(a.bedrag)}, vervalt ${dmj(a.vervaldatum)})`,
+  });
+}
+
 // Afrekening ongedaan (dossier-knop, of een losse verkoop die ongedaan
 // gemaakt wordt). De werkbon wordt weer een concept, als nieuwe versie
 // (domeinmodel: wijzigen na afrekenen = nieuwe versie).
 export function maakAfrekeningOngedaan(db, d, { waarom = 'Pas dit ook aan in Accountable.' } = {}) {
   db.prepare(`UPDATE dossiers SET afgerekend_soort=NULL, afgerekend_nummer=NULL, afgerekend_op=NULL, afgerekend_bedrag=NULL, betaald_op=NULL,
-    afrekening_pdf_op=NULL, afrekening_gemaild_op=NULL, afrekening_klant_mail=NULL WHERE id=?`).run(d.id);
+    afrekening_pdf_op=NULL, afrekening_gemaild_op=NULL, afrekening_klant_mail=NULL, afrekening_vervaldatum=NULL WHERE id=?`).run(d.id);
   if (d.werkbon?.definitief_op) db.prepare('UPDATE werkbonnen SET definitief_op = NULL, momentopname = NULL, totaal = NULL, versie = versie + 1 WHERE id = ?').run(d.werkbon.id);
   logGebeurtenis(db, 'dossier', d.id, 'status', `Afrekening ongedaan gemaakt (was ${afrekeningWeergave(d.afgerekend_soort, d.afgerekend_nummer)}). ${waarom}`.trim());
 }
 
-export { afrekeningWeergave, isErpBonnetje };
+export { afrekeningWeergave, isErpBonnetje, isErpFactuur, isErpDocument };

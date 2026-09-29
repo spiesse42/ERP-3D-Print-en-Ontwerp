@@ -5,8 +5,9 @@ import { DomeinFout, getTarieven } from './hulp.js';
 import { getal } from './rekenmotor.js';
 import { berekenMetDb } from './berekening.js';
 import { faseVan, actiesVan, stappenVan } from './status/dossier.js';
-import { offertesVan, laatsteVerstuurde, werkbonVan, documentInhoud, afrekeningWeergave, isErpBonnetje } from './documenten.js';
-import { leverbaar, leverStatus, leverStatusVan, leveringenVan, controleerGeleverd } from './leveringen.js';
+import { offertesVan, laatsteVerstuurde, werkbonVan, documentInhoud, afrekeningWeergave, isErpBonnetje, isErpFactuur, isErpDocument } from './documenten.js';
+import { peppolVerplicht } from '../documenten/factuur.js';
+import { leverbaar, leverStatus, leverStatusVan, leveringenVan, controleerGeleverd, nogTeLeveren } from './leveringen.js';
 import { productieVan, productieOverzicht, metingenPerRegel, controleerPrintopdrachten, wisOpdrachtenVanRegels } from '../productie/opdrachten.js';
 
 export const SOORTEN = { klant: 'Klantopdracht', eigen: 'Eigen product', intern: 'Intern' };
@@ -24,6 +25,13 @@ function nietNegatief(v, wat) {
   if (v !== null && v !== undefined && v !== '' && n === null) throw new DomeinFout(`${wat} moet een getal zijn`);
   if (n !== null && n < 0) throw new DomeinFout(`${wat} mag niet negatief zijn`);
   return n;
+}
+// aantal: leeg = 1, maar een ingevulde 0 kan niet (29-09: een regel met 0
+// stuks gaf "geleverd" zonder dat er iets geleverd was)
+function aantal(v, nr) {
+  const n = nietNegatief(v, `${nr}: aantal`);
+  if (n === 0) throw new DomeinFout(`${nr}: aantal moet groter dan 0 zijn (of haal de regel weg)`);
+  return n ?? 1;
 }
 const datumOk = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) && !Number.isNaN(Date.parse(d));
 // Kleine afbeelding bij een printregel (28-09): data-URI, in de browser verkleind.
@@ -64,7 +72,7 @@ export function leesRegels(lijst) {
       return { ...basis, afbeelding: afbeelding(r.afbeelding, nr),
         // slicerbestand (bijlage van dit dossier) + plaat, 28-09
         slicer_bijlage_id: id(r.slicer_bijlage_id, 'slicerbestand'), slicer_plaat: r.slicer_bijlage_id ? id(r.slicer_plaat, 'plaat') : null,
-        aantal: nietNegatief(r.aantal, `${nr}: aantal`) ?? 1, printer_id: id(r.printer_id, 'printer'), artikel_id: id(r.artikel_id, 'eindproduct'),
+        aantal: aantal(r.aantal, nr), printer_id: id(r.printer_id, 'printer'), artikel_id: id(r.artikel_id, 'eindproduct'),
         tijd_min: nietNegatief(r.tijd_min, `${nr}: printtijd`) ?? 0,
         voorbereiding_min: nietNegatief(r.voorbereiding_min, `${nr}: voorbereiding`),
         nabewerking_min: nietNegatief(r.nabewerking_min, `${nr}: nabewerking`),
@@ -77,9 +85,9 @@ export function leesRegels(lijst) {
     if (r.type === 'ontwerp' || r.type === 'aanpassing') {
       return { ...basis, minuten: nietNegatief(r.minuten, `${nr}: minuten`) ?? 0, tarief: nietNegatief(r.tarief, `${nr}: tarief`) };
     }
-    if (r.type === 'artikel') return { ...basis, artikel_id: id(r.artikel_id, 'artikel'), aantal: nietNegatief(r.aantal, `${nr}: aantal`) ?? 1 };
+    if (r.type === 'artikel') return { ...basis, artikel_id: id(r.artikel_id, 'artikel'), aantal: aantal(r.aantal, nr) };
     return { ...basis, bedrag: nietNegatief(r.bedrag, `${nr}: bedrag`) ?? 0, per_stuk: r.per_stuk ? 1 : 0,
-      aantal: r.per_stuk ? (nietNegatief(r.aantal, `${nr}: aantal`) ?? 1) : null };
+      aantal: r.per_stuk ? aantal(r.aantal, nr) : null };
   });
 }
 
@@ -153,7 +161,7 @@ export function leesDossier(db, dossierId) {
   const regels = leesRegelsVan(db, dossierId);
   const berekening = berekenDossier(db, regels);
   const klant_gegevens = d.klant_id ? db.prepare(`SELECT type, naam, voornaam, bedrijfsnaam, email, telefoon, gsm, straat, huisnummer,
-    postcode, gemeente, btw_nummer, peppol_id FROM klanten WHERE id = ?`).get(d.klant_id) : null;
+    postcode, gemeente, land, btw_nummer, peppol_id FROM klanten WHERE id = ?`).get(d.klant_id) : null;
   const offertes = offertesVan(db, dossierId);
   const offerte = laatsteVerstuurde(offertes);
   const werkbon = werkbonVan(db, dossierId);
@@ -212,9 +220,10 @@ export function leesDossier(db, dossierId) {
     leverbaar: lever_lijst, lever_status: lever, leveringen, productie,
     regels, berekening, offertes: offertes.map(({ regels_api: _r, document: _doc, ...o }) => o), werkbon, zonder_werkbon, wijkt_af_van_offerte, overname };
   // afgerekend via een losse verkoop (26-09): enkel daar ongedaan te maken
-  uit.afgerekend_via = db.prepare(`SELECT v.id, v.nummer, v.gemaild_op FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id
+  uit.afgerekend_via = db.prepare(`SELECT v.id, v.nummer, v.gemaild_op, v.soort, v.betaald_op, v.vervaldatum FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id
     WHERE vr.dossier_id = ? AND v.geannuleerd_op IS NULL`).get(dossierId) || null;
-  if (uit.afgerekend_via) uit.acties = { ...uit.acties, afrekening_ongedaan: false, betaling_ongedaan: false };
+  // afrekening én betaling (factuur, 29-09) lopen via die verkoop
+  if (uit.afgerekend_via) uit.acties = { ...uit.acties, afrekening_ongedaan: false, betaling_ongedaan: false, betaald: false };
   uit.volgende_stap = volgendeStap(uit);
   return uit;
 }
@@ -225,6 +234,14 @@ export function leesDossier(db, dossierId) {
 // `extra` zijn optionele tips (bv. leveren).
 const euro2 = n => `€ ${Number(n).toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const nlGetal = v => String(Math.round(Number(v) * 1000) / 1000).replace('.', ',');
+// Regels gewijzigd na een aanvaarde offerte (29-09): afrekenen gebruikt de
+// offerteprijs, dus wat erbij kwam zou niet aangerekend worden.
+export function afwijking(d) {
+  const o = d.wijkt_af_van_offerte && (d.offertes || []).find(x => x.aanvaard_op);
+  if (!o) return [];
+  return [`Let op: de regels wijken af van de aanvaarde offerte ${o.weergave}. Afgerekend wordt de offerteprijs (${euro2(o.totaal)}), niet de regels (${euro2(d.berekening?.totaal ?? 0)}). Kwam er iets bij? Maak het antwoord op de offerte ongedaan en stuur een nieuwe versie. Per ongeluk gewijzigd? Zet de regels terug (tab Werkbon).`];
+}
+
 export function volgendeStap(d) {
   const klant = d.soort === 'klant';
   const extra = [];
@@ -236,16 +253,26 @@ export function volgendeStap(d) {
   // afgerekend via een losse verkoop (26-09)
   if (d.afgerekend_via) {
     const v = d.afgerekend_via;
-    return v.gemaild_op
-      ? { soort: 'afgerond', tekst: `Afgerond: afgerekend via ${v.nummer} (losse verkoop), naar Accountable gemaild.`, extra, verkoop_id: v.id }
-      : { soort: 'verkoop_mailen', tekst: `Afgerekend via ${v.nummer} (losse verkoop), maar dat bonnetje is nog NIET naar Accountable gemaild. Open de verkoop en mail het.`, extra: [], verkoop_id: v.id };
+    const fac = v.soort === 'factuur';
+    if (!v.gemaild_op) return { soort: 'verkoop_mailen', tekst: `Afgerekend via ${v.nummer} (losse verkoop), maar ${fac ? 'die factuur' : 'dat bonnetje'} is nog NIET naar Accountable gemaild. Open de verkoop en mail ${fac ? 'ze' : 'het'}.`, extra: [], verkoop_id: v.id };
+    if (fac && !v.betaald_op) return { soort: 'verkoop_mailen', tekst: `Afgerekend via ${v.nummer} (losse verkoop)${v.vervaldatum ? `, vervalt op ${v.vervaldatum.split('-').reverse().join('-')}` : ''}. Nog te doen: de factuur op betaald zetten in de verkoop zodra het geld binnen is.`, extra, verkoop_id: v.id };
+    return { soort: 'afgerond', tekst: `Afgerond: afgerekend via ${v.nummer} (losse verkoop), naar Accountable gemaild${fac ? ' en betaald' : ''}.`, extra, verkoop_id: v.id };
   }
   // bonnetje van het ERP dat nog niet bij Accountable is (mailen mislukt, 26-09)
-  if (isErpBonnetje(d) && !d.afrekening_gemaild_op) {
-    return { soort: 'bonnetje_mailen', tekst: `${d.afgerekend_nummer} is gemaakt, maar nog NIET naar Accountable gemaild. Mail het nu, anders ontbreekt het in je dagontvangstenboek.`, extra: [] };
+  // (29-09) ook een factuur van het ERP
+  if (isErpDocument(d) && !d.afrekening_gemaild_op) {
+    return { soort: 'bonnetje_mailen', tekst: isErpFactuur(d)
+      ? `${d.afgerekend_nummer} is gemaakt, maar nog NIET naar Accountable gemaild. Mail ze nu, anders ontbreekt ze in je inkomsten.`
+      : `${d.afgerekend_nummer} is gemaakt, maar nog NIET naar Accountable gemaild. Mail het nu, anders ontbreekt het in je dagontvangstenboek.`, extra: [] };
+  }
+  // afgerekend of gratis, maar een begonnen levering of artikelen uit
+  // voorraad nog niet geleverd (29-09): dan is het nog niet "klaar"
+  const rest = klant ? nogTeLeveren(d.leverbaar || [], d.lever_status) : [];
+  if (rest.length && (d.fase === 'betaald' || d.fase === 'gratis')) {
+    return { soort: 'leveren', tekst: `${d.fase === 'gratis' ? 'Gratis geleverd' : 'Afgerekend en betaald'}, maar nog niet alles geleverd: ${rest.join(', ')}. Lever de rest via het tabblad Leveringen (pakbon).`, extra: [] };
   }
   if (d.fase === 'betaald') {
-    return { soort: 'afgerond', tekst: isErpBonnetje(d)
+    return { soort: 'afgerond', tekst: isErpDocument(d)
       ? `Afgerond: ${d.afgerekend_nummer} gemaakt en naar Accountable gemaild${d.afrekening_klant_mail ? ` (ook naar ${d.afrekening_klant_mail})` : ''}.`
       : 'Afgerond: afgerekend en betaald.', extra };
   }
@@ -253,7 +280,13 @@ export function volgendeStap(d) {
     return { soort: 'afgerond', tekst: `Gratis geleverd${d.gratis_waarde != null ? ` (waarde ${euro2(d.gratis_waarde)})` : ''}: niets af te rekenen. Telt niet als omzet; je kost staat in Financiën → Marges.`, extra };
   }
   if (d.fase === 'afgerekend') {
-    return { soort: 'betaling', tekst: `Afgerekend met ${afrekeningWeergave(d.afgerekend_soort, d.afgerekend_nummer)}. Nog te doen: als betaald markeren zodra het geld binnen is (of via de Accountable-import).`, extra };
+    const erp = isErpFactuur(d);
+    const vervallen = erp && d.afrekening_vervaldatum && d.afrekening_vervaldatum < new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });
+    const tips = [...extra, ...(rest.length ? [`Nog te leveren: ${rest.join(', ')}.`] : []),
+      // Belgische btw-plichtige klant: factuur via Peppol (verplicht sinds 2026)
+      ...(erp && peppolVerplicht(d.klant_gegevens) ? ['Belgische btw-plichtige klant: verstuur deze factuur via Peppol vanuit Accountable (Inkomsten → de factuur → versturen via Peppol) zodra ze daar ingelezen is.'] : [])];
+    return { soort: 'betaling', tekst: `${erp ? `${d.afgerekend_nummer} gemaakt en naar Accountable gemaild` : `Afgerekend met ${afrekeningWeergave(d.afgerekend_soort, d.afgerekend_nummer)}`}${erp && d.afrekening_vervaldatum ? `; ${vervallen ? 'VERVALLEN op' : 'vervalt op'} ${d.afrekening_vervaldatum.split('-').reverse().join('-')}` : ''}. Nog te doen: als betaald markeren zodra het geld binnen is (of via de Accountable-import).`,
+      extra: tips };
   }
   if (!d.regels.length) return { soort: 'regels', tekst: 'Voeg eerst regels toe: wat moet er gebeuren (printen, ontwerp, aanpassing, artikel, extra)?', extra: [] };
   const offerte = (d.offertes || []).filter(o => o.verstuurd_op).sort((a, b) => b.versie - a.versie)[0];
@@ -286,8 +319,8 @@ export function volgendeStap(d) {
   }
   if (klant) {
     const reden = !(d.werkbon || d.zonder_werkbon)?.volledig ? ' Eerst moeten alle regels berekend kunnen worden.' : '';
-    return { soort: 'afrekenen', tekst: `${p?.status === 'klaar' ? 'Alles is geprint. ' : ''}Nog af te rekenen: ${d.klant_gegevens?.type === 'zakelijk' ? 'maak de factuur in Accountable en vul het nummer hier in ("Afrekenen"), of maak toch een bonnetje' : 'maak het bonnetje ("Bonnetje maken": het ERP mailt het naar Accountable), of reken af met een factuur uit Accountable ("Afrekenen")'}.${reden}`,
-      kan: !reden, extra: [...extra, 'Krijgt de klant het zonder te betalen? Kies "Gratis geleverd". Gaat de opdracht niet door? "Dossier annuleren".'] };
+    return { soort: 'afrekenen', tekst: `${p?.status === 'klaar' ? 'Alles is geprint. ' : ''}Nog af te rekenen: ${d.klant_gegevens?.type === 'zakelijk' ? 'maak de factuur ("Factuur maken": het ERP mailt ze naar Accountable), of maak toch een bonnetje' : 'maak het bonnetje ("Bonnetje maken": het ERP mailt het naar Accountable), of een factuur ("Factuur maken")'}.${reden}`,
+      kan: !reden, extra: [...extra, ...afwijking(d), 'Krijgt de klant het zonder te betalen? Kies "Gratis geleverd". Gaat de opdracht niet door? "Dossier annuleren".'] };
   }
   return { soort: 'klaar', tekst: d.soort === 'eigen' ? 'Alles is geprint; de goede stuks staan in voorraad.' : 'Alles is geprint.', extra: [] };
 }

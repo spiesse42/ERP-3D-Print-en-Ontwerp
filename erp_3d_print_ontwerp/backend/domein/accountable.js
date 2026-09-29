@@ -13,6 +13,7 @@
 import ExcelJS from 'exceljs';
 import { DomeinFout, VIA_VERKOOP } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
+import { leesVerkoopRij, zetVerkoopBetaald } from './verkopen.js';
 
 export const VELDEN = {
   nummer: 'Nummer (factuur/bonnetje)', datum: 'Datum', bedrag: 'Bedrag (totaal)', klant: 'Klant',
@@ -136,10 +137,11 @@ export function interpreteer(blad, kolommen) {
 export function vergelijk(db, rijen) {
   const dossiers = db.prepare(`SELECT id, nummer, titel, afgerekend_soort, afgerekend_nummer, afgerekend_op, afgerekend_bedrag, betaald_op
     FROM dossiers WHERE afgerekend_nummer IS NOT NULL AND NOT ${VIA_VERKOOP('dossiers')}`).all();   // via een verkoop: zit in die verkoop
-  // losse verkopen (26-09): bonnetjes, dus altijd al betaald → enkel "in orde"
-  for (const v of db.prepare(`SELECT id, nummer, omschrijving, datum, totaal FROM verkopen WHERE geannuleerd_op IS NULL`).all()) {
-    dossiers.push({ id: `v${v.id}`, verkoop_id: v.id, nummer: null, titel: v.omschrijving || 'Losse verkoop', afgerekend_soort: 'bonnetje',
-      afgerekend_nummer: v.nummer, afgerekend_op: v.datum, afgerekend_bedrag: v.totaal, betaald_op: v.datum });
+  // losse verkopen (26-09): een bonnetje is altijd al betaald; een factuur
+  // (29-09) kan hier op betaald gezet worden, net als een dossier
+  for (const v of db.prepare(`SELECT id, nummer, omschrijving, datum, totaal, soort, betaald_op FROM verkopen WHERE geannuleerd_op IS NULL`).all()) {
+    dossiers.push({ id: `v${v.id}`, verkoop_id: v.id, nummer: null, titel: v.omschrijving || 'Losse verkoop', afgerekend_soort: v.soort,
+      afgerekend_nummer: v.nummer, afgerekend_op: v.datum, afgerekend_bedrag: v.totaal, betaald_op: v.betaald_op });
   }
   const opNummer = new Map(dossiers.map(d => [norm(d.afgerekend_nummer), d]));
   const opKaal = new Map();
@@ -151,8 +153,8 @@ export function vergelijk(db, rijen) {
     if (!d) return { ...r, status: 'niet_gevonden', dossier: null };
     gezien.add(d.id);
     const verschil = r.bedrag != null && d.afgerekend_bedrag != null && Math.abs(Math.abs(r.bedrag) - d.afgerekend_bedrag) > 0.01;
-    if (d.verkoop_id) return { ...r, status: 'in_orde', bedrag_verschilt: verschil, dossier: null, verkoop: { id: d.verkoop_id, nummer: d.afgerekend_nummer, titel: d.titel, afgerekend_bedrag: d.afgerekend_bedrag } };
     const status = r.betaald && !d.betaald_op ? 'betalen' : r.betaald === false && !d.betaald_op ? 'open' : 'in_orde';
+    if (d.verkoop_id) return { ...r, status, bedrag_verschilt: verschil, dossier: null, verkoop: { id: d.verkoop_id, nummer: d.afgerekend_nummer, titel: d.titel, afgerekend_bedrag: d.afgerekend_bedrag, betaald_op: d.betaald_op } };
     return { ...r, status, bedrag_verschilt: verschil, dossier: { id: d.id, nummer: d.nummer, titel: d.titel, afgerekend_bedrag: d.afgerekend_bedrag, betaald_op: d.betaald_op } };
   });
   // afgerekend in het ERP maar niet in de export (binnen de periode van de export)
@@ -164,12 +166,19 @@ export function vergelijk(db, rijen) {
 
 // Betaald zetten voor de gekozen dossiers (enkel regels met status betalen).
 export function pasToe(db, vergeleken, dossierIds, bestandsnaam) {
-  const kies = new Set(dossierIds.map(Number));
+  const kies = new Set(dossierIds.filter(x => !/^v/.test(String(x))).map(Number));
+  const kiesV = new Set(dossierIds.filter(x => /^v\d+$/.test(String(x))).map(x => Number(String(x).slice(1))));
   const vandaag = new Date().toISOString().slice(0, 10);
   const upd = db.prepare('UPDATE dossiers SET betaald_op = ? WHERE id = ? AND betaald_op IS NULL AND afgerekend_op IS NOT NULL');
   let n = 0;
   for (const r of vergeleken.rijen) {
-    if (r.status !== 'betalen' || !kies.has(r.dossier.id)) continue;
+    // factuur van een losse verkoop (29-09): id "v12"
+    if (r.status === 'betalen' && r.verkoop && kiesV.has(r.verkoop.id)) {
+      const v = leesVerkoopRij(db, r.verkoop.id);
+      if (v && !v.betaald_op && !v.geannuleerd_op) { zetVerkoopBetaald(db, v, r.betaald_op && r.betaald_op >= v.datum ? r.betaald_op : (vandaag >= v.datum ? vandaag : v.datum)); n++; }
+      continue;
+    }
+    if (r.status !== 'betalen' || !r.dossier || !kies.has(r.dossier.id)) continue;
     const datum = r.betaald_op || vandaag;
     if (upd.run(datum, r.dossier.id).changes) {
       n++;

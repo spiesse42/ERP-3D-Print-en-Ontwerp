@@ -13,6 +13,7 @@ import { start } from '../domein/uitvoering.js';
 import { maakWerkbon, afrekeningWeergave } from '../domein/documenten.js';
 import { rekenAf, maakAfrekeningOngedaan } from '../domein/afrekening.js';
 import { voegSamen } from '../domein/samenvoegen.js';
+import { vandaag } from '../domein/status/offerte.js';
 import { leverRestUitVoorraad } from '../domein/leveringen.js';
 import { SOORTEN, leesKop, leesRegels, bewaarRegels, leesDossier, leesDossiers, leesAfrekening, datumOk, leesRegelsVan } from '../domein/dossiers.js';
 
@@ -69,6 +70,13 @@ r.post('/', metFouten((req, res) => {
   res.status(201).json(leesDossier(db, id));
 }));
 
+// Waarom een dossier vastligt (enkel notities kunnen nog wijzigen).
+const VAST = {
+  geannuleerd: 'Dit dossier is geannuleerd. Heropen het eerst.',
+  samengevoegd: 'Dit dossier is samengevoegd in een ander dossier en ligt vast. Wijzig het doeldossier.',
+  gratis: 'Dit dossier is gratis geleverd en ligt vast. Maak "Gratis geleverd" eerst ongedaan als je nog iets moet wijzigen.',
+  afgerekend: 'Dit dossier is afgerekend en ligt vast. Maak de afrekening eerst ongedaan als je nog iets moet wijzigen.',
+};
 const LABELS = { soort: 'Soort', klant: 'Klant', titel: 'Titel', notities: 'Notities' };
 r.put('/:id', (req, res) => {
   const db = getDb();
@@ -81,9 +89,13 @@ r.put('/:id', (req, res) => {
     // Na afrekenen of annuleren ligt het dossier vast (enkel notities).
     if (!oud.acties.bewerken) {
       const verandert = kop.soort !== oud.soort || kop.klant_id !== oud.klant_id || kop.titel !== oud.titel || regels !== undefined;
-      if (verandert) throw new DomeinFout(oud.fase === 'geannuleerd'
-        ? 'Dit dossier is geannuleerd. Heropen het eerst.'
-        : 'Dit dossier is afgerekend en ligt vast. Maak de afrekening eerst ongedaan als je nog iets moet wijzigen.');
+      if (verandert) throw new DomeinFout(VAST[oud.fase] || VAST.afgerekend);
+    }
+    // Een klantopdracht met een verstuurde offerte, werkbon of levering kan
+    // geen eigen product of intern dossier meer worden (29-09): die horen
+    // enkel bij een klantopdracht en zouden blijven hangen.
+    if (kop.soort !== oud.soort && oud.soort === 'klant' && (oud.werkbon || oud.leveringen.length || oud.offertes.some(o => o.verstuurd_op))) {
+      throw new DomeinFout(`Dit dossier heeft al ${oud.leveringen.length ? 'een levering' : oud.werkbon ? 'een werkbon' : 'een verstuurde offerte'}: het blijft een klantopdracht. Maak eventueel een nieuw dossier.`);
     }
     db.transaction(() => {
       db.prepare('UPDATE dossiers SET soort=?, klant_id=?, titel=?, notities=? WHERE id=?').run(kop.soort, kop.klant_id, kop.titel, kop.notities, id);
@@ -129,7 +141,8 @@ function actie(naam, fn) {
 }
 const NIET_TOEGELATEN = {
   afrekenen: d => (d.soort !== 'klant' ? 'Enkel een klantopdracht wordt afgerekend.'
-    : ['afgerekend', 'betaald', 'geannuleerd'].includes(d.fase) ? 'Dit dossier is al afgerekend of geannuleerd.'
+    : d.fase === 'samengevoegd' ? VAST.samengevoegd
+    : ['afgerekend', 'betaald', 'geannuleerd', 'gratis'].includes(d.fase) ? 'Dit dossier is al afgerekend, gratis geleverd of geannuleerd.'
     : 'Voeg eerst regels toe.'),
   gratis: d => (d.soort !== 'klant' ? 'Enkel een klantopdracht kan gratis geleverd worden.'
     : !d.regels.length ? 'Voeg eerst regels toe.' : 'Dit dossier is al afgerekend, gratis geleverd of geannuleerd.'),
@@ -140,7 +153,9 @@ const NIET_TOEGELATEN = {
   betaald: () => 'Enkel een afgerekend dossier kan als betaald gemarkeerd worden.',
   betaling_ongedaan: () => 'Er is geen betaling om ongedaan te maken (een bonnetje is altijd meteen betaald).',
   afrekening_ongedaan: d => (d.afgerekend_via ? `Afgerekend via ${d.afgerekend_via.nummer} (losse verkoop): maak de verkoop ongedaan (Verkoop → ${d.afgerekend_via.nummer}).` : 'Dit dossier is niet afgerekend.'),
-  annuleren: d => (d.leveringen?.length ? 'Er is al geleverd voor dit dossier. Maak eerst de leveringen ongedaan.' : 'Een afgerekend dossier kan niet geannuleerd worden. Maak de afrekening eerst ongedaan.'),
+  annuleren: d => (d.fase === 'samengevoegd' ? VAST.samengevoegd : d.fase === 'geannuleerd' ? 'Dit dossier is al geannuleerd.'
+    : d.fase === 'gratis' ? VAST.gratis
+    : d.leveringen?.length ? 'Er is al geleverd voor dit dossier. Maak eerst de leveringen ongedaan.' : 'Een afgerekend dossier kan niet geannuleerd worden. Maak de afrekening eerst ongedaan.'),
   heropenen: () => 'Dit dossier is niet geannuleerd.',
 };
 
@@ -151,6 +166,8 @@ r.post('/:id/starten', actie('starten', (db, d) => start(db, d.id)));
 // Verwijzing naar een document uit Accountable (nummer met de hand); de
 // logica zelf staat in domein/afrekening.js (gedeeld met "Bonnetje maken").
 r.post('/:id/afrekenen', actie('afrekenen', (db, d0, body) => {
+  if (body.soort === 'factuur' && !d0.klant_id) throw new DomeinFout('Een factuur is altijd op naam: kies eerst de klant van dit dossier (of reken af met een bonnetje).');
+  if (datumOk(body.datum) && body.datum > vandaag()) throw new DomeinFout('De datum van de afrekening kan niet in de toekomst liggen.');
   rekenAf(db, d0, { afrekening: wb => leesAfrekening(body, wb.bedrag), leverVoorraad: body.voorraad_leveren !== false });
 }));
 // Gratis geleverd (25-09): de klant krijgt het zonder te betalen. Geen
@@ -158,8 +175,9 @@ r.post('/:id/afrekenen', actie('afrekenen', (db, d0, body) => {
 // hij volledig berekend is) en zijn bedrag bewaard als "waarde". De kost staat
 // in Financiën → Marges tegenover € 0.
 r.post('/:id/gratis', actie('gratis', (db, d0, body) => {
-  const datum = body.datum || new Date().toISOString().slice(0, 10);
+  const datum = body.datum || vandaag();
   if (!datumOk(datum)) throw new DomeinFout('Vul een geldige datum in');
+  if (datum > vandaag()) throw new DomeinFout('De datum kan niet in de toekomst liggen.');
   const d = !d0.werkbon && maakWerkbon(db, d0.id, { waarom: 'gratis geleverd' }) ? leesDossier(db, d0.id) : d0;
   const wb = d.werkbon;
   let waarde = d.berekening.volledig ? d.berekening.totaal : null;
@@ -180,6 +198,8 @@ r.post('/:id/gratis-ongedaan', actie('gratis_ongedaan', (db, d) => {
 }));
 r.post('/:id/betaald', actie('betaald', (db, d, body) => {
   if (!datumOk(body.datum)) throw new DomeinFout('Vul een geldige datum in');
+  if (body.datum > vandaag()) throw new DomeinFout('De betaaldatum kan niet in de toekomst liggen.');
+  if (body.datum < d.afgerekend_op) throw new DomeinFout(`De betaaldatum kan niet vóór de afrekening liggen (${dmj(d.afgerekend_op)}).`);
   db.prepare('UPDATE dossiers SET betaald_op = ? WHERE id = ?').run(body.datum, d.id);
   logGebeurtenis(db, 'dossier', d.id, 'status', `Betaald op ${dmj(body.datum)}`);
 }));
@@ -234,6 +254,7 @@ r.delete('/:id', (req, res) => {
       : d.productie?.aantal_opdrachten ? 'Er zijn printopdrachten voor dit dossier. Annuleer of archiveer het in plaats van te verwijderen.'
       : d.offertes.some(o => o.verstuurd_op)
       ? 'Er is al een offerte verstuurd voor dit dossier. Annuleer of archiveer het in plaats van te verwijderen.'
+      : d.fase === 'samengevoegd' ? 'Een samengevoegd dossier blijft bewaard als verwijzing (gearchiveerd).'
       : 'Een afgerekend dossier kan niet verwijderd worden. Archiveer het.');
     const bestanden = db.prepare(`SELECT pad FROM bijlagen WHERE entiteit = 'dossier' AND entiteit_id = ?`).all(id);
     db.transaction(() => {

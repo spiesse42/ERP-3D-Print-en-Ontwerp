@@ -29,6 +29,9 @@ export function afrekeningWeergave(soort, nummer) {
 }
 // Een bonnetje dat het ERP zelf maakte (en dus kan tonen/mailen).
 export function isErpBonnetje(d) { return d.afgerekend_soort === 'bonnetje' && !!d.afrekening_pdf_op; }
+// Een factuur die het ERP zelf maakte (29-09).
+export function isErpFactuur(d) { return d.afgerekend_soort === 'factuur' && !!d.afrekening_pdf_op; }
+export const isErpDocument = d => isErpBonnetje(d) || isErpFactuur(d);
 
 // De laatst verstuurde versie bepaalt de fase van het dossier.
 export function laatsteVerstuurde(offertes) {
@@ -80,6 +83,11 @@ export function geldigheidDagen(db) {
   const w = db.prepare(`SELECT waarde FROM instellingen WHERE sleutel = 'offerte_geldig_dagen'`).get()?.waarde;
   const n = parseInt(w, 10);
   return Number.isInteger(n) && n > 0 ? n : 30;
+}
+// Betaaltermijn van een factuur in dagen (Instellingen → Bedrijf; standaard 7).
+export function betaaltermijn(db) {
+  const n = parseInt(db.prepare(`SELECT waarde FROM instellingen WHERE sleutel = 'factuur_betaaltermijn'`).get()?.waarde, 10);
+  return Number.isInteger(n) && n >= 0 ? n : 7;
 }
 export function plusDagen(datum, dagen) {
   const d = new Date(`${datum}T12:00:00Z`);
