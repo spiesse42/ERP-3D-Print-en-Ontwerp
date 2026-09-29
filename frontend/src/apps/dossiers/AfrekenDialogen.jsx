@@ -10,11 +10,32 @@ const openPdf = pad => window.open(new URL(`${BASE}${pad}`, document.baseURI).hr
 
 // Afrekening = VERWIJZING naar Accountable (domeinmodel, optie A): het ERP
 // nummert zelf geen facturen of bonnetjes.
+// Artikelen uit voorraad die nog niet geleverd zijn (29-09): bij afrekenen,
+// bonnetje of gratis geleverd meteen leveren (pakbon), zodat de voorraad
+// klopt en de kost in de marge staat. Te weinig voorraad: die regel wordt
+// overgeslagen (de backend meldt het in de historiek).
+// Blijft er na afrekenen iets ongeleverd? (printwerk, of artikelen als het vinkje uit staat)
+const blijftOngeleverd = (dossier, leveren) => ['geen', 'deels'].includes(dossier.lever_status)
+  && (dossier.leverbaar || []).some(x => x.rest > 0 && (!leveren || !x.boekt_voorraad));
+
+export function VoorraadLeveren({ dossier, aan, onWijzig }) {
+  const lijst = (dossier.leverbaar || []).filter(x => x.boekt_voorraad && x.rest > 0);
+  if (!lijst.length) return null;
+  const tekort = lijst.filter(x => (x.voorraad ?? 0) < x.rest);
+  const n = v => String(v).replace('.', ',');
+  return (
+    <div style={{ margin: '10px 0 0' }}>
+      <label className="vinkje"><input type="checkbox" checked={aan} onChange={e => onWijzig(e.target.checked)} /> Nog niet geleverde artikelen nu uit voorraad leveren (pakbon): {lijst.map(x => `${n(x.rest)} × ${x.omschrijving}`).join(', ')}</label>
+      {aan && tekort.length > 0 && <div className="sub">Te weinig voorraad voor {tekort.map(x => `${x.omschrijving} (${n(x.voorraad ?? 0)} op voorraad)`).join(', ')}: die wordt overgeslagen.</div>}
+    </div>
+  );
+}
+
 export function AfrekenDialoog({ dossier, onSluit, onBevestig }) {
   // Standaardbedrag = bedrag van de werkbon (offerteprijs bij een aanvaarde offerte, anders volgens de metingen).
   // Nog geen werkbon: die wordt bij het afrekenen gemaakt (zonder_werkbon = wat hij zou tonen).
   const totaal = dossier.werkbon?.bedrag ?? dossier.zonder_werkbon?.bedrag ?? dossier.berekening.totaal;
-  const [f, setF] = useState({ soort: 'factuur', nummer: '', datum: vandaag(), bedrag: naarInvoer(totaal) });
+  const [f, setF] = useState({ soort: 'factuur', nummer: '', datum: vandaag(), bedrag: naarInvoer(totaal), voorraad_leveren: true });
   const [bezig, setBezig] = useState(false);
   const zet = (k, w) => setF(x => ({ ...x, [k]: w }));
   async function ok() { setBezig(true); try { await onBevestig(f); } finally { setBezig(false); } }
@@ -25,7 +46,7 @@ export function AfrekenDialoog({ dossier, onSluit, onBevestig }) {
         <button type="button" className="btn primary" disabled={bezig || !f.nummer.trim()} onClick={ok}>Afgerekend</button>
       </>}>
       <p className="note" style={{ marginTop: 0 }}>Maak de {f.soort === 'factuur' ? 'factuur' : 'het bonnetje'} in Accountable (gebruik de overnamefiche) en vul hier het nummer in dat Accountable gaf. {dossier.werkbon ? ` De werkbon ${dossier.werkbon.weergave} wordt daarmee definitief.` : ' Er wordt meteen een werkbon gemaakt en definitief gezet.'}</p>
-      {(dossier.lever_status === 'geen' || dossier.lever_status === 'deels') && (
+      {blijftOngeleverd(dossier, f.voorraad_leveren) && (
         <div className="waarschuwing" style={{ margin: '0 0 12px' }}>Nog niet alles geleverd{dossier.lever_status === 'deels' ? ' (deels geleverd)' : ''}. Afrekenen kan, bv. als de klant al betaald heeft; lever daarna verder via het tabblad Leveringen.</div>
       )}
       <div className="fgrid">
@@ -41,6 +62,7 @@ export function AfrekenDialoog({ dossier, onSluit, onBevestig }) {
         <div><label htmlFor="af-datum">Datum</label><input id="af-datum" type="date" className="inp" value={f.datum} onChange={e => zet('datum', e.target.value)} /></div>
         <div><label htmlFor="af-bedrag">Bedrag</label><div className="unit"><input id="af-bedrag" className="inp num" inputMode="decimal" value={f.bedrag} onChange={e => zet('bedrag', e.target.value)} /><span>€</span></div></div>
       </div>
+      <VoorraadLeveren dossier={dossier} aan={f.voorraad_leveren} onWijzig={v => zet('voorraad_leveren', v)} />
     </Dialoog>
   );
 }
@@ -55,6 +77,7 @@ export function BonnetjeDialoog({ dossier, bedrijf, onSluit, onBevestig }) {
   const { data: v, fout } = useData(`/dossiers/${dossier.id}/bonnetje/voorstel?datum=${dag}`);
   const k = dossier.klant_gegevens;
   const [naarKlant, setNaarKlant] = useState(false);
+  const [leveren, setLeveren] = useState(true);
   const [mail, setMail] = useState(null);   // pas invullen zodra het nummer gekend is
   const [bezig, setBezig] = useState(false);
   const m = mail || { aan: k?.email || '', onderwerp: v ? `${v.nummer} – ${dossier.titel}` : '', tekst: mailTekst({ klant: k, bedrijf, wat: 'je bonnetje', titel: dossier.titel }) };
@@ -64,7 +87,7 @@ export function BonnetjeDialoog({ dossier, bedrijf, onSluit, onBevestig }) {
   const kan = v && !blokkeert && !bezig && (!naarKlant || m.aan.trim());
   async function ok() {
     setBezig(true);
-    try { await onBevestig({ datum: dag, naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) }); }
+    try { await onBevestig({ datum: dag, voorraad_leveren: leveren, naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) }); }
     finally { setBezig(false); }
   }
   return (
@@ -85,7 +108,8 @@ export function BonnetjeDialoog({ dossier, bedrijf, onSluit, onBevestig }) {
       <p className="sub" style={{ margin: '4px 0 0' }}>Het bedrag is dat van de werkbon{v?.werkbon ? ` ${v.werkbon}` : ''}{dossier.werkbon ? '' : ' (wordt nu gemaakt)'}; de werkbon wordt definitief en het dossier staat meteen op betaald. Een ander bedrag nodig? Pas eerst de regels aan.</p>
       {v && v.bedrag > v.drempel && <div className="waarschuwing" style={{ margin: '10px 0 0', display: 'block' }}>Meer dan {euro(v.drempel)}: volgens Accountable is voor zo'n verkoop mogelijk een factuur nodig in plaats van een bonnetje.</div>}
       {k?.type === 'zakelijk' && <div className="waarschuwing" style={{ margin: '10px 0 0', display: 'block' }}>Zakelijke klant: normaal krijgt die een factuur (voorlopig nog via Accountable: "Afrekenen").</div>}
-      {(dossier.lever_status === 'geen' || dossier.lever_status === 'deels') && <div className="waarschuwing" style={{ margin: '10px 0 0', display: 'block' }}>Nog niet alles geleverd{dossier.lever_status === 'deels' ? ' (deels geleverd)' : ''}. Dat mag; lever daarna verder via het tabblad Leveringen.</div>}
+      {blijftOngeleverd(dossier, leveren) && <div className="waarschuwing" style={{ margin: '10px 0 0', display: 'block' }}>Nog niet alles geleverd{dossier.lever_status === 'deels' ? ' (deels geleverd)' : ''}. Dat mag; lever daarna verder via het tabblad Leveringen.</div>}
+      <VoorraadLeveren dossier={dossier} aan={leveren} onWijzig={setLeveren} />
       <p style={{ margin: '14px 0 6px' }}><span className="lbl" style={{ display: 'inline' }}>Klant: </span>{k ? <>{klantNaam(k)}{k.email ? <span className="sub"> · {k.email}</span> : null}</> : <span className="sub">geen klant gekozen (mag bij een bonnetje)</span>}</p>
       <label className="keuze" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <input type="checkbox" checked={naarKlant} onChange={e => setNaarKlant(e.target.checked)} /> Ook naar de klant mailen
@@ -144,15 +168,17 @@ export function BonnetjeMailDialoog({ dossier, bedrijf, onSluit, onVerstuur }) {
 // Accountable, geen omzet; de kost blijft zichtbaar in Financiën → Marges.
 export function GratisDialoog({ dossier, onSluit, onBevestig }) {
   const [d, setD] = useState(vandaag());
+  const [leveren, setLeveren] = useState(true);
   const waarde = dossier.werkbon?.bedrag ?? dossier.zonder_werkbon?.bedrag ?? dossier.berekening.totaal;
   return (
     <Dialoog titel="Gratis geleverd" onSluit={onSluit}
-      voet={<><button type="button" className="btn" onClick={onSluit}>Terug</button><button type="button" className="btn primary" onClick={() => onBevestig(d)}>Gratis geleverd</button></>}>
+      voet={<><button type="button" className="btn" onClick={onSluit}>Terug</button><button type="button" className="btn primary" onClick={() => onBevestig(d, leveren)}>Gratis geleverd</button></>}>
       <p className="note" style={{ marginTop: 0 }}>De klant krijgt dit zonder te betalen (bv. goodwill of een test). Er komt <b>geen</b> factuur of bonnetje in Accountable en het telt <b>niet</b> als omzet.
         Je kost blijft zichtbaar in Financiën → Marges en in het overzicht. {dossier.werkbon ? `De werkbon ${dossier.werkbon.weergave} wordt definitief.` : 'Er wordt een werkbon gemaakt en definitief gezet.'}</p>
       {waarde != null && <p style={{ margin: '0 0 10px' }}>Waarde volgens de werkbon: <b className="num">{euro(waarde)}</b></p>}
       <label className="lbl" htmlFor="gr-datum">Datum</label>
       <input id="gr-datum" type="date" className="inp" value={d} onChange={e => setD(e.target.value)} />
+      <VoorraadLeveren dossier={dossier} aan={leveren} onWijzig={setLeveren} />
       <p className="sub" style={{ marginBottom: 0 }}>Gaat de opdracht helemaal niet door? Gebruik dan "Dossier annuleren".</p>
     </Dialoog>
   );

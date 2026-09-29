@@ -322,3 +322,15 @@ export function leesAfrekening(body, totaal) {
   return { soort, nummer, datum: body.datum, bedrag };
 }
 export { datumOk };
+
+// Antwoord naar de browser (29-09): de afbeelding van een printregel enkel
+// bij de regels zelf, niet nog eens in de berekening, het overnamedocument en
+// de werkbon (scheelt ± 2/3 van de grootte; een dossier in productie ververst
+// elke 15 s). PDF's lezen het dossier rechtstreeks en houden hun afbeeldingen.
+const zonderAfbeelding = doc => (Array.isArray(doc?.regels) ? { ...doc, regels: doc.regels.map(({ afbeelding: _a, ...r }) => r) } : doc);
+export function slankDossier(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.regels) || !d.berekening) return d;
+  return { ...d, berekening: zonderAfbeelding(d.berekening), overname: zonderAfbeelding(d.overname),
+    werkbon: d.werkbon && { ...d.werkbon, berekening: zonderAfbeelding(d.werkbon.berekening),
+      concept_document: zonderAfbeelding(d.werkbon.concept_document), document: zonderAfbeelding(d.werkbon.document) } };
+}

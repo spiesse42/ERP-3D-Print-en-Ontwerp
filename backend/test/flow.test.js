@@ -432,3 +432,54 @@ test('X17. dossiers samenvoegen: regels, printopdrachten, runs, leveringen en bi
   await vraag('POST', `/offertes/${od.offertes[0].id}/aanvaard`);
   assert.match((await vraag('POST', `/dossiers/${a.id}/samenvoegen`, { dossiers: [e.id] })).data.error, /aanvaarde offerte/);
 });
+
+test('X18. afrekenen / bonnetje / gratis levert nog niet geleverde artikelen uit voorraad (pakbon); te weinig voorraad blokkeert niet; uit te zetten', async () => {
+  const vandaag = new Date().toISOString().slice(0, 10);
+  const art = async (naam, stuks) => {
+    const id = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam, wordt_gekocht: true, wordt_verkocht: true, verkoopprijs: 5 })).data.id;
+    if (stuks) await vraag('POST', `/voorraad/artikelen/${id}/boeking`, { richting: 'in', aantal: stuks, prijs_per_eenheid: 1.5, reden: 'ontvangst' });
+    return id;
+  };
+  const voorraad = async id => (await vraag('GET', `/voorraad/artikelen/${id}`)).data.voorraad;
+  const ring = await art('Ring X18', 10), doos = await art('Doos X18', 1);
+  const dossier = regels => vraag('POST', '/dossiers', { titel: 'Artikelen', klant_id: klant, regels }).then(r => r.data);
+  const artikel = (id, aantal) => ({ type: 'artikel', artikel_id: id, aantal });
+
+  // factuur: 3 ringen (1 al geleverd) + 2 dozen (maar 1 op voorraad)
+  let d = await dossier([artikel(ring, 3), artikel(doos, 2), { type: 'ontwerp', minuten: 10 }]);
+  await vraag('POST', `/dossiers/${d.id}/leveringen`, { datum: vandaag, regels: [{ regel_id: d.regels[0].id, aantal: 1 }] });
+  d = (await vraag('POST', `/dossiers/${d.id}/afrekenen`, { soort: 'factuur', nummer: 'F-X18', datum: vandaag })).data;
+  assert.equal(d.fase, 'afgerekend', JSON.stringify(d.error || ''));
+  assert.equal(await voorraad(ring), 7, 'ringen: 1 met de hand + 2 automatisch');
+  assert.equal(await voorraad(doos), 1, 'dozen: te weinig → niet geboekt');
+  assert.equal(d.leveringen.length, 2); assert.match(d.leveringen[1].opmerking, /Automatisch bij het afrekenen/);
+  const h = (await vraag('GET', `/historiek/dossier/${d.id}`)).data.map(x => x.tekst);
+  assert.ok(h.some(t => /Niet automatisch uit voorraad geleverd \(onvoldoende voorraad\): 2 × Doos X18/.test(t)));
+  const m = (await vraag('GET', `/financien/marges?jaar=${vandaag.slice(0, 4)}`)).data.rijen.find(x => x.id === d.id);
+  assert.equal(m.kost_artikelen, 4.5, 'kost van 3 ringen in de marge');
+
+  // bonnetje met het vinkje uit → niets geleverd
+  let e = await dossier([artikel(ring, 2)]);
+  e = (await vraag('POST', `/dossiers/${e.id}/afrekenen`, { soort: 'bonnetje', nummer: 'B-X18', datum: vandaag, voorraad_leveren: false })).data;
+  assert.equal(e.leveringen.length, 0); assert.equal(await voorraad(ring), 7);
+
+  // gratis geleverd → wel geleverd
+  let g = await dossier([artikel(ring, 1)]);
+  g = (await vraag('POST', `/dossiers/${g.id}/gratis`, { datum: vandaag })).data;
+  assert.equal(g.fase, 'gratis'); assert.equal(g.leveringen.length, 1); assert.equal(await voorraad(ring), 6);
+});
+
+test('X19. dossier naar de browser: afbeelding enkel bij de regels, niet dubbel; offerte (momentopname) houdt ze', async () => {
+  const afb = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  let d = (await vraag('POST', '/dossiers', { titel: 'Afbeelding', klant_id: klant, regels: [
+    { type: 'printen', omschrijving: 'Bluey', printer_id: mini, aantal: 1, tijd_min: 30, afbeelding: afb, materialen: [{ filament_type_id: pg, gram: 5 }] }] })).data;
+  d = (await vraag('POST', `/dossiers/${d.id}/starten`)).data;
+  const json = JSON.stringify(d);
+  assert.equal(d.regels[0].afbeelding, afb);
+  assert.equal(json.split(afb).length - 1, 1, 'maar één keer in het antwoord');
+  assert.ok(d.berekening.regels.length && d.werkbon.concept_document.regels.length && d.overname.regels.length);
+  const od = (await vraag('POST', `/dossiers/${d.id}/offertes`)).data;
+  await vraag('POST', `/offertes/${od.offertes[0].id}/versturen`);
+  const m = JSON.parse(getDb().prepare('SELECT momentopname FROM offertes WHERE id = ?').get(od.offertes[0].id).momentopname);
+  assert.equal(m.document.regels[0].afbeelding, afb, 'de verstuurde offerte houdt de afbeelding');
+});

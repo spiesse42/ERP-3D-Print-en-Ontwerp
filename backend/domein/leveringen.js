@@ -137,3 +137,28 @@ export function verwijderLevering(db, levering) {
   db.prepare('DELETE FROM leveringen WHERE id = ?').run(levering.id);
   logGebeurtenis(db, 'dossier', levering.dossier_id, 'status', `Levering ${levering.nummer} ongedaan gemaakt${lr.length ? ' (voorraad teruggeboekt waar van toepassing)' : ''}`);
 }
+
+// Bij afrekenen / bonnetje / gratis geleverd / losse verkoop (29-09): de
+// artikelen uit VOORRAAD die nog niet geleverd zijn, automatisch leveren
+// (pakbon), zodat de voorraad klopt en de kost in de marge staat. Printwerk
+// blijft buiten (geen voorraad). Te weinig voorraad blokkeert het afrekenen
+// niet: die regel wordt overgeslagen en in de historiek vermeld.
+export function leverRestUitVoorraad(db, dossier, datum, waarom) {
+  const lijst = leverbaar(db, dossier.id, dossier.regels).filter(x => x.boekt_voorraad && x.rest > 1e-9);
+  if (!lijst.length) return null;
+  const over = new Map();   // artikel → nog beschikbaar (twee regels met hetzelfde artikel)
+  const ok = [], tekort = [];
+  for (const x of lijst) {
+    const beschikbaar = over.has(x.artikel_id) ? over.get(x.artikel_id) : (x.voorraad ?? 0);
+    if (beschikbaar + 1e-9 >= x.rest) { ok.push(x); over.set(x.artikel_id, beschikbaar - x.rest); } else tekort.push(x);
+  }
+  let nummer = null;
+  if (ok.length) {
+    const id = maakLevering(db, dossier, { datum, regels: ok.map(x => ({ regel_id: x.regel_id, aantal: x.rest })), opmerking: `Automatisch ${waarom}` });
+    nummer = db.prepare('SELECT nummer FROM leveringen WHERE id = ?').get(id).nummer;
+  }
+  if (tekort.length) {
+    logGebeurtenis(db, 'dossier', dossier.id, 'status', `Niet automatisch uit voorraad geleverd (onvoldoende voorraad): ${tekort.map(x => `${String(x.rest).replace('.', ',')} × ${x.omschrijving}`).join(', ')}. Boek de voorraad in en lever via het tabblad Leveringen.`);
+  }
+  return { nummer, tekort: tekort.map(x => x.omschrijving) };
+}
