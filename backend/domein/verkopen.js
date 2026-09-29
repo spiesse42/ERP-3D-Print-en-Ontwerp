@@ -14,11 +14,15 @@
 // "Bonnetje maken" op een dossier). Het mailen gebeurt daarna in de route.
 // Ongedaan = geannuleerd + voorraad terug op dezelfde partijen + afrekening van
 // de dossiers ongedaan; het nummer blijft bezet (Accountable kreeg het al).
+// 29-09: soort 'factuur' = zelfde verkoop, maar nummer uit de reeks FAC, een
+// klant verplicht, een vervaldatum en NIET meteen betaald ("Betaald" in de
+// verkoop zet ook de dossiers erop op betaald).
 import { DomeinFout, rond, getBedrijfsgegevens, VIA_VERKOOP } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
 import { boekUit } from './voorraad.js';
 import { volgendNummer, overzicht as nummerOverzicht } from './nummering.js';
 import { leesDossier, berekenDossier } from './dossiers.js';
+import { betaaltermijn, plusDagen } from './documenten.js';
 import { rekenAf, maakAfrekeningOngedaan } from './afrekening.js';
 import { leesOpdracht } from '../productie/opdrachten.js';
 
@@ -43,12 +47,17 @@ const ARTIKEL = `SELECT a.id, a.type, a.naam, a.verkoopprijs, a.gearchiveerd,
 const VERKOCHT = `SELECT v.id, v.nummer FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id
   WHERE vr.printopdracht_id = ? AND v.geannuleerd_op IS NULL`;
 
-export function leesDatum(v) {
+export function leesDatum(v, soort = 'bonnetje') {
   const datum = tekst(v) || vandaagLokaal();
   if (!datumOk(datum)) throw new DomeinFout('Vul een geldige datum in');
-  if (datum > vandaagLokaal()) throw new DomeinFout('Een bonnetje kan niet in de toekomst liggen.');
+  if (datum > vandaagLokaal()) throw new DomeinFout(`${soort === 'factuur' ? 'Een factuur' : 'Een bonnetje'} kan niet in de toekomst liggen.`);
   return datum;
 }
+export const leesSoort = v => {
+  const soort = v ?? 'bonnetje';
+  if (soort !== 'bonnetje' && soort !== 'factuur') throw new DomeinFout('Kies bonnetje of factuur');
+  return soort;
+};
 
 // ── dossier als regel ────────────────────────────────────────────────────
 // Bedrag = wat de werkbon wordt (aanvaarde offerte → offerteprijs, anders
@@ -119,7 +128,9 @@ export function kandidaten(db) {
 // Controleert ALLES vóór er een nummer uitgegeven wordt (voorraad, dossiers
 // afrekenbaar, printopdrachten vrij, prijzen).
 export function leesVerkoop(db, body) {
-  const datum = leesDatum(body?.datum);
+  const soort = leesSoort(body?.soort);
+  const datum = leesDatum(body?.datum, soort);
+  const wat = soort === 'factuur' ? 'deze factuur' : 'dit bonnetje';
   let klant_id = null;
   if (!leeg(body?.klant_id)) {
     klant_id = Number(body.klant_id);
@@ -136,7 +147,7 @@ export function leesVerkoop(db, body) {
     const basis = { soort, artikel_id: null, dossier_id: null, printopdracht_id: null, type: null, berekend: null };
     if (soort === 'dossier') {
       const x = dossierInfo(db, r.dossier_id);
-      if (gezien.has(`d${x.id}`)) throw new DomeinFout(`${nr}: dossier ${x.nummer} staat al op dit bonnetje`);
+      if (gezien.has(`d${x.id}`)) throw new DomeinFout(`${nr}: dossier ${x.nummer} staat al op ${wat}`);
       gezien.add(`d${x.id}`);
       if (!x.volledig || x.bedrag == null) throw new DomeinFout(`${nr}: dossier ${x.nummer} kan (nog) niet volledig berekend worden. Los dat eerst op in het dossier.`);
       if (x.klant_id) {
@@ -153,7 +164,7 @@ export function leesVerkoop(db, body) {
     }
     if (soort === 'printopdracht') {
       const o = printopdrachtInfo(db, r.printopdracht_id);
-      if (gezien.has(`p${o.id}`)) throw new DomeinFout(`${nr}: printopdracht "${o.naam}" staat al op dit bonnetje`);
+      if (gezien.has(`p${o.id}`)) throw new DomeinFout(`${nr}: printopdracht "${o.naam}" staat al op ${wat}`);
       gezien.add(`p${o.id}`);
       const { voorstel } = printopdrachtVoorstel(db, o);
       const aantal = o.aantal_goed;
@@ -185,18 +196,28 @@ export function leesVerkoop(db, body) {
     if (n > a.voorraad + 1e-9) throw new DomeinFout(`Onvoldoende voorraad van ${a.weergave}: ${String(a.voorraad).replace('.', ',')} beschikbaar, ${String(n).replace('.', ',')} verkocht`);
   }
   const totaal = r2(regels.reduce((t, r) => t + r.bedrag, 0));
-  return { datum, klant_id, omschrijving: tekst(body?.omschrijving), regels, totaal };
+  let vervaldatum = null;
+  if (soort === 'factuur') {
+    if (!klant_id) throw new DomeinFout('Een factuur is altijd op naam: kies een klant (of maak een bonnetje).');
+    vervaldatum = tekst(body?.vervaldatum) || plusDagen(datum, betaaltermijn(db));
+    if (!datumOk(vervaldatum)) throw new DomeinFout('Vul een geldige vervaldatum in');
+    if (vervaldatum < datum) throw new DomeinFout('De vervaldatum kan niet vóór de factuurdatum liggen.');
+  }
+  return { soort, datum, vervaldatum, klant_id, omschrijving: tekst(body?.omschrijving), regels, totaal };
 }
 
 // Wat het bonnetje ZOU worden (venster/voorbeeld): nummer zonder het uit te geven.
-export function voorstelNummer(db, datum) {
-  return nummerOverzicht(db, Number(datum.slice(0, 4))).find(x => x.reeks === 'BON').voorbeeld;
+export const REEKS = { bonnetje: 'BON', factuur: 'FAC' };
+export function voorstelNummer(db, datum, soort = 'bonnetje') {
+  return nummerOverzicht(db, Number(datum.slice(0, 4))).find(x => x.reeks === REEKS[soort]).voorbeeld;
 }
 
 export function maakVerkoop(db, v) {
-  const nummer = volgendNummer(db, 'BON', { jaar: Number(v.datum.slice(0, 4)) });
-  const id = Number(db.prepare('INSERT INTO verkopen (nummer, datum, klant_id, omschrijving, totaal) VALUES (?,?,?,?,?)')
-    .run(nummer, v.datum, v.klant_id, v.omschrijving, v.totaal).lastInsertRowid);
+  const soort = v.soort || 'bonnetje';
+  const factuur = soort === 'factuur';
+  const nummer = volgendNummer(db, REEKS[soort], { jaar: Number(v.datum.slice(0, 4)) });
+  const id = Number(db.prepare('INSERT INTO verkopen (nummer, datum, klant_id, omschrijving, totaal, soort, vervaldatum, betaald_op) VALUES (?,?,?,?,?,?,?,?)')
+    .run(nummer, v.datum, v.klant_id, v.omschrijving, v.totaal, soort, v.vervaldatum || null, factuur ? null : v.datum).lastInsertRowid);
   const ins = db.prepare(`INSERT INTO verkoop_regels (verkoop_id, volgorde, soort, artikel_id, dossier_id, printopdracht_id, omschrijving, aantal, prijs_per_stuk, bedrag, berekend)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
   v.regels.forEach((r, k) => {
@@ -207,15 +228,32 @@ export function maakVerkoop(db, v) {
     if (r.soort === 'dossier') {
       rekenAf(db, leesDossier(db, r.dossier_id), {
         waarom: `bij de verkoop ${nummer}`,
-        afrekening: () => ({ soort: 'bonnetje', nummer, datum: v.datum, bedrag: r.bedrag, pdf: false }),
-        logTekst: a => `Afgerekend via ${nummer} (losse verkoop), ${euro(a.bedrag)}${r.berekend != null && Math.abs(r.berekend - a.bedrag) > 0.005 ? ` (berekend: ${euro(r.berekend)})` : ''}: meteen betaald`,
+        afrekening: () => ({ soort, nummer, datum: v.datum, bedrag: r.bedrag, pdf: false, vervaldatum: v.vervaldatum || null }),
+        logTekst: a => `Afgerekend via ${nummer} (losse verkoop), ${euro(a.bedrag)}${r.berekend != null && Math.abs(r.berekend - a.bedrag) > 0.005 ? ` (berekend: ${euro(r.berekend)})` : ''}${factuur ? '' : ': meteen betaald'}`,
       });
     }
   });
-  logGebeurtenis(db, 'verkoop', id, 'aangemaakt', `${nummer} gemaakt (${euro(v.totaal)}): verkocht en meteen betaald`
+  logGebeurtenis(db, 'verkoop', id, 'aangemaakt', `${nummer} gemaakt (${euro(v.totaal)}): verkocht${factuur ? `, vervalt op ${v.vervaldatum.split('-').reverse().join('-')}` : ' en meteen betaald'}`
     + `${v.regels.some(r => r.soort === 'artikel' && r.type !== 'dienst') ? '; voorraad uitgeboekt' : ''}`
     + `${v.regels.some(r => r.soort === 'dossier') ? `; dossier${v.regels.filter(r => r.soort === 'dossier').length > 1 ? 's' : ''} afgerekend` : ''}`);
   return id;
+}
+
+// Factuur betaald (29-09): de verkoop én de dossiers die erop staan.
+export function zetVerkoopBetaald(db, v, datum) {
+  if (v.geannuleerd_op) throw new DomeinFout('Deze verkoop is ongedaan gemaakt.');
+  if (v.soort !== 'factuur') throw new DomeinFout('Een bonnetje is altijd meteen betaald.');
+  if (datum && v.betaald_op) throw new DomeinFout('Deze factuur staat al op betaald.');
+  if (!datum && !v.betaald_op) throw new DomeinFout('Deze factuur staat niet op betaald.');
+  if (datum && !datumOk(datum)) throw new DomeinFout('Vul een geldige datum in');
+  if (datum && datum > vandaagLokaal()) throw new DomeinFout('De betaaldatum kan niet in de toekomst liggen.');
+  if (datum && datum < v.datum) throw new DomeinFout(`De betaaldatum kan niet vóór de factuur liggen (${v.datum.split('-').reverse().join('-')}).`);
+  db.prepare('UPDATE verkopen SET betaald_op = ? WHERE id = ?').run(datum || null, v.id);
+  for (const r of v.regels.filter(x => x.soort === 'dossier')) {
+    db.prepare('UPDATE dossiers SET betaald_op = ? WHERE id = ? AND afgerekend_nummer = ?').run(datum || null, r.dossier_id, v.nummer);
+    logGebeurtenis(db, 'dossier', r.dossier_id, 'status', datum ? `Betaald op ${datum.split('-').reverse().join('-')} (factuur ${v.nummer}, losse verkoop)` : `Betaling ongedaan gemaakt (factuur ${v.nummer}, losse verkoop)`);
+  }
+  logGebeurtenis(db, 'verkoop', v.id, 'status', datum ? `Betaald op ${datum.split('-').reverse().join('-')}` : 'Betaling ongedaan gemaakt');
 }
 
 const KLANTNAAM = `CASE WHEN k.type = 'zakelijk' AND NULLIF(k.bedrijfsnaam,'') IS NOT NULL THEN k.bedrijfsnaam
@@ -260,13 +298,14 @@ export function verkoopInhoud(db, v) {
 // factuur). Een dossier dat via een verkoop afgerekend werd, staat er niet
 // apart bij (het zit in die verkoop).
 export function overzicht(db) {
-  const verkopen = db.prepare(`SELECT v.id, v.nummer, v.datum, v.totaal AS bedrag, v.gemaild_op, v.klant_mail, v.geannuleerd_op, v.omschrijving AS titel,
+  const verkopen = db.prepare(`SELECT v.id, v.nummer, v.datum, v.totaal AS bedrag, v.gemaild_op, v.klant_mail, v.geannuleerd_op, v.omschrijving AS titel, v.soort, v.betaald_op, v.vervaldatum,
       ${KLANTNAAM} AS klant, (SELECT COUNT(*) FROM verkoop_regels r WHERE r.verkoop_id = v.id) AS regels,
       (SELECT GROUP_CONCAT(d.nummer, ', ') FROM verkoop_regels r JOIN dossiers d ON d.id = r.dossier_id WHERE r.verkoop_id = v.id) AS dossiers
     FROM verkopen v LEFT JOIN klanten k ON k.id = v.klant_id`).all()
-    .map(v => ({ ...v, bron: 'verkoop', soort: 'bonnetje', erp: true, sleutel: `v${v.id}` }));
+    .map(v => ({ ...v, bron: 'verkoop', erp: true, sleutel: `v${v.id}` }));
   const dossiers = db.prepare(`SELECT d.id, d.afgerekend_nummer AS nummer, d.afgerekend_op AS datum, d.afgerekend_bedrag AS bedrag, d.afgerekend_soort AS soort,
-      d.afrekening_gemaild_op AS gemaild_op, d.afrekening_klant_mail AS klant_mail, d.afrekening_pdf_op, d.titel, d.nummer AS dossier_nummer, ${KLANTNAAM} AS klant
+      d.afrekening_gemaild_op AS gemaild_op, d.afrekening_klant_mail AS klant_mail, d.afrekening_pdf_op, d.titel, d.nummer AS dossier_nummer, ${KLANTNAAM} AS klant,
+      d.betaald_op, d.afrekening_vervaldatum AS vervaldatum
     FROM dossiers d LEFT JOIN klanten k ON k.id = d.klant_id WHERE d.afgerekend_op IS NOT NULL AND NOT ${VIA_VERKOOP('d')}`).all()
     .map(d => ({ ...d, bron: 'dossier', erp: !!d.afrekening_pdf_op, geannuleerd_op: null, sleutel: `d${d.id}` }));
   return [...verkopen, ...dossiers].sort((a, b) => (b.datum || '').localeCompare(a.datum || '') || String(b.nummer).localeCompare(String(a.nummer)));
@@ -288,6 +327,6 @@ export function annuleerVerkoop(db, v) {
     const d = leesDossier(db, r.dossier_id);
     if (d?.afgerekend_nummer === v.nummer) maakAfrekeningOngedaan(db, d, { waarom: `Verkoop ${v.nummer} ongedaan gemaakt.` });
   }
-  const acc = v.gemaild_op ? ' Het bonnetje staat al in Accountable: pas het daar ook aan.' : '';
+  const acc = v.gemaild_op ? ` ${v.soort === 'factuur' ? 'De factuur staat al in Accountable: maak daar een creditnota.' : 'Het bonnetje staat al in Accountable: pas het daar ook aan.'}` : '';
   logGebeurtenis(db, 'verkoop', v.id, 'status', `Ongedaan gemaakt: voorraad teruggeboekt${v.regels.some(x => x.soort === 'dossier') ? ', afrekening van de dossiers ongedaan' : ''}${v.regels.some(x => x.soort === 'printopdracht') ? ', printopdrachten weer vrij' : ''}.${acc}`);
 }

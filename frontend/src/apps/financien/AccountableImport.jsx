@@ -15,6 +15,9 @@ const STATUS = {
 };
 const toon = v => (v == null ? '' : String(v));
 
+// dossier (id) of factuur van een losse verkoop ("v12", 29-09)
+const sleutelVan = r => (r.dossier ? r.dossier.id : `v${r.verkoop.id}`);
+
 export default function AccountableImport() {
   const { melding, navigeer } = useOmgeving();
   const [bestand, setBestand] = useState(null);    // antwoord van het inlezen
@@ -40,7 +43,7 @@ export default function AccountableImport() {
     setBezig(true);
     try {
       const v = await api.post(`/financien/accountable/${bestand.token}/vergelijk`, { blad, kolommen });
-      setResultaat(v); setKies(new Set(v.rijen.filter(r => r.status === 'betalen').map(r => r.dossier.id)));
+      setResultaat(v); setKies(new Set(v.rijen.filter(r => r.status === 'betalen').map(sleutelVan)));
     } catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
   }
@@ -111,7 +114,7 @@ export default function AccountableImport() {
                   <thead><tr><th /><th>Nummer</th><th>Datum</th><th className="r">Bedrag</th><th>Dossier</th><th>Status</th></tr></thead>
                   <tbody>{resultaat.rijen.map(r => (
                     <tr key={r.rij}>
-                      <td>{r.status === 'betalen' && <input type="checkbox" aria-label={`${r.nummer} als betaald markeren`} checked={kies.has(r.dossier.id)} onChange={() => wissel(r.dossier.id)} />}</td>
+                      <td>{r.status === 'betalen' && <input type="checkbox" aria-label={`${r.nummer} als betaald markeren`} checked={kies.has(sleutelVan(r))} onChange={() => wissel(sleutelVan(r))} />}</td>
                       <td className="mono">{r.nummer}</td><td className="num">{datum(r.datum)}</td>
                       <td className="r num">{euro(r.bedrag)}{r.bedrag_verschilt && <div className="sub neg">ERP: {euro(r.dossier.afgerekend_bedrag)}</div>}</td>
                       <td>{r.dossier ? <Link naar={`/dossiers/${r.dossier.id}`}><span className="mono">{r.dossier.nummer}</span></Link>
@@ -127,8 +130,8 @@ export default function AccountableImport() {
                   {resultaat.ontbreekt_in_export.map((d, i) => <span key={d.id}>{i ? ', ' : ''}<Link naar={d.verkoop_id ? `/verkoop/${d.verkoop_id}` : `/dossiers/${d.id}`}>{d.afgerekend_nummer}</Link></span>)}. Klopt het nummer in het dossier?
                 </div>
               )}
-              <div><button type="button" className="btn primary" disabled={bezig || !betalen.some(r => kies.has(r.dossier.id))} onClick={toepassen}>
-                Toepassen ({betalen.filter(r => kies.has(r.dossier.id)).length} als betaald)</button></div>
+              <div><button type="button" className="btn primary" disabled={bezig || !betalen.some(r => kies.has(sleutelVan(r)))} onClick={toepassen}>
+                Toepassen ({betalen.filter(r => kies.has(sleutelVan(r))).length} als betaald)</button></div>
             </div>
           </div>
         )}

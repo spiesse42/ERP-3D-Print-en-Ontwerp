@@ -127,7 +127,7 @@ test('K3. verkopen: dossier (prijs aangepast) + printopdracht + vrije regel op Ã
   assert.equal(d.afgerekend_bedrag, 50); assert.equal(d.betaald_op, vandaag);
   assert.equal(d.afrekening_pdf_op, null, 'het document is dat van de verkoop');
   assert.ok(d.werkbon.definitief_op);
-  assert.deepEqual(d.afgerekend_via, { id: verkoop.id, nummer: verkoop.nummer, gemaild_op: d.afgerekend_via.gemaild_op });
+  assert.deepEqual(d.afgerekend_via, { id: verkoop.id, nummer: verkoop.nummer, gemaild_op: d.afgerekend_via.gemaild_op, soort: 'bonnetje', betaald_op: verkoop.datum, vervaldatum: null });
   assert.ok(d.afgerekend_via.gemaild_op);
   assert.match(d.volgende_stap.tekst, /afgerekend via Bonnetje \d{4}-040 \(losse verkoop\)/);
   assert.equal(d.acties.afrekening_ongedaan, false);

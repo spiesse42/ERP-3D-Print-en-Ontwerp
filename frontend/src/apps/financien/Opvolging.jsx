@@ -23,22 +23,22 @@ export default function Opvolging() {
             <div className="kpi"><div className="l">Nog te leveren</div><div className="w">{o.te_leveren.length}</div><div className="s">afgerekend, artikelen of rest nog te leveren</div></div>
           </div>
           <div className="panel"><h3>Onbetaalde facturen</h3>
-            <Lijst sleutel={d => d.id} onOpen={open} groepen={[{ titel: null, rijen: o.onbetaald }]}
+            <Lijst sleutel={d => d.id} onOpen={d => (d.verkoop_id ? navigeer(`/verkoop/${d.verkoop_id}`) : open(d))} groepen={[{ titel: null, rijen: o.onbetaald }]}
               kolommen={[
                 { kop: 'Factuur', cel: d => <span className="mono">{d.afgerekend_nummer}</span> },
-                { kop: 'Dossier', cel: d => <><span className="mono">{d.nummer}</span> · {d.titel}</> },
+                { kop: 'Dossier', cel: d => (d.verkoop_id ? <><span className="sub">Losse verkoop</span> · {d.titel}</> : <><span className="mono">{d.nummer}</span> · {d.titel}</>) },
                 { kop: 'Klant', cel: d => d.klant || '—' },
                 { kop: 'Datum', cel: d => <span className="num">{datum(d.afgerekend_op)}</span> },
                 { kop: 'Open', klasse: 'r', cel: d => <><span className={`badge ${d.vervallen || d.dagen_open > 30 ? 'b-crit' : d.dagen_open > 14 ? 'b-warn' : 'b-neutral'}`}>{d.dagen_open} d</span>{d.vervaldatum && <div className="sub">{d.vervallen ? 'vervallen' : 'vervalt'} {datum(d.vervaldatum)}</div>}</> },
                 { kop: 'Bedrag', klasse: 'r', cel: d => <span className="num">{euro(d.afgerekend_bedrag)}</span> },
               ]}
-              kaart={d => ({ titel: d.afgerekend_nummer, rechts: <b className="num">{euro(d.afgerekend_bedrag)}</b>, regel: `${d.nummer} · ${d.klant || d.titel}`, onder: `${datum(d.afgerekend_op)} · ${d.dagen_open} dagen open${d.vervaldatum ? ` · ${d.vervallen ? 'vervallen' : 'vervalt'} ${datum(d.vervaldatum)}` : ''}` })}
+              kaart={d => ({ titel: d.afgerekend_nummer, rechts: <b className="num">{euro(d.afgerekend_bedrag)}</b>, regel: `${d.nummer || 'Losse verkoop'} · ${d.klant || d.titel}`, onder: `${datum(d.afgerekend_op)} · ${d.dagen_open} dagen open${d.vervaldatum ? ` · ${d.vervallen ? 'vervallen' : 'vervalt'} ${datum(d.vervaldatum)}` : ''}` })}
               leeg={<><b>Alles betaald.</b>Geen openstaande facturen.</>} />
           </div>
           <div className="panel"><h3>Klaar, nog af te rekenen</h3>
             <Lijst sleutel={d => d.id} onOpen={open} groepen={[{ titel: null, rijen: o.te_afrekenen }]}
               kolommen={[
-                { kop: 'Dossier', cel: d => <><span className="mono">{d.nummer}</span> · {d.titel}</> },
+                { kop: 'Dossier', cel: d => (d.verkoop_id ? <><span className="sub">Losse verkoop</span> · {d.titel}</> : <><span className="mono">{d.nummer}</span> · {d.titel}</>) },
                 { kop: 'Klant', cel: d => d.klant || '—' },
                 { kop: 'Fase', cel: d => <FaseBadge fase={d.fase} /> },
                 { kop: 'Totaal', klasse: 'r', cel: d => (d.volledig ? <span className="num">{euro(d.totaal)}</span> : <span className="badge b-warn">onvolledig</span>) },
@@ -49,7 +49,7 @@ export default function Opvolging() {
           <div className="panel"><h3>Afgerekend, nog te leveren</h3>
             <Lijst sleutel={d => d.id} onOpen={open} groepen={[{ titel: null, rijen: o.te_leveren }]}
               kolommen={[
-                { kop: 'Dossier', cel: d => <><span className="mono">{d.nummer}</span> · {d.titel}</> },
+                { kop: 'Dossier', cel: d => (d.verkoop_id ? <><span className="sub">Losse verkoop</span> · {d.titel}</> : <><span className="mono">{d.nummer}</span> · {d.titel}</>) },
                 { kop: 'Klant', cel: d => d.klant || '—' },
                 { kop: 'Fase', cel: d => <FaseBadge fase={d.fase} /> },
                 { kop: 'Nog te leveren', cel: d => <>{d.artikelen.join(', ')}{d.lever_status === 'deels' && <> <span className="badge b-warn">deels geleverd</span></>}</> },

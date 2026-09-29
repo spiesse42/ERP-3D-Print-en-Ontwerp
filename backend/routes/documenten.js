@@ -7,7 +7,7 @@ import { DomeinFout } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { volgendNummer } from '../domein/nummering.js';
 import { leesDossier, leesRegelsVan, berekenDossier, datumOk, bewaarRegels, leesRegels } from '../domein/dossiers.js';
-import { offertesVan, nummerMetVersie, documentInhoud, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje, isErpFactuur } from '../domein/documenten.js';
+import { offertesVan, nummerMetVersie, documentInhoud, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje, isErpFactuur, betaaltermijn } from '../domein/documenten.js';
 import { getBedrijfsgegevens } from '../domein/hulp.js';
 import { factuurHtml, factuurBestand, peppolVerplicht } from '../documenten/factuur.js';
 import { maakBonnetje, maakFactuur } from '../domein/afrekening.js';
@@ -331,10 +331,6 @@ const SOORT = {
   bonnetje: { wat: 'het bonnetje', Wat: 'Bonnetje', reeks: 'BON', isErp: isErpBonnetje, bestand: bonnetjeBestand },
   factuur: { wat: 'de factuur', Wat: 'Factuur', reeks: 'FAC', isErp: isErpFactuur, bestand: factuurBestand },
 };
-function betaaltermijn(db) {
-  const n = parseInt(db.prepare(`SELECT waarde FROM instellingen WHERE sleutel = 'factuur_betaaltermijn'`).get()?.waarde, 10);
-  return Number.isInteger(n) && n >= 0 ? n : 7;
-}
 // Datum van de laatste levering (datum uitvoering), anders de factuurdatum.
 const uitvoering = (d, datum) => d.leveringen?.map(l => l.datum).filter(x => x <= datum).sort().at(-1) || datum;
 async function erpDocumentHtml(soort, d) {

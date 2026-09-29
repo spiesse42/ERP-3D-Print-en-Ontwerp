@@ -220,9 +220,10 @@ export function leesDossier(db, dossierId) {
     leverbaar: lever_lijst, lever_status: lever, leveringen, productie,
     regels, berekening, offertes: offertes.map(({ regels_api: _r, document: _doc, ...o }) => o), werkbon, zonder_werkbon, wijkt_af_van_offerte, overname };
   // afgerekend via een losse verkoop (26-09): enkel daar ongedaan te maken
-  uit.afgerekend_via = db.prepare(`SELECT v.id, v.nummer, v.gemaild_op FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id
+  uit.afgerekend_via = db.prepare(`SELECT v.id, v.nummer, v.gemaild_op, v.soort, v.betaald_op, v.vervaldatum FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id
     WHERE vr.dossier_id = ? AND v.geannuleerd_op IS NULL`).get(dossierId) || null;
-  if (uit.afgerekend_via) uit.acties = { ...uit.acties, afrekening_ongedaan: false, betaling_ongedaan: false };
+  // afrekening én betaling (factuur, 29-09) lopen via die verkoop
+  if (uit.afgerekend_via) uit.acties = { ...uit.acties, afrekening_ongedaan: false, betaling_ongedaan: false, betaald: false };
   uit.volgende_stap = volgendeStap(uit);
   return uit;
 }
@@ -252,9 +253,10 @@ export function volgendeStap(d) {
   // afgerekend via een losse verkoop (26-09)
   if (d.afgerekend_via) {
     const v = d.afgerekend_via;
-    return v.gemaild_op
-      ? { soort: 'afgerond', tekst: `Afgerond: afgerekend via ${v.nummer} (losse verkoop), naar Accountable gemaild.`, extra, verkoop_id: v.id }
-      : { soort: 'verkoop_mailen', tekst: `Afgerekend via ${v.nummer} (losse verkoop), maar dat bonnetje is nog NIET naar Accountable gemaild. Open de verkoop en mail het.`, extra: [], verkoop_id: v.id };
+    const fac = v.soort === 'factuur';
+    if (!v.gemaild_op) return { soort: 'verkoop_mailen', tekst: `Afgerekend via ${v.nummer} (losse verkoop), maar ${fac ? 'die factuur' : 'dat bonnetje'} is nog NIET naar Accountable gemaild. Open de verkoop en mail ${fac ? 'ze' : 'het'}.`, extra: [], verkoop_id: v.id };
+    if (fac && !v.betaald_op) return { soort: 'verkoop_mailen', tekst: `Afgerekend via ${v.nummer} (losse verkoop)${v.vervaldatum ? `, vervalt op ${v.vervaldatum.split('-').reverse().join('-')}` : ''}. Nog te doen: de factuur op betaald zetten in de verkoop zodra het geld binnen is.`, extra, verkoop_id: v.id };
+    return { soort: 'afgerond', tekst: `Afgerond: afgerekend via ${v.nummer} (losse verkoop), naar Accountable gemaild${fac ? ' en betaald' : ''}.`, extra, verkoop_id: v.id };
   }
   // bonnetje van het ERP dat nog niet bij Accountable is (mailen mislukt, 26-09)
   // (29-09) ook een factuur van het ERP
