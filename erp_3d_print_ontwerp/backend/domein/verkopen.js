@@ -327,6 +327,8 @@ export function annuleerVerkoop(db, v) {
     const d = leesDossier(db, r.dossier_id);
     if (d?.afgerekend_nummer === v.nummer) maakAfrekeningOngedaan(db, d, { waarom: `Verkoop ${v.nummer} ongedaan gemaakt.` });
   }
-  const acc = v.gemaild_op ? ` ${v.soort === 'factuur' ? 'De factuur staat al in Accountable: maak daar een creditnota.' : 'Het bonnetje staat al in Accountable: pas het daar ook aan.'}` : '';
+  // 30-09: een bonnetje zet je zelf in Accountable → altijd de herinnering
+  const acc = v.soort === 'factuur' ? (v.gemaild_op ? ' De factuur staat al in Accountable: maak daar een creditnota.' : '')
+    : v.gemaild_op ? ' Het bonnetje staat al in Accountable: pas het daar ook aan.' : ' Zette je het bonnetje al in Accountable? Pas het daar dan ook aan.';
   logGebeurtenis(db, 'verkoop', v.id, 'status', `Ongedaan gemaakt: voorraad teruggeboekt${v.regels.some(x => x.soort === 'dossier') ? ', afrekening van de dossiers ongedaan' : ''}${v.regels.some(x => x.soort === 'printopdracht') ? ', printopdrachten weer vrij' : ''}.${acc}`);
 }
