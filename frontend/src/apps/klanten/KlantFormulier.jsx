@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { useData } from '../../schil/useData.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
@@ -15,6 +15,7 @@ function Invoer({ id, waarde, onWijzig, ...rest }) {
 
 export default function KlantFormulier() {
   const { id } = useParams();
+  const [params] = useSearchParams();
   const nieuw = id === 'nieuw';
   const { melding, bevestig, zetVuil, navigeer } = useOmgeving();
   const { data: klant, fout, herlaad } = useData(nieuw ? null : `/klanten/${id}`);
@@ -24,7 +25,15 @@ export default function KlantFormulier() {
   const [bezig, setBezig] = useState(false);
   const [versie, setVersie] = useState(0);
 
-  useEffect(() => { setForm(naarFormulier(nieuw ? null : klant)); }, [klant, nieuw]);
+  // nieuwe klant vanuit een mail (30-09): naam en e-mailadres voorinvullen
+  const uitUrl = useMemo(() => {
+    if (!nieuw) return null;
+    const naam = (params.get('naam') || '').trim(), email = (params.get('email') || '').trim();
+    if (!naam && !email) return null;
+    const [voornaam, ...rest] = naam.split(/\s+/);
+    return { ...LEGE_KLANT, email, ...(rest.length ? { voornaam, naam: rest.join(' ') } : { naam }) };
+  }, [nieuw, params]);
+  useEffect(() => { setForm(uitUrl || naarFormulier(nieuw ? null : klant)); }, [klant, nieuw, uitUrl]);
 
   const origineel = useMemo(() => naarFormulier(nieuw ? null : klant), [klant, nieuw]);
   const vuil = JSON.stringify(form) !== JSON.stringify(origineel);
@@ -224,14 +233,44 @@ export default function KlantFormulier() {
               </Veld>
             </div>
           </div>
-          <Tabs tabs={[['notities', 'Notities']]} actief={tab} onKies={setTab} />
+          <Tabs tabs={[['notities', 'Notities'], ...(!nieuw && klant?.email ? [['mails', 'Mails']] : [])]} actief={tab} onKies={setTab} />
           <div className="tabpanel">
-            <label className="sr-only" htmlFor="k-notities">Notities</label>
-            <textarea id="k-notities" className="inp" rows={4} value={form.notities || ''} onChange={e => zet('notities')(e.target.value)} placeholder="Vaste afspraken, voorkeuren, …" />
+            {tab === 'mails' && !nieuw && klant?.email ? <KlantMails adres={klant.email} /> : <>
+              <label className="sr-only" htmlFor="k-notities">Notities</label>
+              <textarea id="k-notities" className="inp" rows={4} value={form.notities || ''} onChange={e => zet('notities')(e.target.value)} placeholder="Vaste afspraken, voorkeuren, …" />
+            </>}
           </div>
         </div>
         {!nieuw && <Historiek entiteit="klant" id={id} versie={versie} />}
       </div>
+    </>
+  );
+}
+
+// Mails van en aan de klant (30-09): inbox en verzonden, uit de mailbox.
+function KlantMails({ adres }) {
+  const { navigeer } = useOmgeving();
+  const { data, fout, laden } = useData(`/mail/adres?adres=${encodeURIComponent(adres)}`);
+  if (fout) return <p className="sub">{/nog niet ingesteld/.test(fout) ? 'De mailbox is nog niet ingesteld (tegel Mail).' : fout}</p>;
+  if (!data && laden) return <Laden />;
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <button type="button" className="btn klein" onClick={() => navigeer(`/mail?nieuw=1&aan=${encodeURIComponent(adres)}`)}>Mail sturen</button>
+      </div>
+      {!data?.length ? <p className="sub">Geen mails van of aan {adres} in je inbox of verzonden.</p> : (
+        <table className="mini">
+          <tbody>
+            {data.map(m => (
+              <tr key={`${m.map}-${m.uid}`} className="row" onClick={() => navigeer(`/mail?map=${encodeURIComponent(m.map)}&uid=${m.uid}`)}>
+                <td style={{ whiteSpace: 'nowrap' }} className="sub">{m.map === 'INBOX' ? 'Ontvangen' : 'Verzonden'}</td>
+                <td>{m.gelezen ? m.onderwerp : <b>{m.onderwerp}</b>}{m.bijlagen ? ' 📎' : ''}</td>
+                <td className="r num" style={{ whiteSpace: 'nowrap' }}>{m.datum ? new Date(m.datum).toLocaleDateString('nl-BE') : ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </>
   );
 }

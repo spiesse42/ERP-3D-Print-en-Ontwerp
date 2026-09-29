@@ -54,6 +54,23 @@ export default function FactuurInlezen() {
 
   useEffect(() => { zetVuil(fase === 'nakijken'); return () => zetVuil(false); }, [fase, zetVuil]);
 
+  // Vanuit de tegel Mail (30-09): een bijlage of de tekst van een bestelmail
+  // meteen laten lezen.
+  useEffect(() => {
+    let uitMail = null;
+    try { uitMail = JSON.parse(sessionStorage.getItem('erp-inlezen-uit-mail') || 'null'); sessionStorage.removeItem('erp-inlezen-uit-mail'); } catch { /* niets */ }
+    if (!uitMail) return;
+    if (uitMail.tekst) { leesIn(null, `${uitMail.onderwerp ? `Onderwerp: ${uitMail.onderwerp}\n\n` : ''}${uitMail.tekst}`); return; }
+    (async () => {
+      try {
+        const res = await fetch(`${BASE}/mail/bijlage?map=${encodeURIComponent(uitMail.map)}&uid=${uitMail.uid}&index=${uitMail.index}&download=1`);
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'De bijlage kon niet opgehaald worden');
+        leesIn(new File([await res.blob()], uitMail.naam, { type: uitMail.type }));
+      } catch (e) { setFout(e.message); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function leesIn(bestand, tekst = null) {
     if (!bestand && !tekst) return;
     setFout(null); setFase('lezen');

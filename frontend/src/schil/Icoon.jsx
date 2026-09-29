@@ -29,6 +29,7 @@ const PADEN = {
   pijlLinks: <path d="M19 12H5M11 6l-6 6 6 6"/>,
   pijlRechts: <path d="m9 6 6 6-6 6"/>,
   bericht: <path d="M4 5h16v11H8l-4 4z"/>,
+  envelop: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></>,
 };
 
 export default function Icoon({ naam, maat = 18, dik = 2, ...rest }) {

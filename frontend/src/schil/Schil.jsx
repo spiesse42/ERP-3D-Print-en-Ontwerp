@@ -2,7 +2,8 @@
 // elke app), bovenaan appnaam + menu van de app, daaronder de pagina. Op gsm
 // verdwijnt de app-balk en toont de knop Menu eerst alle apps, daarna het
 // menu van de huidige app.
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { api } from '../lib/api.js';
 import { Outlet, useLocation } from 'react-router-dom';
 import { APPS, appVoorPad } from '../apps.js';
 import { useOmgeving } from './Omgeving.jsx';
@@ -25,6 +26,18 @@ export default function Schil() {
   const { pathname } = useLocation();
   const app = appVoorPad(pathname);
   const [menuOpen, setMenuOpen] = useState(false);
+  // ongelezen mails in de zijbalk (30-09): om de 2 minuten, enkel met een ingestelde mailbox
+  const [ongelezen, setOngelezen] = useState(0);
+  useEffect(() => {
+    let stop = false, t = null;
+    const kijk = () => api.get('/mail/status?ongelezen=1').then(m => {
+      if (stop) return;
+      setOngelezen(m.ongelezen || 0);
+      if (m.ingesteld) t = setTimeout(kijk, 120000);
+    }).catch(() => {});
+    kijk();
+    return () => { stop = true; clearTimeout(t); };
+  }, []);
   const menu = app?.menu || [];
   const actief = (sub) => {
     const pad = `/${app.id}${sub ? '/' + sub : ''}`;
@@ -48,7 +61,7 @@ export default function Schil() {
         {APPS.map(a => (
           <Link key={a.id} naar={naarApp(a)} className={app?.id === a.id ? 'on' : ''} aria-current={app?.id === a.id ? 'page' : undefined}
             style={{ '--k': a.kleur }} title={a.naam}>
-            <span className="ic"><Icoon naam={a.icoon} maat={20} /></span><span>{a.naam}</span>
+            <span className="ic"><Icoon naam={a.icoon} maat={20} />{a.id === 'mail' && ongelezen > 0 && <span className="zb-tel" aria-label={`${ongelezen} ongelezen`}>{ongelezen > 99 ? '99+' : ongelezen}</span>}</span><span>{a.naam}</span>
           </Link>
         ))}
       </nav>
