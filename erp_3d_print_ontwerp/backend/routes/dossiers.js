@@ -12,6 +12,7 @@ import { annuleerVoorDossier, synchroniseer } from '../productie/opdrachten.js';
 import { start } from '../domein/uitvoering.js';
 import { maakWerkbon, afrekeningWeergave } from '../domein/documenten.js';
 import { rekenAf, maakAfrekeningOngedaan } from '../domein/afrekening.js';
+import { voegSamen } from '../domein/samenvoegen.js';
 import { SOORTEN, leesKop, leesRegels, bewaarRegels, leesDossier, leesDossiers, leesAfrekening, datumOk, leesRegelsVan } from '../domein/dossiers.js';
 
 const r = Router();
@@ -194,6 +195,19 @@ r.post('/:id/heropenen', actie('heropenen', (db, d) => {
   logGebeurtenis(db, 'dossier', d.id, 'status', 'Heropend');
   synchroniseer(db, d.id);
 }));
+
+// Samenvoegen (29-09): andere open dossiers van dezelfde klant hierin.
+r.post('/:id/samenvoegen', (req, res) => {
+  const db = getDb();
+  try {
+    const id = idVan(req);
+    db.transaction(() => voegSamen(db, id, req.body?.dossiers))();
+    res.json(leesDossier(db, id));
+  } catch (e) {
+    if (isFkFout(e)) return res.status(400).json({ error: 'Samenvoegen mislukt: onbekend dossier' });
+    res.status(e.status || (e instanceof DomeinFout ? 400 : 500)).json({ error: e.message });
+  }
+});
 
 r.patch('/:id/archief', metFouten((req, res) => {
   const db = getDb(); const id = idVan(req);
