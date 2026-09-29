@@ -14,6 +14,19 @@ if not exist .git (
   pause & exit /b 1
 )
 
+rem Nieuwe onderdelen (dependencies) na een Fetch/Pull meteen installeren,
+rem anders vinden de tests ze niet (bv. qrcode voor de factuur). Snel als er
+rem niets veranderd is.
+echo [0/5] Onderdelen bijwerken (npm install)...
+cd backend
+call npm install --no-audit --no-fund
+if %errorlevel% neq 0 ( echo. & echo *** FOUT bij npm install backend - zie install.bat. *** & pause & exit /b 1 )
+cd ..\frontend
+call npm install --no-audit --no-fund
+if %errorlevel% neq 0 ( echo. & echo *** FOUT bij npm install frontend. *** & pause & exit /b 1 )
+cd ..
+
+echo.
 echo [1/5] Tests backend...
 cd backend
 call npm test
