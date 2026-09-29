@@ -13,6 +13,7 @@ import { start } from '../domein/uitvoering.js';
 import { maakWerkbon, afrekeningWeergave } from '../domein/documenten.js';
 import { rekenAf, maakAfrekeningOngedaan } from '../domein/afrekening.js';
 import { voegSamen } from '../domein/samenvoegen.js';
+import { leverRestUitVoorraad } from '../domein/leveringen.js';
 import { SOORTEN, leesKop, leesRegels, bewaarRegels, leesDossier, leesDossiers, leesAfrekening, datumOk, leesRegelsVan } from '../domein/dossiers.js';
 
 const r = Router();
@@ -150,7 +151,7 @@ r.post('/:id/starten', actie('starten', (db, d) => start(db, d.id)));
 // Verwijzing naar een document uit Accountable (nummer met de hand); de
 // logica zelf staat in domein/afrekening.js (gedeeld met "Bonnetje maken").
 r.post('/:id/afrekenen', actie('afrekenen', (db, d0, body) => {
-  rekenAf(db, d0, { afrekening: wb => leesAfrekening(body, wb.bedrag) });
+  rekenAf(db, d0, { afrekening: wb => leesAfrekening(body, wb.bedrag), leverVoorraad: body.voorraad_leveren !== false });
 }));
 // Gratis geleverd (25-09): de klant krijgt het zonder te betalen. Geen
 // afrekening in Accountable en geen omzet; de werkbon wordt definitief (als
@@ -169,6 +170,8 @@ r.post('/:id/gratis', actie('gratis', (db, d0, body) => {
   }
   db.prepare('UPDATE dossiers SET gratis_op = ?, gratis_waarde = ? WHERE id = ?').run(datum, waarde, d.id);
   logGebeurtenis(db, 'dossier', d.id, 'status', `Gratis geleverd op ${dmj(datum)}${waarde != null ? ` (waarde ${euro(waarde)})` : ''}: niets af te rekenen`);
+  // artikelen uit voorraad die nog niet geleverd zijn: nu leveren (29-09)
+  if (body.voorraad_leveren !== false) leverRestUitVoorraad(db, d, datum, 'bij gratis geleverd');
 }));
 r.post('/:id/gratis-ongedaan', actie('gratis_ongedaan', (db, d) => {
   db.prepare('UPDATE dossiers SET gratis_op = NULL, gratis_waarde = NULL WHERE id = ?').run(d.id);

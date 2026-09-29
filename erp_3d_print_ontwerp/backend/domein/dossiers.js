@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 // DOSSIERS (stap 5a) — kop, regels, afrekening als verwijzing
 // ═══════════════════════════════════════════════════════════════════════
-import { DomeinFout } from './hulp.js';
+import { DomeinFout, getTarieven } from './hulp.js';
 import { getal } from './rekenmotor.js';
 import { berekenMetDb } from './berekening.js';
 import { faseVan, actiesVan, stappenVan } from './status/dossier.js';
@@ -138,8 +138,8 @@ export function leesRegelsVan(db, dossierId) {
       ...(m.artikel_id ? { artikel_id: m.artikel_id } : { filament_type_id: m.filament_type_id }), gram: m.gram })) : [] }));
 }
 
-export function berekenDossier(db, regels, stand = 'schatting') {
-  try { return berekenMetDb(db, regels, { stand }); }
+export function berekenDossier(db, regels, stand = 'schatting', tarieven = null) {
+  try { return berekenMetDb(db, regels, { stand, tarieven }); }
   catch (e) { return { fout: e.message, totaal: null, volledig: false, regels: [] }; }
 }
 
@@ -301,8 +301,9 @@ export function leesDossiers(db, { archief = '0', klant_id = null } = {}) {
       (SELECT COUNT(*) FROM dossier_regels r WHERE r.dossier_id = d.id) AS aantal_regels
     FROM dossiers d LEFT JOIN klanten k ON k.id = d.klant_id
     ${waar.length ? `WHERE ${waar.join(' AND ')}` : ''} ORDER BY d.id DESC`).all(...par);
+  const tarieven = getTarieven(db);   // één keer voor de hele lijst
   return rijen.map(d => {
-    const b = d.aantal_regels ? berekenDossier(db, leesRegelsVan(db, d.id)) : { totaal: 0, volledig: true };
+    const b = d.aantal_regels ? berekenDossier(db, leesRegelsVan(db, d.id), 'schatting', tarieven) : { totaal: 0, volledig: true };
     const offerte = laatsteVerstuurde(offertesVan(db, d.id));
     const lever = d.soort === 'klant' ? leverStatusVan(db, d.id) : null;
     const prod = productieVan(db, d.id);
@@ -322,3 +323,15 @@ export function leesAfrekening(body, totaal) {
   return { soort, nummer, datum: body.datum, bedrag };
 }
 export { datumOk };
+
+// Antwoord naar de browser (29-09): de afbeelding van een printregel enkel
+// bij de regels zelf, niet nog eens in de berekening, het overnamedocument en
+// de werkbon (scheelt ± 2/3 van de grootte; een dossier in productie ververst
+// elke 15 s). PDF's lezen het dossier rechtstreeks en houden hun afbeeldingen.
+const zonderAfbeelding = doc => (Array.isArray(doc?.regels) ? { ...doc, regels: doc.regels.map(({ afbeelding: _a, ...r }) => r) } : doc);
+export function slankDossier(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.regels) || !d.berekening) return d;
+  return { ...d, berekening: zonderAfbeelding(d.berekening), overname: zonderAfbeelding(d.overname),
+    werkbon: d.werkbon && { ...d.werkbon, berekening: zonderAfbeelding(d.werkbon.berekening),
+      concept_document: zonderAfbeelding(d.werkbon.concept_document), document: zonderAfbeelding(d.werkbon.document) } };
+}
