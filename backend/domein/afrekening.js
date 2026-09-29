@@ -13,6 +13,7 @@ import { logGebeurtenis } from './historiek.js';
 import { maakWerkbon, afrekeningWeergave, isErpBonnetje } from './documenten.js';
 import { leesDossier, leesRegelsVan } from './dossiers.js';
 import { volgendNummer } from './nummering.js';
+import { leverRestUitVoorraad } from './leveringen.js';
 
 const euro = n => `€ ${Number(n).toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const dmj = d => String(d).split('-').reverse().join('-');
@@ -20,7 +21,8 @@ const dmj = d => String(d).split('-').reverse().join('-');
 
 // afrekening(wb) → { soort, nummer, datum, bedrag, extra? } — pas opgeroepen
 // als de werkbon volledig berekend is (dus geen nummer "verbruikt" bij een fout).
-export function rekenAf(db, d0, { waarom = 'bij het afrekenen', afrekening, logTekst = null }) {
+// leverVoorraad (29-09): nog niet geleverde artikelen uit voorraad meteen leveren.
+export function rekenAf(db, d0, { waarom = 'bij het afrekenen', afrekening, logTekst = null, leverVoorraad = true }) {
   const d = !d0.werkbon && maakWerkbon(db, d0.id, { waarom }) ? leesDossier(db, d0.id) : d0;
   const wb = d.werkbon;
   if (!wb.volledig || !wb.concept_document) throw new DomeinFout('Niet alle regels van de werkbon kunnen berekend worden. Los dat eerst op (zie de regels).');
@@ -35,6 +37,7 @@ export function rekenAf(db, d0, { waarom = 'bij het afrekenen', afrekening, logT
     .run(a.soort, a.nummer, a.datum, a.bedrag, betaald, a.pdf ? new Date().toISOString() : null, d.id);
   logGebeurtenis(db, 'dossier', d.id, 'status', logTekst ? logTekst(a, betaald)
     : `Afgerekend in Accountable: ${afrekeningWeergave(a.soort, a.nummer)} van ${dmj(a.datum)}, ${euro(a.bedrag)}${betaald ? ' (meteen betaald)' : ''}`);
+  if (leverVoorraad) a.levering = leverRestUitVoorraad(db, d, a.datum, waarom);
   return a;
 }
 
@@ -42,9 +45,9 @@ export function rekenAf(db, d0, { waarom = 'bij het afrekenen', afrekening, logT
 // Het nummer komt uit de reeks BON van het jaar van de bonnetjesdatum. Het
 // bedrag is ALTIJD dat van de werkbon: de regels op het bonnetje moeten
 // samen het totaal geven (een ander bedrag? pas de regels van het dossier aan).
-export function maakBonnetje(db, d0, { datum }) {
+export function maakBonnetje(db, d0, { datum, leverVoorraad = true }) {
   return rekenAf(db, d0, {
-    waarom: 'bij het maken van het bonnetje',
+    waarom: 'bij het maken van het bonnetje', leverVoorraad,
     afrekening: wb => ({ soort: 'bonnetje', nummer: volgendNummer(db, 'BON', { jaar: Number(String(datum).slice(0, 4)) }), datum, bedrag: wb.bedrag, pdf: true }),
     logTekst: a => `${a.nummer} gemaakt door het ERP (${dmj(a.datum)}, ${euro(a.bedrag)}): afgerekend en meteen betaald`,
   });

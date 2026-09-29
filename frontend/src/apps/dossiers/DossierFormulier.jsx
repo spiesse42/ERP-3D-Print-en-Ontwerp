@@ -345,7 +345,7 @@ export default function DossierFormulier() {
           catch (e) { melding(`De afbeeldingen van de platen konden niet bewaard worden: ${e.message}`, 'fout'); }
         }} />}
       {dialoog === 'gratis' && <GratisDialoog dossier={d} onSluit={() => setDialoog(null)}
-        onBevestig={async datum => { if (await actie('gratis', 'Gratis geleverd: niets af te rekenen.', { body: { datum } })) setDialoog(null); }} />}
+        onBevestig={async (datum, leveren) => { if (await actie('gratis', 'Gratis geleverd: niets af te rekenen.', { body: { datum, voorraad_leveren: leveren } })) setDialoog(null); }} />}
     </>
   );
 }

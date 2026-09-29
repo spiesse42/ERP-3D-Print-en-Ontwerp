@@ -7,6 +7,7 @@ import { initDb, sluitDb, getDb } from '../db/index.js';
 import { maakApp } from '../app.js';
 import { stopWachter } from '../productie/wachter.js';
 import { documentHtml } from '../documenten/sjabloon.js';
+import { leesDossier } from '../domein/dossiers.js';
 
 let server, basis;
 before(async () => {
@@ -139,10 +140,13 @@ test('S5. afbeelding per printregel: bewaard, gecontroleerd, op offerte en werkb
   const ok = await maak([{ type: 'printen', omschrijving: 'Bluey', printer_id: 2, tijd_min: 60, afbeelding: afb, materialen: [] }]);
   assert.equal(ok.status, 201, JSON.stringify(ok.data));
   assert.equal(ok.data.regels[0].afbeelding, afb);
-  assert.equal(ok.data.overname.regels[0].afbeelding, afb, 'in de documentinhoud (offerte/werkbon)');
+  // PDF's lezen het dossier rechtstreeks: daar staat de afbeelding in de documentinhoud
+  const overname = leesDossier(getDb(), ok.data.id).overname;
+  assert.equal(overname.regels[0].afbeelding, afb, 'in de documentinhoud (offerte/werkbon)');
+  assert.equal(ok.data.overname.regels[0].afbeelding, undefined, 'niet dubbel naar de browser');
   const fout = await maak([{ type: 'printen', omschrijving: 'X', tijd_min: 1, afbeelding: 'javascript:alert(1)', materialen: [] }]);
   assert.equal(fout.status, 400); assert.match(fout.data.error, /ongeldige afbeelding/);
-  const html = documentHtml({ soort: 'OFFERTE', nummer: 'OFF-1', datum: '2026-09-28', inhoud: ok.data.overname });
+  const html = documentHtml({ soort: 'OFFERTE', nummer: 'OFF-1', datum: '2026-09-28', inhoud: overname });
   assert.ok(html.includes(`<img class="afb" src="${afb}"`));
 });
 

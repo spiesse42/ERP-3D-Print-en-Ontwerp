@@ -369,7 +369,7 @@ r.post('/dossiers/:id/bonnetje', metFouten(async (req, res) => {
   if (naarKlant && !geldigAdres(req.body?.aan)) throw new DomeinFout('Vul een geldig e-mailadres van de klant in (of vink "ook naar de klant" uit).');
   if (!mailIngesteld()) throw new DomeinFout('Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Een bonnetje moet naar Accountable gemaild worden.');
   if (!vindBrowser()) throw new DomeinFout('Geen Chrome, Edge of Chromium gevonden om de PDF te maken.');
-  db.transaction(() => maakBonnetje(db, d0, { datum }))();
+  db.transaction(() => maakBonnetje(db, d0, { datum, leverVoorraad: req.body?.voorraad_leveren !== false }))();
   let mail_fout = null;
   try {
     await mailBonnetje(db, leesDossier(db, d0.id), { naar_klant: naarKlant, aan: req.body?.aan, onderwerp: req.body?.onderwerp, tekst: req.body?.tekst, naar_accountable: true });

@@ -27,6 +27,7 @@ import financien from './routes/financien.js';
 import onderhoud from './routes/onderhoud.js';
 import verkopen from './routes/verkopen.js';
 import slicer from './routes/slicer.js';
+import { slankDossier } from './domein/dossiers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export function maakApp() {
@@ -79,6 +80,14 @@ export function maakApp() {
       next();
     });
   }
+
+  // Dossiers naar de browser zonder dubbele afbeeldingen (29-09): één plaats
+  // voor alle routes die een dossier teruggeven.
+  app.use('/api', (req, res, next) => {
+    const json = res.json.bind(res);
+    res.json = body => json(slankDossier(body));
+    next();
+  });
 
   app.use('/api/klanten',      klanten);
   app.use('/api/tarieven',     tarieven);
