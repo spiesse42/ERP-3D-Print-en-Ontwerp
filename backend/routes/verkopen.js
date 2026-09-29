@@ -45,7 +45,7 @@ const bestandVan = (v, extra = '') => (v.soort === 'factuur' ? factuurBestand(v.
 async function mail(db, v, body) {
   const uit = await stuurBonnetje({ nummer: v.nummer, titel: v.omschrijving, bedrag: v.totaal, context: 'losse verkoop',
     html: await documentVan(db, v), ...body, al_bij_accountable: !!v.gemaild_op,
-    wat: v.soort === 'factuur' ? 'de factuur' : 'het bonnetje', bestand: bestandVan(v) });
+    wat: v.soort === 'factuur' ? 'de factuur' : 'het bonnetje', bestand: bestandVan(v), factuur: v.soort === 'factuur' });
   db.transaction(() => {
     if (uit.accountable) db.prepare('UPDATE verkopen SET gemaild_op = ? WHERE id = ?').run(new Date().toISOString(), v.id);
     if (uit.klantAdres) db.prepare('UPDATE verkopen SET klant_mail = ? WHERE id = ?').run(uit.klantAdres, v.id);
@@ -64,7 +64,7 @@ r.get('/voorstel', metFouten((req, res) => {
   const datum = leesDatum(req.query.datum, soort);
   const klant = req.query.klant ? db.prepare('SELECT * FROM klanten WHERE id = ?').get(Number(req.query.klant)) : null;
   res.json({ nummer: voorstelNummer(db, datum, soort), datum, accountable: accountableAdres(), afzender: afzender(),
-    mail_ingesteld: mailIngesteld(), pdf_mogelijk: !!vindBrowser(), drempel: DREMPEL_BONNETJE,
+    mail_ingesteld: mailIngesteld(), pdf_mogelijk: !!vindBrowser(), drempel: DREMPEL_BONNETJE, naar_accountable: soort === 'factuur',
     ...(soort === 'factuur' ? { vervaldatum: plusDagen(datum, betaaltermijn(db)), peppol_verplicht: peppolVerplicht(klant) } : {}) });
 }));
 // Wat je kunt koppelen: af te rekenen klantdossiers en voltooide losse
@@ -86,15 +86,17 @@ r.post('/', metFouten(async (req, res) => {
   const v = leesVerkoop(db, req.body);
   const b = mailBody(req.body);
   if (b.naar_klant && !geldigAdres(b.aan)) throw new DomeinFout('Vul een geldig e-mailadres van de klant in (of vink "ook naar de klant" uit).');
-  if (!mailIngesteld()) throw new DomeinFout(`Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). ${v.soort === 'factuur' ? 'Een factuur' : 'Een bonnetje'} moet naar Accountable gemaild worden.`);
-  if (!vindBrowser()) throw new DomeinFout('Geen Chrome, Edge of Chromium gevonden om de PDF te maken.');
+  // 30-09: een factuur gaat altijd naar Accountable; een bonnetje enkel (optioneel) naar de klant
+  const mailen = v.soort === 'factuur' || b.naar_klant;
+  if (mailen && !mailIngesteld()) throw new DomeinFout(v.soort === 'factuur' ? 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Een factuur moet naar Accountable gemaild worden.' : 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie): vink "ook naar de klant" uit.');
+  if (mailen && !vindBrowser()) throw new DomeinFout('Geen Chrome, Edge of Chromium gevonden om de PDF te maken.');
   const id = db.transaction(() => maakVerkoop(db, v))();
   let mail_fout = null;
-  try { await mail(db, verkoop(db, id), { ...b, naar_accountable: true }); }
+  if (mailen) try { await mail(db, verkoop(db, id), { ...b, naar_accountable: v.soort === 'factuur' }); }
   catch (e) {
     mail_fout = e.message;
     console.error('[verkopen]', e);
-    logGebeurtenis(db, 'verkoop', id, 'status', `Mailen mislukt: ${e.message}. ${v.soort === 'factuur' ? 'De factuur' : 'Het bonnetje'} is NOG NIET naar Accountable gestuurd.`);
+    logGebeurtenis(db, 'verkoop', id, 'status', v.soort === 'factuur' ? `Mailen mislukt: ${e.message}. De factuur is NOG NIET naar Accountable gestuurd.` : `Mailen naar de klant mislukt: ${e.message}.`);
   }
   res.status(201).json({ ...verkoop(db, id), mail_fout });
 }));

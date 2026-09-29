@@ -4,9 +4,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 // - PDF: titel "BONNETJE 2026-021", "Betaald op", btw-kolom 0 % en de
 //   vermelding van art. 56bis (verplichte velden voor het dagontvangstenboek)
-// - mail: ALTIJD naar Accountable (inkomsten@accountable.eu); optioneel naar
-//   de klant, met Accountable in cc. Accountable krijgt elk bonnetje EXACT één
-//   keer: een tweede mail zou een dubbele inkomst geven.
+// - mail: optioneel naar de klant. 30-09: NIET meer naar Accountable
+//   (inkomsten@ leest een bonnetje in als factuur); je zet het bonnetje zelf in
+//   Accountable. Enkel een FACTUUR gaat nog naar inkomsten@ (exact één keer:
+//   een tweede mail zou een dubbele inkomst geven).
 import { documentHtml, dmjDatum } from './sjabloon.js';
 import { htmlNaarPdf } from './pdf.js';
 import { verstuurMail, geldigAdres } from './mail.js';
@@ -28,7 +29,9 @@ export function bonnetjeHtml({ inhoud, nummer, datum, concept = false }) {
 // oproeper bewaart daarna zelf WAT er verstuurd is (gemaild_op, klantadres).
 // al_bij_accountable: werd het al naar Accountable gestuurd? (dan geweigerd)
 // Ook voor de factuur (29-09): wat = 'de factuur', bestand = naam van de PDF.
-export async function stuurBonnetje({ nummer, titel, bedrag, context, html, naar_klant, aan, onderwerp, tekst, naar_accountable, al_bij_accountable, wat = 'het bonnetje', bestand = null }) {
+// naar Accountable enkel voor een factuur (factuur: true, 30-09).
+export async function stuurBonnetje({ nummer, titel, bedrag, context, html, naar_klant, aan, onderwerp, tekst, naar_accountable, al_bij_accountable, wat = 'het bonnetje', bestand = null, factuur = false }) {
+  if (naar_accountable && !factuur) throw new DomeinFout('Een bonnetje gaat niet naar Accountable (inkomsten@ leest het in als factuur). Zet het zelf in Accountable.');
   if (!naar_klant && !naar_accountable) throw new DomeinFout(`Kies naar wie ${wat} moet.`);
   if (naar_accountable && al_bij_accountable) throw new DomeinFout(`${nummer} werd al naar Accountable gemaild. Een tweede keer zou een dubbele inkomst geven.`);
   const klantAdres = String(aan ?? '').trim();

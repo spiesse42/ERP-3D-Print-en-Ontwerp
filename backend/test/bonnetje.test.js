@@ -68,7 +68,7 @@ test('B1. voorstel: toont nummer en bedrag, maar bewaart NIETS (geen werkbon, ge
   assert.match(pdf.headers.get('content-disposition'), /Bonnetje \d{4}-021 - voorbeeld\.pdf/);
 });
 
-test('B2. maken zonder de klant: afgerekend + betaald, enkel naar Accountable, volgend nummer 22', async () => {
+test('B2. maken zonder de klant: afgerekend + betaald, GEEN mail (30-09: niet meer naar Accountable), volgend nummer 22', async () => {
   const postvak = nepPostvak().length;
   const d = ok(await vraag('POST', `/dossiers/${d1.id}/bonnetje`, { datum: vandaag, naar_klant: false }), 201);
   assert.equal(d.mail_fout, null);
@@ -78,37 +78,35 @@ test('B2. maken zonder de klant: afgerekend + betaald, enkel naar Accountable, v
   assert.equal(d.afgerekend_bedrag, d.werkbon.document.totaal, 'regels op het bonnetje = totaal');
   assert.equal(d.afgerekend_op, vandaag); assert.equal(d.betaald_op, vandaag);
   assert.equal(d.fase, 'betaald');
-  assert.ok(d.afrekening_pdf_op && d.afrekening_gemaild_op);
+  assert.ok(d.afrekening_pdf_op); assert.equal(d.afrekening_gemaild_op, null);
   assert.equal(d.afrekening_klant_mail, null);
   assert.ok(d.werkbon.definitief_op, 'werkbon definitief');
-  assert.equal(nepPostvak().length, postvak + 1, 'precies één mail');
-  const m = nepPostvak().at(-1);
-  assert.equal(m.to, ACC); assert.equal(m.cc, undefined);
-  assert.equal(m.subject, `Bonnetje ${jaar}-021`);
-  assert.equal(m.attachments[0].filename, `Bonnetje ${jaar}-021.pdf`);
-  assert.ok(m.bijlage_bytes > 1000);
+  assert.equal(nepPostvak().length, postvak, 'geen mail: inkomsten@ leest een bonnetje in als factuur');
   assert.equal(d.volgende_stap.soort, 'afgerond');
-  assert.match(d.volgende_stap.tekst, /Bonnetje \d{4}-021 gemaakt en naar Accountable gemaild/);
+  assert.match(d.volgende_stap.tekst, /Bonnetje \d{4}-021 gemaakt\./);
+  assert.ok(d.volgende_stap.extra.some(t => /zelf in Accountable/.test(t)));
   assert.equal(await volgendBon(), `Bonnetje ${jaar}-022`);
   const pdf = await vraag('GET', `/dossiers/${d1.id}/bonnetje/pdf`);
   assert.equal(pdf.pdf.subarray(0, 5).toString(), '%PDF-');
   assert.match(pdf.headers.get('content-disposition'), /Bonnetje \d{4}-021\.pdf/);
   const h = ok(await vraag('GET', `/historiek/dossier/${d1.id}`));
   assert.ok(h.some(x => /Bonnetje \d{4}-021 gemaakt door het ERP/.test(x.tekst)));
-  assert.ok(h.some(x => /gemaild naar Accountable \(inkomsten@accountable\.eu\)/.test(x.tekst)));
+  // naar Accountable mailen wordt geweigerd
+  fout(await vraag('POST', `/dossiers/${d1.id}/bonnetje/mail`, { naar_accountable: true }), /niet naar Accountable/);
   // tweede keer maken kan niet
   fout(await vraag('POST', `/dossiers/${d1.id}/bonnetje`, {}), /al afgerekend/);
 });
 
-test('B3. maken mét de klant: aan de klant, Accountable in cc', async () => {
+test('B3. maken mét de klant: enkel aan de klant (geen Accountable in cc)', async () => {
   const d = ok(await vraag('POST', `/dossiers/${d2.id}/bonnetje`, { naar_klant: true, aan: 'elien@voorbeeld.be', onderwerp: 'Je bonnetje', tekst: 'Dag Elien' }), 201);
   const m = nepPostvak().at(-1);
-  assert.equal(m.to, 'elien@voorbeeld.be'); assert.equal(m.cc, ACC);
+  assert.equal(m.to, 'elien@voorbeeld.be'); assert.equal(m.cc, undefined);
   assert.equal(m.subject, 'Je bonnetje'); assert.equal(m.text, 'Dag Elien');
+  assert.equal(m.attachments[0].filename, `Bonnetje ${jaar}-022.pdf`);
   assert.equal(d.afgerekend_nummer, `Bonnetje ${jaar}-022`);
   assert.equal(d.afrekening_klant_mail, 'elien@voorbeeld.be');
-  assert.ok(d.afrekening_gemaild_op);
-  assert.match(d.volgende_stap.tekst, /ook naar elien@voorbeeld\.be/);
+  assert.equal(d.afrekening_gemaild_op, null);
+  assert.match(d.volgende_stap.tekst, /naar elien@voorbeeld\.be gemaild/);
 });
 
 test('B4. controles vooraf: bij een fout wordt er GEEN nummer verbruikt', async () => {
@@ -128,33 +126,26 @@ test('B4. controles vooraf: bij een fout wordt er GEEN nummer verbruikt', async 
   fout(await vraag('GET', `/dossiers/${d3.id}/bonnetje/pdf`), /geen bonnetje/);
 });
 
-test('B5. mailen mislukt: bonnetje blijft, volgende stap = mailen; Accountable daarna exact één keer', async () => {
+test('B5. mailen naar de klant mislukt: bonnetje blijft (afgerond); later opnieuw naar de klant mailen', async () => {
   const bewaard = { ...process.env };
   delete process.env.MAIL_NEP;
   Object.assign(process.env, { SMTP_USER: 'x@voorbeeld.be', SMTP_PASS: 'x', SMTP_HOST: '127.0.0.1', SMTP_PORT: '1' });
   let d;
   try {
-    d = ok(await vraag('POST', `/dossiers/${d3.id}/bonnetje`, {}), 201);
+    d = ok(await vraag('POST', `/dossiers/${d3.id}/bonnetje`, { naar_klant: true, aan: 'elien@voorbeeld.be' }), 201);
   } finally {
     for (const k of ['SMTP_USER', 'SMTP_PASS', 'SMTP_HOST', 'SMTP_PORT']) { if (bewaard[k] === undefined) delete process.env[k]; else process.env[k] = bewaard[k]; }
     process.env.MAIL_NEP = '1';
   }
   assert.match(d.mail_fout, /verbinding/i);
   assert.equal(d.afgerekend_nummer, `Bonnetje ${jaar}-023`);
-  assert.equal(d.afrekening_gemaild_op, null);
-  assert.equal(d.volgende_stap.soort, 'bonnetje_mailen');
-  assert.ok(ok(await vraag('GET', `/historiek/dossier/${d3.id}`)).some(h => /NOG NIET naar Accountable/.test(h.tekst)));
-  // enkel naar de klant: Accountable blijft "nog te mailen"
-  let x = ok(await vraag('POST', `/dossiers/${d3.id}/bonnetje/mail`, { naar_klant: true, aan: 'elien@voorbeeld.be' }));
-  assert.equal(nepPostvak().at(-1).cc, undefined);
-  assert.equal(x.volgende_stap.soort, 'bonnetje_mailen');
+  assert.equal(d.afrekening_klant_mail, null);
+  assert.equal(d.volgende_stap.soort, 'afgerond');
+  assert.ok(ok(await vraag('GET', `/historiek/dossier/${d3.id}`)).some(h => /naar de klant mislukt/.test(h.tekst)));
+  const x = ok(await vraag('POST', `/dossiers/${d3.id}/bonnetje/mail`, { naar_klant: true, aan: 'elien@voorbeeld.be' }));
+  assert.equal(nepPostvak().at(-1).to, 'elien@voorbeeld.be'); assert.equal(nepPostvak().at(-1).cc, undefined);
+  assert.equal(x.afrekening_klant_mail, 'elien@voorbeeld.be');
   fout(await vraag('POST', `/dossiers/${d3.id}/bonnetje/mail`, {}), /naar wie/);
-  x = ok(await vraag('POST', `/dossiers/${d3.id}/bonnetje/mail`, { naar_accountable: true }));
-  assert.equal(nepPostvak().at(-1).to, ACC);
-  assert.ok(x.afrekening_gemaild_op);
-  assert.equal(x.volgende_stap.soort, 'afgerond');
-  fout(await vraag('POST', `/dossiers/${d3.id}/bonnetje/mail`, { naar_accountable: true }), /al naar Accountable gemaild/);
-  fout(await vraag('POST', `/dossiers/${d3.id}/bonnetje/mail`, { naar_klant: true, aan: 'elien@voorbeeld.be', naar_accountable: true }), /al naar Accountable gemaild/);
 });
 
 test('B6. afrekening ongedaan wist ook de bonnetjesgegevens', async () => {
