@@ -27,13 +27,14 @@ export function bonnetjeHtml({ inhoud, nummer, datum, concept = false }) {
 // Mailt het bonnetje. Gooit een fout als er niets verstuurd kon worden; de
 // oproeper bewaart daarna zelf WAT er verstuurd is (gemaild_op, klantadres).
 // al_bij_accountable: werd het al naar Accountable gestuurd? (dan geweigerd)
-export async function stuurBonnetje({ nummer, titel, bedrag, context, html, naar_klant, aan, onderwerp, tekst, naar_accountable, al_bij_accountable }) {
-  if (!naar_klant && !naar_accountable) throw new DomeinFout('Kies naar wie het bonnetje moet.');
+// Ook voor de factuur (29-09): wat = 'de factuur', bestand = naam van de PDF.
+export async function stuurBonnetje({ nummer, titel, bedrag, context, html, naar_klant, aan, onderwerp, tekst, naar_accountable, al_bij_accountable, wat = 'het bonnetje', bestand = null }) {
+  if (!naar_klant && !naar_accountable) throw new DomeinFout(`Kies naar wie ${wat} moet.`);
   if (naar_accountable && al_bij_accountable) throw new DomeinFout(`${nummer} werd al naar Accountable gemaild. Een tweede keer zou een dubbele inkomst geven.`);
   const klantAdres = String(aan ?? '').trim();
   if (naar_klant && !geldigAdres(klantAdres)) throw new DomeinFout('Vul een geldig e-mailadres van de klant in.');
   const acc = accountableAdres();
-  const bijlage = { naam: bonnetjeBestand(nummer), inhoud: await htmlNaarPdf(html) };
+  const bijlage = { naam: bestand || bonnetjeBestand(nummer), inhoud: await htmlNaarPdf(html) };
   if (naar_klant) {
     await verstuurMail({ aan: klantAdres, cc: naar_accountable ? acc : null, onderwerp: String(onderwerp ?? '').trim() || `${nummer}${titel ? ` – ${titel}` : ''}`, tekst: tekst || '', bijlage });
   } else {

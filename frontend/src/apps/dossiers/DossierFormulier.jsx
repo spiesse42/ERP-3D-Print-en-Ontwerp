@@ -129,17 +129,18 @@ export default function DossierFormulier() {
   }
   // Bonnetje door het ERP (26-09): maken + mailen. Mislukt enkel het mailen,
   // dan bestaat het bonnetje wel (volgende stap: "Bonnetje mailen").
-  async function bonnetjeMaken(f) {
+  // Factuur door het ERP (29-09): zelfde werkwijze (soort 'factuur').
+  async function bonnetjeMaken(f, soort = 'bonnetje') {
     try {
-      const r = await api.post(`/dossiers/${id}/bonnetje`, f);
+      const r = await api.post(`/dossiers/${id}/${soort}`, f);
       await herlaad(); setVersie(v => v + 1); setDialoog(null);
-      if (r.mail_fout) melding(`${r.afgerekend_nummer} is gemaakt, maar het mailen mislukte: ${r.mail_fout} Het is nog NIET bij Accountable: gebruik "Bonnetje mailen".`, 'fout');
+      if (r.mail_fout) melding(`${r.afgerekend_nummer} is gemaakt, maar het mailen mislukte: ${r.mail_fout} Het is nog NIET bij Accountable: gebruik "${soort === 'factuur' ? 'Factuur' : 'Bonnetje'} mailen".`, 'fout');
       else melding(`${r.afgerekend_nummer} gemaakt en gemaild naar Accountable${f.naar_klant ? ` en ${f.aan}` : ''}.`);
     } catch (e) { melding(e.message, 'fout'); }
   }
   async function bonnetjeMailen(f) {
     try {
-      await api.post(`/dossiers/${id}/bonnetje/mail`, f);
+      await api.post(`/dossiers/${id}/${d.afgerekend_soort === 'factuur' ? 'factuur' : 'bonnetje'}/mail`, f);
       await herlaad(); setVersie(v => v + 1); setDialoog(null);
       melding(`${d.afgerekend_nummer} gemaild naar ${[f.naar_klant && f.aan, f.naar_accountable && 'Accountable'].filter(Boolean).join(' en ')}.`);
     } catch (e) { melding(e.message, 'fout'); }
@@ -169,14 +170,17 @@ export default function DossierFormulier() {
   const afrekenKnop = toonAfrekenen && (<>
     <button type="button" className="btn" disabled={!!afrekenReden} title={afrekenReden || 'Het ERP maakt het bonnetje en mailt het naar Accountable (en optioneel naar de klant)'}
       onClick={() => open('bonnetje')}>Bonnetje maken</button>
-    <button type="button" className="btn" disabled={!!afrekenReden} title={afrekenReden || 'Factuur of bonnetje uit Accountable koppelen'}
+    <button type="button" className="btn" disabled={!!afrekenReden || !d.klant_id} title={afrekenReden || (!d.klant_id ? 'Een factuur is op naam: kies eerst een klant.' : 'Het ERP maakt de factuur en mailt ze naar Accountable (en optioneel naar de klant)')}
+      onClick={() => open('factuur')}>Factuur maken</button>
+    <button type="button" className="btn ghost" disabled={!!afrekenReden} title={afrekenReden || 'Een factuur of bonnetje dat je zelf in Accountable maakte: nummer invullen'}
       onClick={() => open('afrekenen')}>Afrekenen</button>
   </>);
-  // bonnetje dat het ERP maakte: PDF + (opnieuw) mailen
-  const erpBonnetje = !nieuw && d.afgerekend_soort === 'bonnetje' && !!d.afrekening_pdf_op;
-  const bonnetjeKnoppen = erpBonnetje && <>
-    <button type="button" className="btn" onClick={() => window.open(new URL(`${BASE}/dossiers/${id}/bonnetje/pdf`, document.baseURI).href, '_blank', 'noopener')}>Bonnetje (PDF)</button>
-    <button type="button" className={`btn${d.afrekening_gemaild_op ? '' : ' primary'}`} onClick={() => open('bonnetje-mail')}>Bonnetje mailen</button>
+  // bonnetje of factuur dat het ERP maakte: PDF + (opnieuw) mailen
+  const erpDoc = !nieuw && ['bonnetje', 'factuur'].includes(d.afgerekend_soort) && !!d.afrekening_pdf_op ? d.afgerekend_soort : null;
+  const Doc = erpDoc === 'factuur' ? 'Factuur' : 'Bonnetje';
+  const bonnetjeKnoppen = erpDoc && <>
+    <button type="button" className="btn" onClick={() => window.open(new URL(`${BASE}/dossiers/${id}/${erpDoc}/pdf`, document.baseURI).href, '_blank', 'noopener')}>{Doc} (PDF)</button>
+    <button type="button" className={`btn${d.afrekening_gemaild_op ? '' : ' primary'}`} onClick={() => open('bonnetje-mail')}>{Doc} mailen</button>
   </>;
   // Starten (25-09): werkbon (klantopdracht) + printopdracht per printregel met printer
   const heeftPrint = !nieuw && d.regels.some(r => r.type === 'printen');
@@ -219,7 +223,7 @@ export default function DossierFormulier() {
             </div>
           )}
           {!nieuw && <VolgendeStap d={d} vuil={vuil} afrekenReden={afrekenReden} onStarten={starten} onAfrekenen={() => open('afrekenen')}
-            onBonnetje={() => open('bonnetje')} onBonnetjeMailen={() => open('bonnetje-mail')}
+            onBonnetje={() => open('bonnetje')} onFactuur={() => open('factuur')} onBonnetjeMailen={() => open('bonnetje-mail')}
             onBetaald={() => open('betaald')} onGratis={() => open('gratis')} onHeropenen={() => actie('heropenen', 'Dossier heropend.')}
             naarTab={t => { setTab(t); document.querySelector('.tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
             herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} />}
@@ -321,6 +325,7 @@ export default function DossierFormulier() {
       }} />}
       {dialoog === 'overname' && <Overnamefiche dossier={d} onSluit={() => setDialoog(null)} />}
       {dialoog === 'bonnetje' && <BonnetjeDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onBevestig={bonnetjeMaken} />}
+      {dialoog === 'factuur' && <BonnetjeDialoog soort="factuur" dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onBevestig={f => bonnetjeMaken(f, 'factuur')} />}
       {dialoog === 'bonnetje-mail' && <BonnetjeMailDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onVerstuur={bonnetjeMailen} />}
       {dialoog === 'slicer' && <SlicerDialoog printers={printers} filamenten={artikelenZicht.filter(a => a.type === 'filament')} prijsgroepen={prijsgroepen}
         onSluit={() => setDialoog(null)}

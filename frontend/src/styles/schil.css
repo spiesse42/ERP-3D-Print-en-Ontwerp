@@ -594,3 +594,6 @@ label.keuze input { margin-top:3px; }
 .dossier-fotos .foto-erbij { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border-style:dashed; color:var(--muted); font-size:12.5px; cursor:pointer; }
 .dossier-fotos .foto-erbij:hover { border-color:var(--accent); color:var(--ink); }
 .dossier-fotos .foto-erbij.bezig { cursor:progress; }
+
+/* Klant opzoeken op btw-nummer (29-09) */
+.opzoek { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--lijn, #e5e7eb); border-radius: 8px; background: var(--vlak, #fafafa); font-size: .9rem; }

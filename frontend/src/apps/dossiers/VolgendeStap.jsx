@@ -7,7 +7,7 @@ import { BevestigDialoog } from '../productie/opdracht.jsx';
 // "Volgende stap" bovenaan een dossier (25-09): één zin met wat er nu moet
 // gebeuren en de knop erbij. De zin komt uit de backend (volgende_stap);
 // hier enkel de knop per soort. Plus de uitleg "Hoe werkt een dossier?".
-export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBonnetje, onBonnetjeMailen, onBetaald, onGratis, onHeropenen, naarTab, herlaad }) {
+export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBonnetje, onFactuur, onBonnetjeMailen, onBetaald, onGratis, onHeropenen, naarTab, herlaad }) {
   const { melding, navigeer } = useOmgeving();
   const [bevestig, setBevestig] = useState(null);
   const [uitleg, setUitleg] = useState(false);
@@ -39,10 +39,11 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
     wachtrij: () => naar('Naar Productie', 'productie', false),
     plannen: () => naar('Naar Productie', 'productie'),
     // 26-09: particulier → "Bonnetje maken" (ERP) als hoofdknop; zakelijk → factuur via Accountable ("Afrekenen")
+    // 29-09: zakelijk → "Factuur maken" (ERP) als hoofdknop
     afrekenen: () => (d.klant_gegevens?.type === 'zakelijk'
-      ? <>{knop('Afrekenen', onAfrekenen, { uit: !!afrekenReden })}{knop('Bonnetje maken', onBonnetje, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>
-      : <>{knop('Bonnetje maken', onBonnetje, { uit: !!afrekenReden })}{knop('Afrekenen', onAfrekenen, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>),
-    bonnetje_mailen: () => knop('Bonnetje mailen', onBonnetjeMailen),
+      ? <>{knop('Factuur maken', onFactuur, { uit: !!afrekenReden })}{knop('Bonnetje maken', onBonnetje, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>
+      : <>{knop('Bonnetje maken', onBonnetje, { uit: !!afrekenReden })}{d.klant_id && knop('Factuur maken', onFactuur, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>),
+    bonnetje_mailen: () => knop(d.afgerekend_soort === 'factuur' ? 'Factuur mailen' : 'Bonnetje mailen', onBonnetjeMailen),
     verkoop_mailen: () => knop('Naar de verkoop', () => navigeer(`/verkoop/${s.verkoop_id}`)),
     betaling: () => knop('Betaald', onBetaald),
     geannuleerd: () => knop('Heropenen', onHeropenen, { primair: false }),

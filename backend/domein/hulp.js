@@ -31,6 +31,8 @@ export function getBedrijfsgegevens(db) {
   return {
     naam: m.bedrijf_naam || '', btw: m.bedrijf_btw || '', adres: m.bedrijf_adres || '',
     email: m.bedrijf_email || '', iban: m.bedrijf_iban || '',
+    // factuur (29-09): BIC, telefoon en rekeninghouder (de persoon achter de zaak)
+    bic: m.bedrijf_bic || '', telefoon: m.bedrijf_telefoon || '', rekeninghouder: m.bedrijf_rekeninghouder || '',
   };
 }
 

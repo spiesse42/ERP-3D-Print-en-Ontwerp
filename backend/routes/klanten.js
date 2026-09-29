@@ -1,17 +1,19 @@
 import { Router } from 'express';
 import { getDb } from '../db/index.js';
 import { logGebeurtenis, beschrijfWijzigingen, wisHistoriek } from '../domein/historiek.js';
+import { zoekKlant } from '../domein/peppol.js';
+import { DomeinFout } from '../domein/hulp.js';
 
 const r = Router();
 
 const VELDEN = ['type', 'naam', 'voornaam', 'bedrijfsnaam', 'email', 'telefoon', 'gsm',
-  'straat', 'huisnummer', 'postcode', 'gemeente', 'btw_nummer', 'peppol_id', 'notities'];
+  'straat', 'huisnummer', 'postcode', 'gemeente', 'land', 'btw_nummer', 'peppol_id', 'notities'];
 
 // Labels voor de historiek ("Gemeente: Mol → Geel").
 const LABELS = {
   type: 'Type', naam: 'Naam', voornaam: 'Voornaam', bedrijfsnaam: 'Bedrijfsnaam', email: 'E-mail',
   telefoon: 'Telefoon', gsm: 'Gsm', straat: 'Straat', huisnummer: 'Huisnummer', postcode: 'Postcode',
-  gemeente: 'Gemeente', btw_nummer: 'Ondernemingsnummer', peppol_id: 'Peppol-ID', notities: 'Notities',
+  gemeente: 'Gemeente', land: 'Land', btw_nummer: 'Ondernemingsnummer', peppol_id: 'Peppol-ID', notities: 'Notities',
 };
 
 // Leest en valideert de velden uit het formulier. Lege tekst wordt NULL.
@@ -28,6 +30,10 @@ function leesKlant(body) {
   if (k.type === 'particulier' && !k.naam) return { fout: 'Naam is verplicht' };
   if (k.type === 'zakelijk' && !k.naam && !k.bedrijfsnaam) return { fout: 'Bedrijfsnaam is verplicht' };
   if (k.type === 'particulier') { k.bedrijfsnaam = null; k.peppol_id = null; }
+  // land (29-09): ISO-code (NL, DE, …); België = leeg
+  if (k.land) { k.land = k.land.toUpperCase(); if (k.land === 'BE') k.land = null; else if (!/^[A-Z]{2}$/.test(k.land)) return { fout: 'Land: gebruik de landcode (bv. NL, FR, DE)' }; }
+  // btw-nummer met landcode, zonder spaties/puntjes (BE0123456789)
+  if (k.btw_nummer) k.btw_nummer = k.btw_nummer.replace(/[\s.\-]/g, '').toUpperCase();
   if (k.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(k.email)) return { fout: 'Dit e-mailadres lijkt niet geldig' };
   return { k };
 }
@@ -38,6 +44,13 @@ r.get('/', (req, res) => {
   const a = req.query.archief;
   const where = a === 'alle' ? '' : a === '1' ? 'WHERE gearchiveerd = 1' : 'WHERE gearchiveerd = 0';
   res.json(getDb().prepare(`SELECT * FROM klanten ${where} ORDER BY COALESCE(bedrijfsnaam, naam) COLLATE NOCASE, voornaam COLLATE NOCASE`).all());
+});
+
+// Opzoeken op btw-nummer (29-09): naam en adres (VIES) + Peppol-ID (register
+// en Directory). Bewaart niets: het formulier vult in, jij slaat op.
+r.get('/opzoeken', async (req, res) => {
+  try { res.json(await zoekKlant(req.query.btw, { land: req.query.land })); }
+  catch (e) { res.status(e instanceof DomeinFout ? 400 : 502).json({ error: e.message }); }
 });
 
 r.get('/:id', (req, res) => {

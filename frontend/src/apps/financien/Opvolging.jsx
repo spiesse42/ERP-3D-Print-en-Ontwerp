@@ -29,10 +29,10 @@ export default function Opvolging() {
                 { kop: 'Dossier', cel: d => <><span className="mono">{d.nummer}</span> · {d.titel}</> },
                 { kop: 'Klant', cel: d => d.klant || '—' },
                 { kop: 'Datum', cel: d => <span className="num">{datum(d.afgerekend_op)}</span> },
-                { kop: 'Open', klasse: 'r', cel: d => <span className={`badge ${d.dagen_open > 30 ? 'b-crit' : d.dagen_open > 14 ? 'b-warn' : 'b-neutral'}`}>{d.dagen_open} d</span> },
+                { kop: 'Open', klasse: 'r', cel: d => <><span className={`badge ${d.vervallen || d.dagen_open > 30 ? 'b-crit' : d.dagen_open > 14 ? 'b-warn' : 'b-neutral'}`}>{d.dagen_open} d</span>{d.vervaldatum && <div className="sub">{d.vervallen ? 'vervallen' : 'vervalt'} {datum(d.vervaldatum)}</div>}</> },
                 { kop: 'Bedrag', klasse: 'r', cel: d => <span className="num">{euro(d.afgerekend_bedrag)}</span> },
               ]}
-              kaart={d => ({ titel: d.afgerekend_nummer, rechts: <b className="num">{euro(d.afgerekend_bedrag)}</b>, regel: `${d.nummer} · ${d.klant || d.titel}`, onder: `${datum(d.afgerekend_op)} · ${d.dagen_open} dagen open` })}
+              kaart={d => ({ titel: d.afgerekend_nummer, rechts: <b className="num">{euro(d.afgerekend_bedrag)}</b>, regel: `${d.nummer} · ${d.klant || d.titel}`, onder: `${datum(d.afgerekend_op)} · ${d.dagen_open} dagen open${d.vervaldatum ? ` · ${d.vervallen ? 'vervallen' : 'vervalt'} ${datum(d.vervaldatum)}` : ''}` })}
               leeg={<><b>Alles betaald.</b>Geen openstaande facturen.</>} />
           </div>
           <div className="panel"><h3>Klaar, nog af te rekenen</h3>

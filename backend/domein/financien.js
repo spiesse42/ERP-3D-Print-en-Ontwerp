@@ -95,10 +95,12 @@ const KLANTNAAM = `CASE WHEN k.type = 'zakelijk' AND NULLIF(k.bedrijfsnaam,'') I
 // klantopdrachten die afgerekend/gratis zijn maar nog niet geleverd.
 export function opvolging(db, leesDossiers) {
   const vandaag = Date.parse(new Date().toISOString().slice(0, 10));
-  const onbetaald = db.prepare(`SELECT d.id, d.nummer, d.titel, d.afgerekend_nummer, d.afgerekend_op, d.afgerekend_bedrag, d.klant_id, ${KLANTNAAM} klant, k.email
+  const onbetaald = db.prepare(`SELECT d.id, d.nummer, d.titel, d.afgerekend_nummer, d.afgerekend_op, d.afgerekend_bedrag, d.afrekening_vervaldatum AS vervaldatum, d.klant_id, ${KLANTNAAM} klant, k.email
     FROM dossiers d LEFT JOIN klanten k ON k.id = d.klant_id
     WHERE d.afgerekend_op IS NOT NULL AND d.betaald_op IS NULL ORDER BY d.afgerekend_op`).all()
-    .map(d => ({ ...d, dagen_open: Math.max(0, Math.round((vandaag - Date.parse(d.afgerekend_op)) / 864e5)) }));
+    .map(d => ({ ...d, dagen_open: Math.max(0, Math.round((vandaag - Date.parse(d.afgerekend_op)) / 864e5)),
+      // factuur van het ERP (29-09): vervallen na de vervaldatum
+      vervallen: !!d.vervaldatum && Date.parse(d.vervaldatum) < vandaag }));
   const alle = leesDossiers();
   const teAfrekenen = alle.filter(d => d.soort === 'klant' && ['klaar', 'deels', 'geleverd'].includes(d.fase))
     .map(d => ({ id: d.id, nummer: d.nummer, titel: d.titel, klant: d.klant, klant_id: d.klant_id, fase: d.fase, totaal: d.totaal, volledig: d.volledig }));

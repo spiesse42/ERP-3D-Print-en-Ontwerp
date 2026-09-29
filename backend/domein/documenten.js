@@ -29,6 +29,9 @@ export function afrekeningWeergave(soort, nummer) {
 }
 // Een bonnetje dat het ERP zelf maakte (en dus kan tonen/mailen).
 export function isErpBonnetje(d) { return d.afgerekend_soort === 'bonnetje' && !!d.afrekening_pdf_op; }
+// Een factuur die het ERP zelf maakte (29-09).
+export function isErpFactuur(d) { return d.afgerekend_soort === 'factuur' && !!d.afrekening_pdf_op; }
+export const isErpDocument = d => isErpBonnetje(d) || isErpFactuur(d);
 
 // De laatst verstuurde versie bepaalt de fase van het dossier.
 export function laatsteVerstuurde(offertes) {
