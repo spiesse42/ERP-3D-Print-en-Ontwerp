@@ -190,6 +190,12 @@ export function koppel(db, g) {
       const i = vrij.findIndex(a => (r.artikel_id && a.artikel_id === r.artikel_id) || (r.soort === 'kost' && a.soort === 'kost' && norm(a.omschrijving) === norm(r.omschrijving)));
       if (i >= 0) { r.aankoop_regel_id = vrij[i].id; vrij.splice(i, 1); }
     }
+    // 29-09: verzending heet op de factuur vaak anders ("Verzending" i.p.v.
+    // "Verzendkosten"): een kostregel koppelt dan aan de overgebleven kostregel
+    for (const r of regels.filter(x => x.soort === 'kost' && !x.aankoop_regel_id)) {
+      const i = vrij.findIndex(a => a.soort === 'kost');
+      if (i >= 0) { r.aankoop_regel_id = vrij[i].id; vrij.splice(i, 1); }
+    }
   }
   // factuur van een bestelling met een andere naam (bv. "Jingdong Retail" i.p.v. "Joybuy"): leverancier van de bestelling
   const levVoorstel = lev ? { id: lev.id, naam: lev.naam }
@@ -385,6 +391,15 @@ function koppelFactuur(db, aankoopId, { levId, factuurnummer, bestelnummer, rege
   const updPartij = db.prepare('UPDATE voorraad_partijen SET prijs_per_eenheid = ? WHERE aankoop_regel_id = ?');
   const ins = db.prepare(`INSERT INTO aankoop_regels (aankoop_id, volgorde, artikel_id, plaatshouder_materiaal_id, plaatshouder_kleur_id, omschrijving, aantal, prijs_per_eenheid)
     VALUES (?,?,?,?,?,?,?,?)`);
+  // 29-09: vangnet tegen dubbele regels. Een factuurregel zonder koppeling
+  // (bv. filament dat pas bij het inlezen herkend werd, of verzending met een
+  // andere naam) koppelt aan een nog vrije regel van de bestelling met
+  // hetzelfde artikel, of aan de vrije kostregel.
+  const vrij = a.regels.filter(o => !regels.some(r => r.aankoop_regel_id === o.id));
+  for (const r of regels.filter(x => !x.aankoop_regel_id)) {
+    const i = vrij.findIndex(o => (r.artikel_id ? o.artikel_id === r.artikel_id : o.soort === 'kost'));
+    if (i >= 0) { r.aankoop_regel_id = vrij[i].id; vrij.splice(i, 1); }
+  }
   let bijgewerkt = 0, toegevoegd = 0, volgorde = a.regels.length;
   for (const [i, r] of regels.entries()) {
     if (r.aankoop_regel_id) {
