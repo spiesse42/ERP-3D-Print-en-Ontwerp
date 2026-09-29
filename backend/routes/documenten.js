@@ -130,6 +130,7 @@ r.post('/offertes/:id/versturen', metFouten((req, res) => {
   res.json(leesDossier(db, d.id));
 }));
 
+const FASE_TEKST = { afgerekend: 'al afgerekend', betaald: 'al afgerekend', gratis: 'gratis geleverd', geannuleerd: 'geannuleerd', samengevoegd: 'samengevoegd in een ander dossier' };
 function antwoord(soort) {
   return metFouten((req, res) => {
     const db = getDb();
@@ -137,8 +138,12 @@ function antwoord(soort) {
     if (!['verstuurd', 'verlopen'].includes(status)) {
       throw new DomeinFout(status === 'vervangen' ? 'Er is een nieuwere versie van deze offerte.' : `Deze offerte is ${OFFERTE_STATUS[status].toLowerCase()}.`);
     }
+    // afgerekend, gratis, geannuleerd of samengevoegd: het antwoord verandert
+    // niets meer (en aanvaarden zou niet meer starten)
+    if (!d.acties.bewerken) throw new DomeinFout(`Het dossier is ${FASE_TEKST[d.fase] || 'afgesloten'}: een antwoord op de offerte verandert niets meer.`);
     const datum = req.body?.datum || vandaag();
     if (!datumOk(datum)) throw new DomeinFout('Vul een geldige datum in');
+    if (datum > vandaag()) throw new DomeinFout('De datum van het antwoord kan niet in de toekomst liggen.');
     db.transaction(() => {
       db.prepare(`UPDATE offertes SET ${soort === 'aanvaard' ? 'aanvaard_op' : 'geweigerd_op'} = ? WHERE id = ?`).run(datum, o.id);
       log(db, d.id, `Offerte ${nummerMetVersie(o)} ${soort === 'aanvaard' ? 'aanvaard door de klant' : 'geweigerd door de klant'} (${dmjDatum(datum)})`);
@@ -154,7 +159,7 @@ r.post('/offertes/:id/antwoord-ongedaan', metFouten((req, res) => {
   const db = getDb();
   const { o, d, status } = offerte(db, req.params.id);
   if (status !== 'aanvaard' && status !== 'geweigerd') throw new DomeinFout('Er is geen antwoord om ongedaan te maken.');
-  if (d.fase === 'afgerekend' || d.fase === 'betaald') throw new DomeinFout('Het dossier is al afgerekend.');
+  if (!d.acties.bewerken) throw new DomeinFout(`Het dossier is ${FASE_TEKST[d.fase] || 'afgesloten'}. ${d.fase === 'geannuleerd' ? 'Heropen het eerst.' : d.fase === 'gratis' ? 'Maak "Gratis geleverd" eerst ongedaan.' : d.fase === 'samengevoegd' ? '' : 'Maak de afrekening eerst ongedaan.'}`.trim());
   db.transaction(() => {
     db.prepare('UPDATE offertes SET aanvaard_op = NULL, geweigerd_op = NULL WHERE id = ?').run(o.id);
     log(db, d.id, `Antwoord op offerte ${nummerMetVersie(o)} ongedaan gemaakt`);
@@ -183,16 +188,31 @@ r.get('/offertes/:id/pdf', metFouten(async (req, res) => {
   await stuurPdf(res, offerteDocument(db, o, d, status), pdfNaam('Offerte', nummerMetVersie(o)));
 }));
 // Een concept wordt eerst verstuurd (vastgelegd), dan gemaild.
+// Mislukt het mailen (geen verbinding, verkeerd adres…), dan blijft een
+// concept een concept (29-09): anders stond de offerte op "verstuurd" terwijl
+// de klant niets kreeg.
 r.post('/offertes/:id/mail', metFouten(async (req, res) => {
   const db = getDb();
   let { o, d, status } = offerte(db, req.params.id);
-  if (status === 'concept') {
+  if (!geldigAdres(req.body?.aan)) throw new DomeinFout('Vul een geldig e-mailadres in.');
+  if (!mailIngesteld()) throw new DomeinFout('Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Download de PDF en stuur hem zelf, en kies dan "Markeren als verstuurd".');
+  if (!vindBrowser()) throw new DomeinFout('Geen Chrome, Edge of Chromium gevonden om de PDF te maken.');
+  const concept = status === 'concept' ? o : null;
+  if (concept) {
     db.transaction(() => versturen(db, o, d))();
     ({ o, d, status } = offerte(db, req.params.id));
   }
-  const pdf = await htmlNaarPdf(offerteDocument(db, o, d, status));
-  await verstuurMail({ aan: req.body?.aan, onderwerp: tekst(req.body?.onderwerp) || `Offerte ${nummerMetVersie(o)}`, tekst: req.body?.tekst || '',
-    bijlage: { naam: pdfNaam('Offerte', nummerMetVersie(o)), inhoud: pdf } });
+  try {
+    const pdf = await htmlNaarPdf(offerteDocument(db, o, d, status));
+    await verstuurMail({ aan: req.body?.aan, onderwerp: tekst(req.body?.onderwerp) || `Offerte ${nummerMetVersie(o)}`, tekst: req.body?.tekst || '',
+      bijlage: { naam: pdfNaam('Offerte', nummerMetVersie(o)), inhoud: pdf } });
+  } catch (e) {
+    if (concept) db.transaction(() => {
+      db.prepare('UPDATE offertes SET verstuurd_op = NULL, geldig_tot = ?, momentopname = NULL, totaal = NULL WHERE id = ?').run(concept.geldig_tot, concept.id);
+      log(db, d.id, `Mailen van offerte ${nummerMetVersie(o)} mislukt: ze blijft een concept`);
+    })();
+    throw e;
+  }
   log(db, d.id, `Offerte ${nummerMetVersie(o)} gemaild naar ${String(req.body.aan).trim()}`);
   res.json(leesDossier(db, d.id));
 }));

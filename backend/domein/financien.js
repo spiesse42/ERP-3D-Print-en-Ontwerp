@@ -17,7 +17,7 @@
 import { VIA_VERKOOP } from './hulp.js';
 import { kostVan } from './verkopen.js';
 
-import { leverbaar } from './leveringen.js';
+import { leverbaar, nogTeLeveren } from './leveringen.js';
 import { leesRegelsVan } from './dossiers.js';
 
 const r2 = v => Math.round((v || 0) * 100) / 100;
@@ -103,14 +103,13 @@ export function opvolging(db, leesDossiers) {
   const teAfrekenen = alle.filter(d => d.soort === 'klant' && ['klaar', 'deels', 'geleverd'].includes(d.fase))
     .map(d => ({ id: d.id, nummer: d.nummer, titel: d.titel, klant: d.klant, klant_id: d.klant_id, fase: d.fase, totaal: d.totaal, volledig: d.volledig }));
   // 29-09: afgerekend (of gratis) maar nog niet geleverd — enkel als het
-  // ertoe doet: artikelen uit VOORRAAD die nog niet geleverd zijn (voorraad en
-  // marge kloppen dan niet), of een levering die al begonnen is (deels).
-  // Printwerk zonder pakbon telt niet: leveren is daar optioneel.
+  // ertoe doet (zie nogTeLeveren): artikelen uit voorraad, of de rest van een
+  // begonnen levering.
   const teLeveren = alle.filter(d => d.soort === 'klant' && ['afgerekend', 'betaald', 'gratis'].includes(d.fase) && ['geen', 'deels'].includes(d.lever_status))
-    .map(d => ({ d, artikelen: leverbaar(db, d.id, leesRegelsVan(db, d.id)).filter(x => x.boekt_voorraad && x.rest > 1e-9) }))
-    .filter(({ d, artikelen }) => d.lever_status === 'deels' || artikelen.length)
+    .map(d => ({ d, artikelen: nogTeLeveren(leverbaar(db, d.id, leesRegelsVan(db, d.id)), d.lever_status) }))
+    .filter(({ artikelen }) => artikelen.length)
     .map(({ d, artikelen }) => ({ id: d.id, nummer: d.nummer, titel: d.titel, klant: d.klant, klant_id: d.klant_id, fase: d.fase, lever_status: d.lever_status,
-      artikelen: artikelen.map(x => `${String(x.rest).replace('.', ',')} × ${x.omschrijving}`),
+      artikelen,
       sinds: d.afgerekend_op || d.gratis_op, dagen: Math.max(0, Math.round((vandaag - Date.parse(d.afgerekend_op || d.gratis_op)) / 864e5)) }))
     .sort((a, b) => String(a.sinds).localeCompare(String(b.sinds)));
   return {

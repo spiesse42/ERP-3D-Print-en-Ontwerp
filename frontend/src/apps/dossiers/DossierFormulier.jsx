@@ -196,7 +196,7 @@ export default function DossierFormulier() {
     {d.soort === 'klant' && d.regels.length > 0 && fase !== 'geannuleerd' && <button type="button" className="btn" onClick={() => open('overname')}>Overnamefiche</button>}
     {acties.betaling_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('betaling-ongedaan', 'Betaling ongedaan gemaakt.', { vraag: { titel: 'Betaling ongedaan maken', tekst: 'Het dossier gaat terug naar afgerekend.', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Betaling ongedaan</button>}
     {acties.afrekening_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('afrekening-ongedaan', 'Afrekening ongedaan gemaakt.', { vraag: { titel: 'Afrekening ongedaan maken', tekst: `De verwijzing naar ${String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`} wordt gewist en het dossier kan weer gewijzigd worden. Pas dit ook aan in Accountable (bv. een creditnota).`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug', gevaarlijk: true } })}>Afrekening ongedaan</button>}
-    {acties.annuleren && <button type="button" className="btn ghost" title="Het hele dossier stopt: niets af te rekenen of te leveren" onClick={() => actie('annuleren', 'Dossier geannuleerd.', { vraag: { titel: 'Dossier annuleren', tekst: `${d.nummer} annuleren? Het hele dossier stopt: er wordt niets afgerekend of geleverd, en open printopdrachten worden mee geannuleerd. Gebruik dit ook als de klant niets hoeft te betalen. Heropenen kan later nog.`, bevestigLabel: 'Dossier annuleren', annuleerLabel: 'Terug' } })}>Dossier annuleren</button>}
+    {acties.annuleren && <button type="button" className="btn ghost" title="Het hele dossier stopt: niets af te rekenen of te leveren" onClick={() => actie('annuleren', 'Dossier geannuleerd.', { vraag: { titel: 'Dossier annuleren', tekst: `${d.nummer} annuleren? Het hele dossier stopt: er wordt niets afgerekend of geleverd, en open printopdrachten worden mee geannuleerd. Krijgt de klant het wel, maar zonder te betalen? Gebruik dan "Gratis geleverd". Heropenen kan later nog.`, bevestigLabel: 'Dossier annuleren', annuleerLabel: 'Terug' } })}>Dossier annuleren</button>}
     {acties.heropenen && <button type="button" className="btn" onClick={() => actie('heropenen', 'Dossier heropend.')}>Heropenen</button>}
     {acties.samenvoegen && <button type="button" className="btn ghost" title="Andere open dossiers van deze klant hierin samenvoegen (regels, printopdrachten, runs, leveringen, bijlagen)" onClick={() => open('samenvoegen')}>Samenvoegen…</button>}
   </>;
@@ -309,7 +309,7 @@ export default function DossierFormulier() {
       </div>
       {dialoog === 'afrekenen' && <AfrekenDialoog dossier={d} onSluit={() => setDialoog(null)}
         onBevestig={async f => { if (await actie('afrekenen', f.soort === 'bonnetje' ? 'Afgerekend en betaald.' : 'Afgerekend.', { body: f })) setDialoog(null); }} />}
-      {dialoog === 'betaald' && <BetaaldDialoog onSluit={() => setDialoog(null)}
+      {dialoog === 'betaald' && <BetaaldDialoog vanaf={d.afgerekend_op} onSluit={() => setDialoog(null)}
         onBevestig={async datum => { if (await actie('betaald', 'Betaald.', { body: { datum } })) setDialoog(null); }} />}
       {dialoog === 'samenvoegen' && <SamenvoegDialoog d={d} onSluit={() => setDialoog(null)} onBevestig={async ids => {
         try {
