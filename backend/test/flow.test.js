@@ -44,7 +44,7 @@ test('X0. voorbereiding', async () => {
   await vraag('PUT', `/printers/${mini}`, { naam: 'Bambu Lab A1 Mini', machine_per_uur: 0.2, verbruik_watt: 95 });
   pg = (await vraag('POST', '/filament/types', { merk_id: 1, materiaal_id: 1, verkoopprijs_per_kg: 25 })).data.id;
   klant = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'Sofie', naam: 'Maes' })).data.id;
-  assert.equal(db.pragma('user_version', { simple: true }), 24);
+  assert.equal(db.pragma('user_version', { simple: true }), 25);
 });
 
 let dos;
@@ -553,4 +553,42 @@ test('X21. controles (29-09): aantal 0, soort na offerte, datums, factuur zonder
   await vraag('POST', `/dossiers/${a.id}/samenvoegen`, { dossiers: [b.id] });
   r = await vraag('PUT', `/dossiers/${b.id}`, { soort: 'klant', klant_id: klant, titel: 'B2' });
   assert.match(r.data.error, /samengevoegd in een ander dossier/);
+});
+
+test('X22. familie & vrienden: filament aan inkoopprijs (klant standaard, per dossier aan/uit, live berekening, melding zonder inkoopprijs)', async () => {
+  const db = getDb();
+  // prijsgroep met rolgewicht 1000 g, verkoop € 25/kg; één kleur met een rol van € 18 in voorraad → inkoop € 18/kg
+  const pg2 = await vraag('POST', '/filament/types', { merk_id: 5, materiaal_id: 3, verkoopprijs_per_kg: 25, rolgewicht_g: 1000 });
+  assert.equal(pg2.status, 201, JSON.stringify(pg2.data));
+  const groep = pg2.data.id;
+  const pr = await vraag('POST', '/voorraad/artikelen', { type: 'filament', filament_type_id: groep, kleur_id: 1 }); assert.equal(pr.status, 201, JSON.stringify(pr.data));
+  const rol = pr.data.id;
+  await vraag('POST', `/voorraad/artikelen/${rol}/boeking`, { richting: 'in', aantal: 1, prijs_per_eenheid: 18, reden: 'ontvangst' });
+  const zus = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'Gilles', naam: 'S.', familie: true })).data.id;
+  assert.equal((await vraag('GET', `/klanten/${zus}`)).data.familie, 1);
+  const regel = { type: 'printen', omschrijving: 'CPAP-houder', printer_id: mini, aantal: 1, tijd_min: 60, materialen: [{ artikel_id: rol, gram: 200 }] };
+  const pd = await vraag('POST', '/dossiers', { titel: 'Houder', klant_id: zus, regels: [regel] }); assert.equal(pd.status, 201, JSON.stringify(pd.data));
+  let d = pd.data;
+  assert.equal(d.filament_inkoop, 1, 'volgt de klant');
+  const mat = x => x.berekening.regels[0]._berekend.detail.materialen[0];
+  assert.equal(mat(d).prijs_per_kg, 18); assert.equal(mat(d).prijs_bron, 'inkoop');
+  const metInkoop = d.berekening.totaal;
+  d = (await vraag('PUT', `/dossiers/${d.id}`, { soort: 'klant', klant_id: zus, titel: 'Houder', filament_inkoop: false })).data;
+  assert.equal(d.filament_inkoop, 0); assert.equal(mat(d).prijs_per_kg, 25);
+  assert.ok(d.berekening.totaal > metInkoop, 'aan verkoopprijs duurder');
+  assert.ok((await vraag('GET', `/historiek/dossier/${d.id}`)).data.some(h => /Filament weer aan verkoopprijs/.test(h.tekst)));
+  // een gewone klant: standaard verkoopprijs; met het vinkje wel inkoop
+  const e = (await vraag('POST', '/dossiers', { titel: 'Gewoon', klant_id: klant, regels: [regel] })).data;
+  assert.equal(e.filament_inkoop, 0);
+  const f = (await vraag('POST', '/dossiers', { titel: 'Vriend', klant_id: klant, filament_inkoop: true, regels: [regel] })).data;
+  assert.equal(f.filament_inkoop, 1); assert.equal(f.berekening.totaal, metInkoop);
+  // live berekening in de regeleditor
+  const live = (await vraag('POST', '/bereken', { regels: [regel], filament_inkoop: true })).data;
+  assert.equal(live.totaal, metInkoop);
+  // prijsgroep zonder enige inkoopprijs → duidelijke melding
+  const leeg = (await vraag('POST', '/filament/types', { merk_id: 6, materiaal_id: 3, verkoopprijs_per_kg: 30, rolgewicht_g: 1000 })).data.id;
+  const g = (await vraag('POST', '/bereken', { regels: [{ ...regel, materialen: [{ filament_type_id: leeg, gram: 50 }] }], filament_inkoop: true })).data;
+  assert.equal(g.volledig, false);
+  assert.match(JSON.stringify(g), /Geen inkoopprijs gekend/);
+  assert.equal(db.prepare('SELECT filament_inkoop FROM dossiers WHERE id = ?').get(f.id).filament_inkoop, 1);
 });

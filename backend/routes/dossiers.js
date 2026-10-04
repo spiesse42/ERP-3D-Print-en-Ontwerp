@@ -61,8 +61,10 @@ r.post('/', metFouten((req, res) => {
   klantBestaat(db, kop);
   const id = db.transaction(() => {
     const nummer = volgendNummer(db, 'D');
-    const n = Number(db.prepare('INSERT INTO dossiers (nummer, soort, klant_id, titel, notities) VALUES (?,?,?,?,?)')
-      .run(nummer, kop.soort, kop.klant_id, kop.titel, kop.notities).lastInsertRowid);
+    // familie & vrienden (04-10): standaard volgens de klant
+    const fi = kop.filament_inkoop ?? (kop.klant_id ? db.prepare('SELECT familie FROM klanten WHERE id = ?').get(kop.klant_id)?.familie ?? 0 : 0);
+    const n = Number(db.prepare('INSERT INTO dossiers (nummer, soort, klant_id, titel, notities, filament_inkoop) VALUES (?,?,?,?,?,?)')
+      .run(nummer, kop.soort, kop.klant_id, kop.titel, kop.notities, fi ? 1 : 0).lastInsertRowid);
     bewaarRegels(db, n, regels);
     logGebeurtenis(db, 'dossier', n, 'aangemaakt', null);
     return n;
@@ -88,7 +90,8 @@ r.put('/:id', (req, res) => {
     klantBestaat(db, kop);
     // Na afrekenen of annuleren ligt het dossier vast (enkel notities).
     if (!oud.acties.bewerken) {
-      const verandert = kop.soort !== oud.soort || kop.klant_id !== oud.klant_id || kop.titel !== oud.titel || regels !== undefined;
+      const verandert = kop.soort !== oud.soort || kop.klant_id !== oud.klant_id || kop.titel !== oud.titel || regels !== undefined
+        || (kop.filament_inkoop !== undefined && kop.filament_inkoop !== oud.filament_inkoop);
       if (verandert) throw new DomeinFout(VAST[oud.fase] || VAST.afgerekend);
     }
     // Een klantopdracht met een verstuurde offerte, werkbon of levering kan
@@ -98,7 +101,8 @@ r.put('/:id', (req, res) => {
       throw new DomeinFout(`Dit dossier heeft al ${oud.leveringen.length ? 'een levering' : oud.werkbon ? 'een werkbon' : 'een verstuurde offerte'}: het blijft een klantopdracht. Maak eventueel een nieuw dossier.`);
     }
     db.transaction(() => {
-      db.prepare('UPDATE dossiers SET soort=?, klant_id=?, titel=?, notities=? WHERE id=?').run(kop.soort, kop.klant_id, kop.titel, kop.notities, id);
+      const fi = kop.filament_inkoop ?? oud.filament_inkoop;
+      db.prepare('UPDATE dossiers SET soort=?, klant_id=?, titel=?, notities=?, filament_inkoop=? WHERE id=?').run(kop.soort, kop.klant_id, kop.titel, kop.notities, fi, id);
       // printopdrachten volgen het soort van hun dossier
       if (kop.soort !== oud.soort) db.prepare('UPDATE printopdrachten SET soort = ? WHERE dossier_regel_id IN (SELECT id FROM dossier_regels WHERE dossier_id = ?)').run(kop.soort, id);
       const naamKlant = kid => (kid ? db.prepare(`SELECT COALESCE(NULLIF(bedrijfsnaam,''), TRIM(COALESCE(voornaam,'') || ' ' || COALESCE(naam,''))) n FROM klanten WHERE id = ?`).get(kid)?.n : null);
@@ -106,6 +110,7 @@ r.put('/:id', (req, res) => {
       const t = beschrijfWijzigingen({ ...oud, soort: SOORTEN[oud.soort], klant: naamKlant(oud.klant_id) },
         { ...kop, soort: SOORTEN[kop.soort], klant: naamKlant(kop.klant_id) }, LABELS);
       if (t) delen.push(t);
+      if (fi !== oud.filament_inkoop) delen.push(fi ? 'Filament aan inkoopprijs (familie & vrienden)' : 'Filament weer aan verkoopprijs');
       if (regels !== undefined) {
         const voor = JSON.stringify(oud.regels.map(({ id: _i, ...x }) => x));
         bewaarRegels(db, id, regels);
