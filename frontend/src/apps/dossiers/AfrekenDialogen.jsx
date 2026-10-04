@@ -82,8 +82,8 @@ export function AfrekenDialoog({ dossier, onSluit, onBevestig }) {
 }
 
 // ── Bonnetje door het ERP (26-09) ───────────────────────────────────────
-// Het ERP maakt het bonnetje (nummer uit Instellingen → Nummering, reeks
-// Bonnetje), zet het dossier op afgerekend + betaald en mailt het ALTIJD
+// Het ERP maakt het bonnetje (04-10: het nummer komt uit Accountable en
+// wordt hier ingevuld; facturen nummert het ERP zelf), zet het dossier op afgerekend + betaald en mailt het ALTIJD
 // naar Accountable (dagontvangstenboek); naar de klant is optioneel
 // (Accountable dan in cc). Het bedrag is dat van de werkbon.
 // soort 'factuur' (29-09): zelfde venster, met vervaldatum, zonder "betaald",
@@ -99,22 +99,25 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
   const vervaldatum = verval || v?.vervaldatum || '';
   const [mail, setMail] = useState(null);   // pas invullen zodra het nummer gekend is
   const [bezig, setBezig] = useState(false);
-  const m = mail || { aan: k?.email || '', onderwerp: v ? `${v.nummer} – ${dossier.titel}` : '', tekst: mailTekst({ klant: k, bedrijf, wat: factuur ? 'je factuur' : 'je bonnetje', titel: dossier.titel }) };
+  const [nr, setNr] = useState('');   // bonnetje: nummer uit Accountable
+  const kaalNr = nr.trim().replace(/^bonnetje\s*/i, '').trim();
+  const nummer = factuur ? v?.nummer : kaalNr ? `Bonnetje ${kaalNr}` : null;
+  const m = mail || { aan: k?.email || '', onderwerp: nummer ? `${nummer} – ${dossier.titel}` : '', tekst: mailTekst({ klant: k, bedrijf, wat: factuur ? 'je factuur' : 'je bonnetje', titel: dossier.titel }) };
   const zetMail = (sl, w) => setMail({ ...m, [sl]: w });
   // 30-09: een bonnetje gaat niet naar Accountable; mailen enkel als het naar de klant moet
   const mailen = factuur || naarKlant;
   const blokkeert = !v || !mailen ? null : !v.mail_ingesteld ? (factuur ? 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Een factuur moet naar Accountable gemaild worden.' : 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie): vink "ook naar de klant" uit.')
     : !v.pdf_mogelijk ? 'Geen Chrome, Edge of Chromium gevonden om de PDF te maken.' : null;
-  const kan = v && !blokkeert && !bezig && (!naarKlant || m.aan.trim()) && (!factuur || vervaldatum >= dag);
+  const kan = v && !blokkeert && !bezig && (!naarKlant || m.aan.trim()) && (!factuur || vervaldatum >= dag) && (factuur || kaalNr);
   async function ok() {
     setBezig(true);
-    try { await onBevestig({ datum: dag, ...(factuur ? { vervaldatum } : {}), voorraad_leveren: leveren, naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) }); }
+    try { await onBevestig({ datum: dag, ...(factuur ? { vervaldatum } : { nummer: kaalNr }), voorraad_leveren: leveren, naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) }); }
     finally { setBezig(false); }
   }
   return (
     <Dialoog titel={factuur ? 'Factuur maken' : 'Bonnetje maken'} onSluit={onSluit} breed
       voet={<>
-        <button type="button" className="btn ghost" disabled={!v} onClick={() => openPdf(`/dossiers/${dossier.id}/${soort}/voorbeeld?datum=${dag}${factuur && vervaldatum ? `&vervaldatum=${vervaldatum}` : ''}`)}>Voorbeeld (PDF)</button>
+        <button type="button" className="btn ghost" disabled={!v} onClick={() => openPdf(`/dossiers/${dossier.id}/${soort}/voorbeeld?datum=${dag}${factuur && vervaldatum ? `&vervaldatum=${vervaldatum}` : ''}${!factuur && kaalNr ? `&nummer=${encodeURIComponent(kaalNr)}` : ''}`)}>Voorbeeld (PDF)</button>
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={onSluit}>Annuleren</button>
         <button type="button" className="btn primary" disabled={!kan} onClick={ok}>{bezig ? 'Bezig…' : factuur ? (naarKlant ? 'Maken en mailen (klant + Accountable)' : 'Maken en mailen naar Accountable') : (naarKlant ? 'Maken en mailen naar de klant' : 'Bonnetje maken')}</button>
@@ -127,7 +130,9 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
       <div className="fgrid">
         <div><label htmlFor="bn-datum">{factuur ? 'Factuurdatum' : 'Datum (ontvangen)'}</label><input id="bn-datum" type="date" className="inp" max={vandaag()} value={dag} onChange={e => setDag(e.target.value || vandaag())} /></div>
         {factuur && <div><label htmlFor="bn-verval">Vervaldatum</label><input id="bn-verval" type="date" className="inp" min={dag} value={vervaldatum} onChange={e => setVerval(e.target.value || null)} /></div>}
-        <div><span className="lbl">Nummer</span><div className="mono" style={{ padding: '8px 0' }}>{v?.nummer ?? '…'}</div></div>
+        {factuur
+          ? <div><span className="lbl">Nummer</span><div className="mono" style={{ padding: '8px 0' }}>{v?.nummer ?? '…'}</div></div>
+          : <div><label htmlFor="bn-nr">Nummer uit Accountable</label><input id="bn-nr" className="inp mono" autoFocus placeholder={v?.nummer_voorstel ? `bv. ${v.nummer_voorstel}` : 'bv. 2026-025'} value={nr} onChange={e => setNr(e.target.value)} /></div>}
         <div><span className="lbl">Bedrag</span><div className="num" style={{ padding: '8px 0' }}><b>{v ? euro(v.bedrag) : '…'}</b> <span className="sub">{factuur ? 'btw niet van toepassing' : 'btw 0 %'}</span></div></div>
       </div>
       <p className="sub" style={{ margin: '4px 0 0' }}>Het bedrag is dat van de werkbon{v?.werkbon ? ` ${v.werkbon}` : ''}{dossier.werkbon ? '' : ' (wordt nu gemaakt)'}; de werkbon wordt definitief{factuur ? '. Zet het dossier op betaald zodra het geld binnen is' : ' en het dossier staat meteen op betaald'}. Een ander bedrag nodig? Pas eerst de regels aan.</p>
@@ -146,7 +151,7 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
           <div style={{ gridColumn: '1/-1' }}><label htmlFor="bn-tekst">Bericht</label><textarea id="bn-tekst" className="inp" rows={5} value={m.tekst} onChange={e => zetMail('tekst', e.target.value)} /></div>
         </div>
       )}
-      {!factuur && <p className="note" style={{ marginBottom: 0 }}>Het bonnetje gaat <b>niet</b> naar Accountable (inkomsten@ leest het in als een factuur): zet het zelf in Accountable (dagontvangsten). De PDF download je daarna met "Bonnetje (PDF)".</p>}
+      {!factuur && <p className="note" style={{ marginBottom: 0 }}>Het bonnetje gaat <b>niet</b> naar Accountable (inkomsten@ leest het in als een factuur): maak het eerst in Accountable (dagontvangsten) en vul hierboven het nummer in dat Accountable gaf. De PDF download je daarna met "Bonnetje (PDF)".</p>}
       {factuur && <p className="note" style={{ marginBottom: 0 }}>De factuur gaat altijd naar <b>{v?.accountable || 'Accountable'}</b>{naarKlant ? ' (in cc)' : ''}{v?.afzender ? <>, verstuurd vanaf <b>{v.afzender}</b></> : null}. Accountable verwerkt enkel mails vanaf je geregistreerde adres of een goedgekeurde alias; {factuur ? 'de factuur' : 'het bonnetje'} verschijnt er na enkele minuten onder "Te valideren".</p>}
     </Dialoog>
   );

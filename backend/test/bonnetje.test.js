@@ -51,7 +51,8 @@ test('B0. voorbereiding: klant, dossiers, volgende bonnetjesnummer 21', async ()
 test('B1. voorstel: toont nummer en bedrag, maar bewaart NIETS (geen werkbon, geen nummer)', async () => {
   const wbVoor = ok(await vraag('GET', '/nummering')).find(x => x.reeks === 'WB').volgend;
   const v = ok(await vraag('GET', `/dossiers/${d1.id}/bonnetje/voorstel`));
-  assert.equal(v.nummer, `Bonnetje ${jaar}-021`);
+  assert.equal(v.nummer, null, '04-10: het nummer komt uit Accountable');
+  assert.equal(v.nummer_voorstel, null, 'nog geen bonnetjes: geen voorstel');
   assert.equal(v.bedrag, d1.zonder_werkbon.bedrag, 'bedrag = wat de werkbon wordt');
   assert.ok(v.bedrag > 0);
   assert.equal(v.accountable, ACC);
@@ -63,14 +64,15 @@ test('B1. voorstel: toont nummer en bedrag, maar bewaart NIETS (geen werkbon, ge
   assert.equal(ok(await vraag('GET', '/nummering')).find(x => x.reeks === 'WB').volgend, wbVoor, 'geen werkbonnummer verbruikt');
   assert.equal(await volgendBon(), `Bonnetje ${jaar}-021`, 'geen bonnetjesnummer verbruikt');
   assert.ok(!ok(await vraag('GET', `/historiek/dossier/${d1.id}`)).some(h => /Werkbon/.test(h.tekst)), 'niets in de historiek');
-  const pdf = await vraag('GET', `/dossiers/${d1.id}/bonnetje/voorbeeld`);
+  const pdf = await vraag('GET', `/dossiers/${d1.id}/bonnetje/voorbeeld?nummer=${jaar}-021`);
   assert.equal(pdf.status, 200); assert.equal(pdf.pdf.subarray(0, 5).toString(), '%PDF-');
   assert.match(pdf.headers.get('content-disposition'), /Bonnetje \d{4}-021 - voorbeeld\.pdf/);
 });
 
-test('B2. maken zonder de klant: afgerekend + betaald, GEEN mail (30-09: niet meer naar Accountable), volgend nummer 22', async () => {
+test('B2. maken zonder de klant: nummer uit Accountable (04-10), afgerekend + betaald, GEEN mail (30-09: niet meer naar Accountable)', async () => {
   const postvak = nepPostvak().length;
-  const d = ok(await vraag('POST', `/dossiers/${d1.id}/bonnetje`, { datum: vandaag, naar_klant: false }), 201);
+  fout(await vraag('POST', `/dossiers/${d1.id}/bonnetje`, { datum: vandaag }), /nummer van het bonnetje uit Accountable/);
+  const d = ok(await vraag('POST', `/dossiers/${d1.id}/bonnetje`, { datum: vandaag, nummer: `${jaar}-021`, naar_klant: false }), 201);
   assert.equal(d.mail_fout, null);
   assert.equal(d.afgerekend_soort, 'bonnetje');
   assert.equal(d.afgerekend_nummer, `Bonnetje ${jaar}-021`);
@@ -85,20 +87,21 @@ test('B2. maken zonder de klant: afgerekend + betaald, GEEN mail (30-09: niet me
   assert.equal(d.volgende_stap.soort, 'afgerond');
   assert.match(d.volgende_stap.tekst, /Bonnetje \d{4}-021 gemaakt\./);
   assert.ok(d.volgende_stap.extra.some(t => /zelf in Accountable/.test(t)));
-  assert.equal(await volgendBon(), `Bonnetje ${jaar}-022`);
+  assert.equal(ok(await vraag('GET', `/dossiers/${d2.id}/bonnetje/voorstel`)).nummer_voorstel, `${jaar}-022`, 'voorstel = hoogste + 1');
   const pdf = await vraag('GET', `/dossiers/${d1.id}/bonnetje/pdf`);
   assert.equal(pdf.pdf.subarray(0, 5).toString(), '%PDF-');
   assert.match(pdf.headers.get('content-disposition'), /Bonnetje \d{4}-021\.pdf/);
   const h = ok(await vraag('GET', `/historiek/dossier/${d1.id}`));
-  assert.ok(h.some(x => /Bonnetje \d{4}-021 gemaakt door het ERP/.test(x.tekst)));
+  assert.ok(h.some(x => /Bonnetje \d{4}-021 gemaakt \(nummer uit Accountable/.test(x.tekst)));
   // naar Accountable mailen wordt geweigerd
   fout(await vraag('POST', `/dossiers/${d1.id}/bonnetje/mail`, { naar_accountable: true }), /niet naar Accountable/);
   // tweede keer maken kan niet
-  fout(await vraag('POST', `/dossiers/${d1.id}/bonnetje`, {}), /al afgerekend/);
+  fout(await vraag('POST', `/dossiers/${d1.id}/bonnetje`, { nummer: '9-996' }), /al afgerekend/);
 });
 
 test('B3. maken mét de klant: enkel aan de klant (geen Accountable in cc)', async () => {
-  const d = ok(await vraag('POST', `/dossiers/${d2.id}/bonnetje`, { naar_klant: true, aan: 'elien@voorbeeld.be', onderwerp: 'Je bonnetje', tekst: 'Dag Elien' }), 201);
+  fout(await vraag('POST', `/dossiers/${d2.id}/bonnetje`, { nummer: `Bonnetje ${jaar}-021` }), /al gebruikt \(dossier/);
+  const d = ok(await vraag('POST', `/dossiers/${d2.id}/bonnetje`, { nummer: `${jaar}-022`, naar_klant: true, aan: 'elien@voorbeeld.be', onderwerp: 'Je bonnetje', tekst: 'Dag Elien' }), 201);
   const m = nepPostvak().at(-1);
   assert.equal(m.to, 'elien@voorbeeld.be'); assert.equal(m.cc, undefined);
   assert.equal(m.subject, 'Je bonnetje'); assert.equal(m.text, 'Dag Elien');
@@ -111,16 +114,16 @@ test('B3. maken mét de klant: enkel aan de klant (geen Accountable in cc)', asy
 
 test('B4. controles vooraf: bij een fout wordt er GEEN nummer verbruikt', async () => {
   const voor = await volgendBon();
-  fout(await vraag('POST', `/dossiers/${d3.id}/bonnetje`, { naar_klant: true, aan: 'geen-adres' }), /geldig e-mailadres/);
+  fout(await vraag('POST', `/dossiers/${d3.id}/bonnetje`, { nummer: '9-999', naar_klant: true, aan: 'geen-adres' }), /geldig e-mailadres/);
   const morgen = new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10);
   fout(await vraag('POST', `/dossiers/${d3.id}/bonnetje`, { datum: morgen }), /toekomst/);
   fout(await vraag('POST', `/dossiers/${d3.id}/bonnetje`, { datum: '31-12-2026' }), /geldige datum/);
   const eigen = ok(await vraag('POST', '/dossiers', { soort: 'eigen', titel: 'Eigen', regels: [{ type: 'extra', bedrag: 5 }] }), 201);
-  fout(await vraag('POST', `/dossiers/${eigen.id}/bonnetje`, {}), /klantopdracht/);
+  fout(await vraag('POST', `/dossiers/${eigen.id}/bonnetje`, { nummer: '9-998' }), /klantopdracht/);
   // printregel zonder printer → werkbon niet volledig te berekenen
   const onv = await nieuwDossier('Onvolledig', { regels: [{ type: 'printen', omschrijving: 'x', aantal: 1, tijd_min: 30 }] });
   fout(await vraag('GET', `/dossiers/${onv.id}/bonnetje/voorstel`), /berekend/);
-  fout(await vraag('POST', `/dossiers/${onv.id}/bonnetje`, {}), /berekend/);
+  fout(await vraag('POST', `/dossiers/${onv.id}/bonnetje`, { nummer: '9-997' }), /berekend/);
   assert.equal(ok(await vraag('GET', `/dossiers/${onv.id}`)).werkbon, null, 'ook de werkbon teruggedraaid');
   assert.equal(await volgendBon(), voor);
   fout(await vraag('GET', `/dossiers/${d3.id}/bonnetje/pdf`), /geen bonnetje/);
@@ -132,7 +135,7 @@ test('B5. mailen naar de klant mislukt: bonnetje blijft (afgerond); later opnieu
   Object.assign(process.env, { SMTP_USER: 'x@voorbeeld.be', SMTP_PASS: 'x', SMTP_HOST: '127.0.0.1', SMTP_PORT: '1' });
   let d;
   try {
-    d = ok(await vraag('POST', `/dossiers/${d3.id}/bonnetje`, { naar_klant: true, aan: 'elien@voorbeeld.be' }), 201);
+    d = ok(await vraag('POST', `/dossiers/${d3.id}/bonnetje`, { nummer: `${jaar}-023`, naar_klant: true, aan: 'elien@voorbeeld.be' }), 201);
   } finally {
     for (const k of ['SMTP_USER', 'SMTP_PASS', 'SMTP_HOST', 'SMTP_PORT']) { if (bewaard[k] === undefined) delete process.env[k]; else process.env[k] = bewaard[k]; }
     process.env.MAIL_NEP = '1';

@@ -141,7 +141,7 @@ export default function DossierFormulier() {
       const r = await api.post(`/dossiers/${id}/${soort}`, f);
       await herlaad(); setVersie(v => v + 1); setDialoog(null);
       if (r.mail_fout) melding(`${r.afgerekend_nummer} is gemaakt, maar het mailen mislukte: ${r.mail_fout} Het is nog NIET bij Accountable: gebruik "${soort === 'factuur' ? 'Factuur' : 'Bonnetje'} mailen".`, 'fout');
-      else melding(soort === 'factuur' ? `${r.afgerekend_nummer} gemaakt en gemaild naar Accountable${f.naar_klant ? ` en ${f.aan}` : ''}.` : `${r.afgerekend_nummer} gemaakt${f.naar_klant ? ` en gemaild naar ${f.aan}` : ''}. Zet het zelf in Accountable.`);
+      else melding(soort === 'factuur' ? `${r.afgerekend_nummer} gemaakt en gemaild naar Accountable${f.naar_klant ? ` en ${f.aan}` : ''}.` : `${r.afgerekend_nummer} gemaakt${f.naar_klant ? ` en gemaild naar ${f.aan}` : ''}.`);
     } catch (e) { melding(e.message, 'fout'); }
   }
   async function bonnetjeMailen(f) {
@@ -174,7 +174,7 @@ export default function DossierFormulier() {
     : null;
   const toonAfrekenen = !nieuw && d.soort === 'klant' && voorAfrekening;
   const afrekenKnop = toonAfrekenen && (<>
-    <button type="button" className="btn" disabled={!!afrekenReden} title={afrekenReden || 'Het ERP maakt het bonnetje (optioneel naar de klant gemaild); zelf in Accountable ingeven'}
+    <button type="button" className="btn" disabled={!!afrekenReden} title={afrekenReden || 'Maak het bonnetje in Accountable en vul het nummer in; het ERP maakt de PDF (optioneel naar de klant gemaild)'}
       onClick={() => open('bonnetje')}>Bonnetje maken</button>
     <button type="button" className="btn" disabled={!!afrekenReden || !d.klant_id} title={afrekenReden || (!d.klant_id ? 'Een factuur is op naam: kies eerst een klant.' : 'Het ERP maakt de factuur en mailt ze naar Accountable (en optioneel naar de klant)')}
       onClick={() => open('factuur')}>Factuur maken</button>

@@ -23,7 +23,7 @@ import { boekUit } from './voorraad.js';
 import { volgendNummer, overzicht as nummerOverzicht } from './nummering.js';
 import { leesDossier, berekenDossier } from './dossiers.js';
 import { betaaltermijn, plusDagen } from './documenten.js';
-import { rekenAf, maakAfrekeningOngedaan } from './afrekening.js';
+import { rekenAf, maakAfrekeningOngedaan, leesBonnummer, bonnummerVoorstel } from './afrekening.js';
 import { leesOpdracht } from '../productie/opdrachten.js';
 
 const euro = n => `€ ${Number(n).toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -127,7 +127,8 @@ export function kandidaten(db) {
 // → { datum, klant_id, omschrijving, regels: [{ soort, artikel_id, dossier_id, printopdracht_id, type, omschrijving, aantal, prijs_per_stuk, bedrag, berekend }], totaal }
 // Controleert ALLES vóór er een nummer uitgegeven wordt (voorraad, dossiers
 // afrekenbaar, printopdrachten vrij, prijzen).
-export function leesVerkoop(db, body) {
+// voorbeeld: enkel de PDF tonen — het bonnetjesnummer mag nog leeg zijn
+export function leesVerkoop(db, body, { voorbeeld = false } = {}) {
   const soort = leesSoort(body?.soort);
   const datum = leesDatum(body?.datum, soort);
   const wat = soort === 'factuur' ? 'deze factuur' : 'dit bonnetje';
@@ -203,19 +204,27 @@ export function leesVerkoop(db, body) {
     if (!datumOk(vervaldatum)) throw new DomeinFout('Vul een geldige vervaldatum in');
     if (vervaldatum < datum) throw new DomeinFout('De vervaldatum kan niet vóór de factuurdatum liggen.');
   }
-  return { soort, datum, vervaldatum, klant_id, omschrijving: tekst(body?.omschrijving), regels, totaal };
+  // bonnetje (04-10): het nummer komt uit Accountable (met de hand)
+  const nummer = soort !== 'bonnetje' ? null
+    : voorbeeld ? (String(body?.nummer ?? '').trim() ? `Bonnetje ${String(body.nummer).trim().replace(/^bonnetje\s*/i, '')}` : 'Bonnetje …')
+    : leesBonnummer(db, body?.nummer);
+  return { soort, datum, vervaldatum, klant_id, omschrijving: tekst(body?.omschrijving), regels, totaal, nummer };
 }
 
 // Wat het bonnetje ZOU worden (venster/voorbeeld): nummer zonder het uit te geven.
 export const REEKS = { bonnetje: 'BON', factuur: 'FAC' };
+// factuur: het volgende nummer van de reeks; bonnetje: enkel een voorstel
+// (het nummer uit Accountable vul je zelf in)
 export function voorstelNummer(db, datum, soort = 'bonnetje') {
+  if (soort === 'bonnetje') return bonnummerVoorstel(db, datum);
   return nummerOverzicht(db, Number(datum.slice(0, 4))).find(x => x.reeks === REEKS[soort]).voorbeeld;
 }
 
 export function maakVerkoop(db, v) {
   const soort = v.soort || 'bonnetje';
   const factuur = soort === 'factuur';
-  const nummer = volgendNummer(db, REEKS[soort], { jaar: Number(v.datum.slice(0, 4)) });
+  const nummer = factuur ? volgendNummer(db, REEKS[soort], { jaar: Number(v.datum.slice(0, 4)) }) : v.nummer;
+  if (!nummer) throw new DomeinFout('Vul het nummer van het bonnetje uit Accountable in.');
   const id = Number(db.prepare('INSERT INTO verkopen (nummer, datum, klant_id, omschrijving, totaal, soort, vervaldatum, betaald_op) VALUES (?,?,?,?,?,?,?,?)')
     .run(nummer, v.datum, v.klant_id, v.omschrijving, v.totaal, soort, v.vervaldatum || null, factuur ? null : v.datum).lastInsertRowid);
   const ins = db.prepare(`INSERT INTO verkoop_regels (verkoop_id, volgorde, soort, artikel_id, dossier_id, printopdracht_id, omschrijving, aantal, prijs_per_stuk, bedrag, berekend)
