@@ -22,7 +22,7 @@ import { StatusBadge } from './VerkopenLijst.jsx';
 // - printopdracht  een voltooide losse printopdracht (hele opdracht), voorstel
 //                  van de rekenmotor, aanpasbaar
 // - vrije regel    omschrijving + prijs, zonder voorraad
-// "Verkopen" = bonnetje (nummer uit Instellingen → Nummering) + voorraad eraf
+// "Verkopen" = bonnetje (04-10: nummer uit Accountable, hier ingevuld) + voorraad eraf
 // + dossiers afgerekend + mailen naar Accountable (+ optioneel de klant).
 // 29-09: of een FACTUUR (reeks Factuur, klant verplicht, vervaldatum, later
 // "Betaald" — dat zet ook de dossiers erop op betaald).
@@ -53,7 +53,7 @@ function NieuweVerkoop() {
   const { data: kand } = useData('/verkopen/kandidaten');
   const { data: instellingen } = useData('/instellingen');
   const bedrijf = (instellingen || []).find(i => i.sleutel === 'bedrijf_naam')?.waarde || '';
-  const [f, setF] = useState({ soort: 'bonnetje', datum: vandaag(), klant_id: '', omschrijving: '', vervaldatum: '' });
+  const [f, setF] = useState({ soort: 'bonnetje', datum: vandaag(), klant_id: '', omschrijving: '', vervaldatum: '', nummer: '' });
   const factuur = f.soort === 'factuur';
   const doc = factuur ? 'de factuur' : 'het bonnetje';
   const [regels, setRegels] = useState(() => [nieuweRegel('artikel')]);
@@ -114,7 +114,9 @@ function NieuweVerkoop() {
   regels.forEach(r => { const a = r.soort === 'artikel' && perId.get(r.artikel_id); if (a && a.type !== 'dienst') gevraagd.set(r.artikel_id, (gevraagd.get(r.artikel_id) || 0) + (getal(r.aantal) || 0)); });
   const tekort = [...gevraagd].filter(([aid, n]) => n > (perId.get(aid)?.voorraad ?? 0) + 1e-9).map(([aid]) => perId.get(aid).weergave);
   const andereKlant = regels.some(r => r.soort === 'dossier' && r.dossier_id && dossierVan.get(r.dossier_id)?.klant_id && f.klant_id && String(dossierVan.get(r.dossier_id).klant_id) !== f.klant_id);
-  const m = mail || { aan: klant?.email || '', onderwerp: v ? `${v.nummer}${f.omschrijving ? ` – ${f.omschrijving}` : ''}` : '', tekst: mailTekst({ klant, bedrijf, wat: factuur ? 'je factuur' : 'je bonnetje', titel: f.omschrijving || 'je aankoop' }) };
+  const kaalNr = f.nummer.trim().replace(/^bonnetje\s*/i, '').trim();
+  const nummer = factuur ? v?.nummer : kaalNr ? `Bonnetje ${kaalNr}` : null;
+  const m = mail || { aan: klant?.email || '', onderwerp: nummer ? `${nummer}${f.omschrijving ? ` – ${f.omschrijving}` : ''}` : '', tekst: mailTekst({ klant, bedrijf, wat: factuur ? 'je factuur' : 'je bonnetje', titel: f.omschrijving || 'je aankoop' }) };
   const zetMail = (k, w) => setMail({ ...m, [k]: w });
   // 30-09: een bonnetje gaat niet naar Accountable; mailen enkel als het naar de klant moet
   const blokkeert = !v || !(factuur || naarKlant) ? null : !v.mail_ingesteld ? (factuur ? 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Een factuur moet naar Accountable gemaild worden.' : 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie): vink "ook naar de klant" uit.')
@@ -126,8 +128,9 @@ function NieuweVerkoop() {
     : tekort.length ? `Onvoldoende voorraad: ${tekort.join(', ')}.`
     : andereKlant ? 'Een dossier hoort bij een andere klant dan de gekozen klant.'
     : factuur && !f.klant_id ? 'Een factuur is op naam: kies een klant.'
-    : factuur && vervaldatum && vervaldatum < f.datum ? 'De vervaldatum ligt vóór de factuurdatum.' : null;
-  const body = () => ({ soort: f.soort, datum: f.datum, ...(factuur ? { vervaldatum } : {}), klant_id: f.klant_id || null, omschrijving: f.omschrijving,
+    : factuur && vervaldatum && vervaldatum < f.datum ? 'De vervaldatum ligt vóór de factuurdatum.'
+    : !factuur && !kaalNr ? 'Vul het nummer van het bonnetje uit Accountable in.' : null;
+  const body = () => ({ soort: f.soort, datum: f.datum, ...(factuur ? { vervaldatum } : { nummer: kaalNr }), klant_id: f.klant_id || null, omschrijving: f.omschrijving,
     regels: ingevuld.map(r => ({ soort: r.soort, artikel_id: r.soort === 'artikel' ? Number(r.artikel_id) : undefined,
       dossier_id: r.soort === 'dossier' ? Number(r.dossier_id) : undefined, printopdracht_id: r.soort === 'printopdracht' ? Number(r.printopdracht_id) : undefined,
       aantal: r.aantal, prijs_per_stuk: r.prijs, omschrijving: r.omschrijving })) });
@@ -145,7 +148,7 @@ function NieuweVerkoop() {
       const r = await api.post('/verkopen', { ...body(), naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) });
       zetVuil(false);
       if (r.mail_fout) melding(`${r.nummer} is gemaakt, maar het mailen mislukte: ${r.mail_fout} Het is nog NIET bij Accountable: gebruik "${factuur ? 'Factuur' : 'Bonnetje'} mailen".`, 'fout');
-      else melding(factuur ? `${r.nummer} gemaakt en gemaild naar Accountable${naarKlant ? ` en ${m.aan}` : ''}.` : `${r.nummer} gemaakt${naarKlant ? ` en gemaild naar ${m.aan}` : ''}. Zet het zelf in Accountable.`);
+      else melding(factuur ? `${r.nummer} gemaakt en gemaild naar Accountable${naarKlant ? ` en ${m.aan}` : ''}.` : `${r.nummer} gemaakt${naarKlant ? ` en gemaild naar ${m.aan}` : ''}.`);
       navigeer(`/verkoop/${r.id}`);
     } catch (e) { melding(e.message, 'fout'); setBezig(false); }
   }
@@ -210,8 +213,8 @@ function NieuweVerkoop() {
           <div className="sheet-head">
             <div className="kop">
               <div className="nr">Nieuwe verkoop · {factuur ? 'factuur' : 'bonnetje'}</div>
-              <h2 className="mono-titel">{v?.nummer ?? '…'}</h2>
-              <div className="sub">Dit nummer krijgt {doc} bij "Verkopen" (Instellingen → Nummering).</div>
+              <h2 className="mono-titel">{factuur ? (v?.nummer ?? '…') : (nummer || 'Bonnetje …')}</h2>
+              <div className="sub">{factuur ? <>Dit nummer krijgt {doc} bij "Verkopen" (Instellingen → Nummering).</> : <>Maak het bonnetje eerst in Accountable en vul hieronder het nummer in.</>}</div>
               <div className="seg" role="group" aria-label="Bonnetje of factuur" style={{ marginTop: 8 }}>
                 <button type="button" aria-pressed={!factuur} onClick={() => zet('soort', 'bonnetje')}>Bonnetje</button>
                 <button type="button" aria-pressed={factuur} onClick={() => zet('soort', 'factuur')}>Factuur</button>
@@ -221,6 +224,8 @@ function NieuweVerkoop() {
           {(voorstelFout || blokkeert) && <div className="waarschuwing" style={{ margin: '0 22px 10px', display: 'block' }} role="alert">{voorstelFout || blokkeert}</div>}
           <div className="fields">
             <div>
+              {!factuur && <Veld label="Nummer uit Accountable" id="vk-nr" hint="Het nummer dat Accountable aan het bonnetje gaf.">
+                <input id="vk-nr" className="inp mono" placeholder={v?.nummer ? `bv. ${v.nummer}` : 'bv. 2026-025'} value={f.nummer} onChange={e => zet('nummer', e.target.value)} /></Veld>}
               <Veld label={factuur ? 'Factuurdatum' : 'Datum'} id="vk-datum"><input id="vk-datum" type="date" className="inp" max={vandaag()} value={f.datum} onChange={e => zet('datum', e.target.value || vandaag())} /></Veld>
               {factuur && <Veld label="Vervaldatum" id="vk-verval" hint="Volgens de betaaltermijn (Instellingen → Bedrijf); aanpasbaar.">
                 <input id="vk-verval" type="date" className="inp" min={f.datum} value={vervaldatum} onChange={e => zet('vervaldatum', e.target.value)} /></Veld>}
@@ -285,7 +290,7 @@ function NieuweVerkoop() {
                 <div style={{ gridColumn: '1/-1' }}><label htmlFor="vk-tekst">Bericht</label><textarea id="vk-tekst" className="inp" rows={5} value={m.tekst} onChange={e => zetMail('tekst', e.target.value)} /></div>
               </div>
             )}
-            <p className="note">{factuur ? <>De factuur gaat altijd naar <b>{v?.accountable || 'Accountable'}</b>{naarKlant ? ' (in cc)' : ''}{v?.afzender ? <>, verstuurd vanaf <b>{v.afzender}</b></> : null}.</> : <>Het bonnetje gaat <b>niet</b> naar Accountable (inkomsten@ leest het in als een factuur): zet het zelf in Accountable (dagontvangsten).</>} De voorraad gaat meteen naar beneden (oudste partij eerst){factuur ? '; de factuur staat open tot je ze op betaald zet' : ' en de verkoop staat op betaald'}.</p>
+            <p className="note">{factuur ? <>De factuur gaat altijd naar <b>{v?.accountable || 'Accountable'}</b>{naarKlant ? ' (in cc)' : ''}{v?.afzender ? <>, verstuurd vanaf <b>{v.afzender}</b></> : null}.</> : <>Het bonnetje gaat <b>niet</b> naar Accountable (inkomsten@ leest het in als een factuur): het nummer komt uit Accountable (dagontvangsten).</>} De voorraad gaat meteen naar beneden (oudste partij eerst){factuur ? '; de factuur staat open tot je ze op betaald zet' : ' en de verkoop staat op betaald'}.</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <button type="button" className="btn primary" disabled={bezig || !!onvolledig || !!blokkeert || !v || (naarKlant && !m.aan.trim())} onClick={verkopen}>
                 {bezig ? 'Bezig…' : factuur ? (naarKlant ? 'Verkopen en mailen (klant + Accountable)' : 'Verkopen en mailen naar Accountable') : (naarKlant ? 'Verkopen en mailen naar de klant' : 'Verkopen')}</button>

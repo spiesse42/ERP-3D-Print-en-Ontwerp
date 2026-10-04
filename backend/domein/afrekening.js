@@ -41,15 +41,37 @@ export function rekenAf(db, d0, { waarom = 'bij het afrekenen', afrekening, logT
   return a;
 }
 
-// ── Bonnetje door het ERP (26-09) ───────────────────────────────────────
-// Het nummer komt uit de reeks BON van het jaar van de bonnetjesdatum. Het
-// bedrag is ALTIJD dat van de werkbon: de regels op het bonnetje moeten
-// samen het totaal geven (een ander bedrag? pas de regels van het dossier aan).
-export function maakBonnetje(db, d0, { datum, leverVoorraad = true }) {
+// ── Bonnetje (26-09; nummer uit Accountable sinds 04-10) ────────────────
+// Het ERP maakt het bonnetje (PDF) nog, maar het NUMMER komt uit Accountable
+// (met de hand ingevuld): het bonnetje gaat niet meer naar inkomsten@ en
+// Accountable nummert het zelf. Het bedrag is ALTIJD dat van de werkbon.
+const kaalBon = t => String(t ?? '').trim().replace(/^bonnetje\s*/i, '').trim();
+export function leesBonnummer(db, invoer, { behalveVerkoop = null } = {}) {
+  const t = kaalBon(invoer);
+  if (!t) throw new DomeinFout('Vul het nummer van het bonnetje uit Accountable in (bv. 2026-025).');
+  if (t.length > 40) throw new DomeinFout('Dat bonnetjesnummer is te lang.');
+  const zelfde = x => kaalBon(x).toLowerCase() === t.toLowerCase();
+  const d = db.prepare(`SELECT nummer, afgerekend_nummer FROM dossiers WHERE afgerekend_soort = 'bonnetje' AND afgerekend_nummer IS NOT NULL`).all().find(x => zelfde(x.afgerekend_nummer));
+  const v = db.prepare(`SELECT id, nummer FROM verkopen WHERE soort = 'bonnetje' AND geannuleerd_op IS NULL`).all().find(x => x.id !== behalveVerkoop && zelfde(x.nummer));
+  if (d || v) throw new DomeinFout(`Bonnetje ${t} is al gebruikt (${d ? `dossier ${d.nummer}` : `verkoop ${v.nummer}`}). Controleer het nummer in Accountable.`);
+  return `Bonnetje ${t}`;
+}
+// Voorstel (enkel ter hulp): het hoogste bonnetjesnummer van dat jaar + 1.
+export function bonnummerVoorstel(db, datum) {
+  const jaar = String(datum || '').slice(0, 4);
+  const re = new RegExp(`^${jaar}-(\\d+)$`);
+  const alle = [...db.prepare(`SELECT afgerekend_nummer n FROM dossiers WHERE afgerekend_soort = 'bonnetje'`).all(), ...db.prepare(`SELECT nummer n FROM verkopen WHERE soort = 'bonnetje'`).all()]
+    .map(x => kaalBon(x.n).match(re)).filter(Boolean).map(m => ({ n: Number(m[1]), w: m[1].length }));
+  if (!alle.length) return null;
+  const hoog = alle.reduce((a, b) => (b.n > a.n ? b : a));
+  return `${jaar}-${String(hoog.n + 1).padStart(hoog.w, '0')}`;
+}
+export function maakBonnetje(db, d0, { datum, nummer, leverVoorraad = true }) {
+  if (!nummer) throw new DomeinFout('Vul het nummer van het bonnetje uit Accountable in.');
   return rekenAf(db, d0, {
     waarom: 'bij het maken van het bonnetje', leverVoorraad,
-    afrekening: wb => ({ soort: 'bonnetje', nummer: volgendNummer(db, 'BON', { jaar: Number(String(datum).slice(0, 4)) }), datum, bedrag: wb.bedrag, pdf: true }),
-    logTekst: a => `${a.nummer} gemaakt door het ERP (${dmj(a.datum)}, ${euro(a.bedrag)}): afgerekend en meteen betaald`,
+    afrekening: wb => ({ soort: 'bonnetje', nummer, datum, bedrag: wb.bedrag, pdf: true }),
+    logTekst: a => `${a.nummer} gemaakt (nummer uit Accountable; ${dmj(a.datum)}, ${euro(a.bedrag)}): afgerekend en meteen betaald`,
   });
 }
 

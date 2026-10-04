@@ -102,7 +102,7 @@ test('K3. verkopen: dossier (prijs aangepast) + printopdracht + vrije regel op Ã
   const k = ok(await vraag('GET', '/verkopen/kandidaten'));
   const voorstel = k.printopdrachten.find(x => x.id === opd.id).voorstel;
   const blueyBerekend = k.dossiers.find(x => x.id === bluey.id).bedrag;
-  verkoop = ok(await vraag('POST', '/verkopen', { omschrijving: 'Bestelling FB', naar_klant: true, aan: 'rebecca@voorbeeld.be', regels: [
+  verkoop = ok(await vraag('POST', '/verkopen', { nummer: `${jaar}-040`, omschrijving: 'Bestelling FB', naar_klant: true, aan: 'rebecca@voorbeeld.be', regels: [
     { soort: 'dossier', dossier_id: bluey.id, prijs_per_stuk: '50' },
     { soort: 'printopdracht', printopdracht_id: opd.id },
     { soort: 'vrij', omschrijving: 'Bluey-sleutelhanger (buiten ERP)', aantal: 2, prijs_per_stuk: '7,5' }] }), 201);
@@ -168,7 +168,7 @@ test('K4. overzicht, FinanciÃ«n en Accountable: niets dubbel', async () => {
 test('K5. dossier met aanvaarde offerte: offerteprijs, zonder prijs in te vullen', async () => {
   const k = ok(await vraag('GET', '/verkopen/kandidaten'));
   const bedrag = k.dossiers.find(x => x.id === metOfferte.id).bedrag;
-  const v = ok(await vraag('POST', '/verkopen', { regels: [{ soort: 'dossier', dossier_id: metOfferte.id }] }), 201);
+  const v = ok(await vraag('POST', '/verkopen', { nummer: `${jaar}-041`, regels: [{ soort: 'dossier', dossier_id: metOfferte.id }] }), 201);
   assert.equal(v.totaal, bedrag);
   assert.equal(ok(await vraag('GET', `/dossiers/${metOfferte.id}`)).afgerekend_bedrag, bedrag);
   // een verkoop met enkel een dossier staat niet als extra rij in Marges
@@ -194,5 +194,5 @@ test('K6. ongedaan maken: dossier weer open (werkbon concept), printopdracht wee
   const offerteVerkoop = ok(await vraag('GET', '/verkopen')).find(x => x.bron === 'verkoop' && !x.geannuleerd_op);
   assert.equal(m.omzet, offerteVerkoop.bedrag, 'enkel de verkoop van K5 blijft');
   // het nummer 040 blijft bezet
-  assert.equal(await volgendBon(), `Bonnetje ${jaar}-042`);
+  fout(await vraag('POST', '/verkopen', { nummer: `${jaar}-041`, regels: [{ soort: 'vrij', omschrijving: 'x', prijs_per_stuk: 1 }] }), /al gebruikt/);
 });

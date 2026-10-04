@@ -213,7 +213,7 @@ test('FA6. losse verkoop met factuur: klant verplicht, nummer uit de factuurreek
   ok(await vraag('POST', `/verkopen/${v.id}/annuleer`));
   assert.equal(ok(await vraag('GET', `/dossiers/${d.id}`)).afgerekend_op, null);
   // een bonnetje blijft meteen betaald
-  const bon = ok(await vraag('POST', '/verkopen', { datum: vandaag, regels: [{ soort: 'vrij', omschrijving: 'Sticker', prijs_per_stuk: 2 }] }), 201);
+  const bon = ok(await vraag('POST', '/verkopen', { datum: vandaag, nummer: `${jaar}-777`, regels: [{ soort: 'vrij', omschrijving: 'Sticker', prijs_per_stuk: 2 }] }), 201);
   assert.equal(bon.soort, 'bonnetje'); assert.equal(bon.betaald_op, vandaag);
   fout(await vraag('POST', `/verkopen/${bon.id}/betaald`, { datum: vandaag }), /altijd meteen betaald/);
 });

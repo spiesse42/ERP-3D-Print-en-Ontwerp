@@ -73,9 +73,9 @@ r.get('/kandidaten', metFouten((req, res) => res.json(kandidaten(getDb()))));
 // Voorbeeld-PDF van wat er in het venster staat (niets bewaard).
 r.post('/voorbeeld', metFouten(async (req, res) => {
   const db = getDb();
-  const v = leesVerkoop(db, req.body);
+  const v = leesVerkoop(db, req.body, { voorbeeld: true });
   const klant = v.klant_id ? db.prepare('SELECT * FROM klanten WHERE id = ?').get(v.klant_id) : null;
-  const x = { ...v, nummer: voorstelNummer(db, v.datum, v.soort), klant_gegevens: klant };
+  const x = { ...v, nummer: v.soort === 'factuur' ? voorstelNummer(db, v.datum, v.soort) : v.nummer, klant_gegevens: klant };
   await stuurPdf(res, await documentVan(db, x, { concept: true }), bestandVan(x, ' - voorbeeld'));
 }));
 

@@ -10,7 +10,7 @@ import { leesDossier, leesRegelsVan, berekenDossier, datumOk, bewaarRegels, lees
 import { offertesVan, nummerMetVersie, documentInhoud, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje, isErpFactuur, betaaltermijn } from '../domein/documenten.js';
 import { getBedrijfsgegevens } from '../domein/hulp.js';
 import { factuurHtml, factuurBestand, peppolVerplicht } from '../documenten/factuur.js';
-import { maakBonnetje, maakFactuur } from '../domein/afrekening.js';
+import { maakBonnetje, maakFactuur, leesBonnummer, bonnummerVoorstel } from '../domein/afrekening.js';
 import { overzicht as nummerOverzicht } from '../domein/nummering.js';
 import { start } from '../domein/uitvoering.js';
 import { synchroniseer } from '../productie/opdrachten.js';
@@ -369,7 +369,8 @@ function documentVoorstel(db, d0, datum, soort) {
       throw TERUG;
     })();
   } catch (e) { if (e !== TERUG) throw e; }
-  const nummer = nummerOverzicht(db, Number(datum.slice(0, 4))).find(x => x.reeks === SOORT[soort].reeks).voorbeeld;
+  // factuur: volgend nummer van de reeks; bonnetje (04-10): nummer uit Accountable, met de hand
+  const nummer = soort === 'factuur' ? nummerOverzicht(db, Number(datum.slice(0, 4))).find(x => x.reeks === SOORT[soort].reeks).voorbeeld : null;
   return { ...uit, nummer, datum };
 }
 async function mailDocument(db, soort, d, body) {
@@ -397,6 +398,7 @@ r.get('/dossiers/:id/:soort(bonnetje|factuur)/voorstel', metFouten((req, res) =>
   const k = d.klant_gegevens;
   const b = getBedrijfsgegevens(db);
   res.json({ nummer: v.nummer, datum: v.datum, bedrag: v.bedrag, werkbon: v.werkbon, accountable: accountableAdres(), afzender: afzender(),
+    ...(soort === 'bonnetje' ? { nummer_voorstel: bonnummerVoorstel(db, v.datum) } : {}),
     naar_accountable: soort === 'factuur',   // 30-09: een bonnetje zet je zelf in Accountable
     mail_ingesteld: mailIngesteld(), pdf_mogelijk: !!vindBrowser(), drempel: DREMPEL_BONNETJE, klant_email: k?.email || null,
     ...(soort === 'factuur' ? {
@@ -415,8 +417,9 @@ r.get('/dossiers/:id/:soort(bonnetje|factuur)/voorbeeld', metFouten(async (req, 
   const v = documentVoorstel(db, d, datum, soort);
   const html = soort === 'factuur'
     ? await factuurHtml({ inhoud: v.inhoud, nummer: v.nummer, datum, vervaldatum: vervalDatum(db, req.query.vervaldatum, datum), uitvoering: uitvoering(d, datum), concept: true })
-    : bonnetjeHtml({ inhoud: v.inhoud, nummer: v.nummer, datum: v.datum, concept: true });
-  await stuurPdf(res, html, SOORT[soort].bestand(v.nummer, ' - voorbeeld'));
+    : bonnetjeHtml({ inhoud: v.inhoud, nummer: tekst(req.query.nummer) ? `Bonnetje ${String(req.query.nummer).trim().replace(/^bonnetje\s*/i, '')}` : 'Bonnetje …', datum: v.datum, concept: true });
+  const naam = soort === 'factuur' ? v.nummer : tekst(req.query.nummer) ? `Bonnetje ${String(req.query.nummer).trim().replace(/^bonnetje\s*/i, '')}` : 'Bonnetje voorbeeld';
+  await stuurPdf(res, html, SOORT[soort].bestand(naam, ' - voorbeeld'));
 }));
 // Maken (afrekenen; bonnetje = ook betaald) en meteen mailen. Eerst alles
 // controleren wat het mailen kan tegenhouden, zodat er geen nummer
@@ -429,6 +432,7 @@ r.post('/dossiers/:id/:soort(bonnetje|factuur)', metFouten(async (req, res) => {
   const d0 = dossier(db, idVan(req.params.id));
   const datum = documentDatum(req.body?.datum, soort);
   const verval = soort === 'factuur' ? vervalDatum(db, req.body?.vervaldatum, datum) : null;
+  const bonnummer = soort === 'bonnetje' ? leesBonnummer(db, req.body?.nummer) : null;   // 04-10: uit Accountable
   documentVoorstel(db, d0, datum, soort);   // zelfde controles als het venster
   const naarKlant = !!req.body?.naar_klant;
   if (naarKlant && !geldigAdres(req.body?.aan)) throw new DomeinFout('Vul een geldig e-mailadres van de klant in (of vink "ook naar de klant" uit).');
@@ -439,7 +443,7 @@ r.post('/dossiers/:id/:soort(bonnetje|factuur)', metFouten(async (req, res) => {
   const leverVoorraad = req.body?.voorraad_leveren !== false;
   db.transaction(() => (soort === 'factuur'
     ? maakFactuur(db, d0, { datum, vervaldatum: verval, leverVoorraad })
-    : maakBonnetje(db, d0, { datum, leverVoorraad })))();
+    : maakBonnetje(db, d0, { datum, nummer: bonnummer, leverVoorraad })))();
   let mail_fout = null;
   if (mailen) try {
     await mailDocument(db, soort, leesDossier(db, d0.id), { naar_klant: naarKlant, aan: req.body?.aan, onderwerp: req.body?.onderwerp, tekst: req.body?.tekst, naar_accountable: soort === 'factuur' });
