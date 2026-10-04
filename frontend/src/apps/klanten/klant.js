@@ -20,12 +20,13 @@ export function peppolVoorstel(btw, land) {
 export const LEGE_KLANT = {
   type: 'particulier', naam: '', voornaam: '', bedrijfsnaam: '',
   email: '', telefoon: '', gsm: '', straat: '', huisnummer: '', postcode: '', gemeente: '', land: '',
-  btw_nummer: '', peppol_id: '', notities: '',
+  btw_nummer: '', peppol_id: '', notities: '', familie: false,
 };
 
 export function naarFormulier(k) {
   const f = { ...LEGE_KLANT };
   for (const s of Object.keys(LEGE_KLANT)) f[s] = k?.[s] ?? LEGE_KLANT[s];
+  f.familie = !!f.familie;
   return f;
 }
 

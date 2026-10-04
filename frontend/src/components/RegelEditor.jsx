@@ -61,7 +61,8 @@ export function vanApi(r) {
 }
 
 // Live berekening, 300 ms na de laatste wijziging.
-export function useBerekening(regels, stand = 'schatting') {
+// filamentInkoop (04-10): familie & vrienden, filament aan inkoopprijs
+export function useBerekening(regels, stand = 'schatting', filamentInkoop = false) {
   const [uitkomst, setUitkomst] = useState(null);
   const [fout, setFout] = useState(null);
   const volg = useRef(0);
@@ -71,12 +72,12 @@ export function useBerekening(regels, stand = 'schatting') {
     const mijn = ++volg.current;
     const klok = setTimeout(async () => {
       try {
-        const b = await api.post('/bereken', { regels: JSON.parse(sleutel), stand });
+        const b = await api.post('/bereken', { regels: JSON.parse(sleutel), stand, filament_inkoop: !!filamentInkoop });
         if (mijn === volg.current) { setUitkomst(b); setFout(null); }
       } catch (e) { if (mijn === volg.current) setFout(e.message); }
     }, 300);
     return () => clearTimeout(klok);
-  }, [sleutel, stand]);
+  }, [sleutel, stand, filamentInkoop]);
   return { uitkomst, fout };
 }
 
@@ -85,7 +86,7 @@ function Detail({ b, type }) {
   if (b.fout) return <div className="regelfout"><Icoon naam="let" maat={14} /> {b.fout}</div>;
   const d = b.detail || {};
   const delen = type === 'printen'
-    ? [['materiaal', d.materiaal], ['energie', d.energie], ['machine', d.machine], ['arbeid', d.arbeid], ['BMCU/AMS', d.bmcu]]
+    ? [[d.materialen?.some(m => m.prijs_bron === 'inkoop') ? 'materiaal (inkoopprijs)' : 'materiaal', d.materiaal], ['energie', d.energie], ['machine', d.machine], ['arbeid', d.arbeid], ['BMCU/AMS', d.bmcu]]
     : [];
   return (
     <div className="regeldetail sub">

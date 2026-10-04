@@ -66,8 +66,12 @@ function berekenRegel(regel, t, stand) {
     const materialen = (regel.materialen || []).map(m => {
       const gram = of(m.gram, 0);
       const prijs = getal(m.prijs_per_kg);
-      if (gram > 0 && prijs === null) fouten.push(`Geen verkoopprijs per kg voor ${m.naam || 'het gekozen filament'}`);
-      return { naam: m.naam, gram, prijs_per_kg: prijs, kost: gram / 1000 * (prijs ?? 0) * faal };
+      if (gram > 0 && prijs === null) {
+        fouten.push(m.prijs_bron === 'inkoop'
+          ? `Geen inkoopprijs gekend voor ${m.naam || 'het gekozen filament'} (Voorraad → artikel → inkoopprijs, of ontvang een aankoop)`
+          : `Geen verkoopprijs per kg voor ${m.naam || 'het gekozen filament'}`);
+      }
+      return { naam: m.naam, gram, prijs_per_kg: prijs, kost: gram / 1000 * (prijs ?? 0) * faal, ...(m.prijs_bron ? { prijs_bron: m.prijs_bron } : {}) };
     });
     if (fouten.length) return { fout: fouten.join('. '), tijd_u: uren };
     const materiaal = materialen.reduce((s, m) => s + m.kost, 0);

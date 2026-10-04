@@ -50,7 +50,10 @@ export function leesKop(body) {
   if (!SOORTEN[soort]) throw new DomeinFout('Soort moet klantopdracht, eigen product of intern zijn');
   const titel = tekst(body?.titel);
   if (!titel) throw new DomeinFout('Geef het dossier een titel (bv. "Naamplaatje fiets")');
-  return { soort, klant_id: id(body?.klant_id, 'klant'), titel, notities: tekst(body?.notities) };
+  // filament_inkoop: undefined = niet meegegeven (nieuw dossier: volgt de klant)
+  const fi = body?.filament_inkoop;
+  return { soort, klant_id: id(body?.klant_id, 'klant'), titel, notities: tekst(body?.notities),
+    filament_inkoop: fi === undefined || fi === null || fi === '' ? undefined : (fi === true || fi === 1 || fi === '1' || fi === 'true') ? 1 : 0 };
 }
 
 // Regels in de vorm van de regeleditor/rekenmotor (naarApi in de frontend).
@@ -146,8 +149,9 @@ export function leesRegelsVan(db, dossierId) {
       ...(m.artikel_id ? { artikel_id: m.artikel_id } : { filament_type_id: m.filament_type_id }), gram: m.gram })) : [] }));
 }
 
-export function berekenDossier(db, regels, stand = 'schatting', tarieven = null) {
-  try { return berekenMetDb(db, regels, { stand, tarieven }); }
+// filamentInkoop (04-10): familie & vrienden — filament aan inkoopprijs
+export function berekenDossier(db, regels, stand = 'schatting', tarieven = null, filamentInkoop = false) {
+  try { return berekenMetDb(db, regels, { stand, tarieven, filamentInkoop: !!filamentInkoop }); }
   catch (e) { return { fout: e.message, totaal: null, volledig: false, regels: [] }; }
 }
 
@@ -159,7 +163,7 @@ export function leesDossier(db, dossierId) {
     FROM dossiers d LEFT JOIN klanten k ON k.id = d.klant_id WHERE d.id = ?`).get(dossierId);
   if (!d) return null;
   const regels = leesRegelsVan(db, dossierId);
-  const berekening = berekenDossier(db, regels);
+  const berekening = berekenDossier(db, regels, 'schatting', null, d.filament_inkoop);
   const klant_gegevens = d.klant_id ? db.prepare(`SELECT type, naam, voornaam, bedrijfsnaam, email, telefoon, gsm, straat, huisnummer,
     postcode, gemeente, land, btw_nummer, peppol_id FROM klanten WHERE id = ?`).get(d.klant_id) : null;
   const offertes = offertesVan(db, dossierId);
@@ -181,7 +185,7 @@ export function leesDossier(db, dossierId) {
     uren: r.werkelijk?.uren ?? (g?.geslaagd.runs ? g.geslaagd.uren : null),
     kwh: r.werkelijk?.kwh ?? (g?.geslaagd.runs && !g.geslaagd.kwh_onbekend ? g.geslaagd.kwh : null) } }));
   if (werkbon && !werkbon.definitief_op) {
-    const metingen = berekenDossier(db, regelsWerkelijk, 'werkelijk');
+    const metingen = berekenDossier(db, regelsWerkelijk, 'werkelijk', null, d.filament_inkoop);
     werkbon.berekening = metingen;                       // kost volgens de metingen
     if (aanvaardeOfferte) {
       Object.assign(werkbon, { basis: 'offerte', offerte: aanvaardeOfferte.weergave, bedrag: aanvaardeOfferte.totaal, volledig: true,
@@ -197,7 +201,7 @@ export function leesDossier(db, dossierId) {
   // tonen, voor het standaardbedrag in het afrekenvenster.
   const zonder_werkbon = werkbon || d.soort !== 'klant' || d.afgerekend_op ? null
     : aanvaardeOfferte ? { bedrag: aanvaardeOfferte.totaal, volledig: true }
-    : (m => ({ bedrag: m.totaal, volledig: !!m.volledig }))(berekenDossier(db, regelsWerkelijk, 'werkelijk'));
+    : (m => ({ bedrag: m.totaal, volledig: !!m.volledig }))(berekenDossier(db, regelsWerkelijk, 'werkelijk', null, d.filament_inkoop));
   // Overnamefiche: wat er afgerekend wordt = de werkbon (definitief of concept), anders de schatting.
   const overname = werkbon?.document || werkbon?.concept_document
     || (berekening.regels?.length ? documentInhoud(db, basis, berekening) : null);
@@ -342,7 +346,7 @@ export function leesDossiers(db, { archief = '0', klant_id = null } = {}) {
     ${waar.length ? `WHERE ${waar.join(' AND ')}` : ''} ORDER BY d.id DESC`).all(...par);
   const tarieven = getTarieven(db);   // één keer voor de hele lijst
   return rijen.map(d => {
-    const b = d.aantal_regels ? berekenDossier(db, leesRegelsVan(db, d.id), 'schatting', tarieven) : { totaal: 0, volledig: true };
+    const b = d.aantal_regels ? berekenDossier(db, leesRegelsVan(db, d.id), 'schatting', tarieven, d.filament_inkoop) : { totaal: 0, volledig: true };
     const offerte = laatsteVerstuurde(offertesVan(db, d.id));
     const lever = d.soort === 'klant' ? leverStatusVan(db, d.id) : null;
     const prod = productieVan(db, d.id);

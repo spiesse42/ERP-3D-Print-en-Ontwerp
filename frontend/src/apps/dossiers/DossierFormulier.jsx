@@ -23,11 +23,11 @@ import SlicerDialoog from './SlicerDialoog.jsx';
 import SamenvoegDialoog from './SamenvoegDialoog.jsx';
 import DossierFotos, { bewaarFotos, bewaarBestand } from './DossierFotos.jsx';
 
-const LEEG = { soort: 'klant', klant_id: '', titel: '', notities: '' };
+const LEEG = { soort: 'klant', klant_id: '', titel: '', notities: '', filament_inkoop: false };
 // klant en titel uit de URL (nieuw dossier vanuit een klant of een mail, 30-09)
 function naarFormulier(d, klantUitUrl, titelUitUrl) {
   if (!d) return { kop: { ...LEEG, klant_id: klantUitUrl || '', titel: titelUitUrl || LEEG.titel || '' }, regels: [] };
-  return { kop: { soort: d.soort, klant_id: d.klant_id ? String(d.klant_id) : '', titel: d.titel, notities: d.notities || '' }, regels: d.regels.map(vanApi) };
+  return { kop: { soort: d.soort, klant_id: d.klant_id ? String(d.klant_id) : '', titel: d.titel, notities: d.notities || '', filament_inkoop: !!d.filament_inkoop }, regels: d.regels.map(vanApi) };
 }
 const vergelijk = f => JSON.stringify({ kop: f.kop, regels: f.regels.map(naarApi) });
 
@@ -66,7 +66,7 @@ export default function DossierFormulier() {
     const k = setInterval(() => { if (document.visibilityState === 'visible') herlaad(); }, 15000);
     return () => clearInterval(k);
   }, [volgt, herlaad]);
-  const { uitkomst: live } = useBerekening(form.regels);
+  const { uitkomst: live } = useBerekening(form.regels, 'schatting', form.kop.filament_inkoop);
   // Tot de live-berekening binnen is: de berekening die de backend meestuurde.
   const uitkomst = live || (!nieuw && d && !vuil ? d.berekening : null);
   const tarieven = useMemo(() => Object.fromEntries((tarievenLijst || []).map(t => [t.sleutel, t.waarde])), [tarievenLijst]);
@@ -80,7 +80,12 @@ export default function DossierFormulier() {
   const klantOpties = (klanten || []).filter(k => !k.gearchiveerd || String(k.id) === form.kop.klant_id)
     .map(k => ({ id: k.id, naam: klantNaam(k) })).sort((a, b) => a.naam.localeCompare(b.naam, 'nl'));
 
-  const zetKop = k => w => setForm(f => ({ ...f, kop: { ...f.kop, [k]: w } }));
+  const zetKop = k => w => setForm(f => {
+    const kop = { ...f.kop, [k]: w };
+    // nieuw dossier voor familie/vrienden (04-10): het vinkje volgt de klant
+    if (k === 'klant_id' && nieuw) kop.filament_inkoop = !!(klanten || []).find(x => String(x.id) === String(w))?.familie;
+    return { ...f, kop };
+  });
   const body = () => ({ ...form.kop, klant_id: form.kop.soort === 'klant' || form.kop.klant_id ? form.kop.klant_id || null : null, regels: form.regels.map(naarApi) });
 
   async function opslaan() {
@@ -250,6 +255,13 @@ export default function DossierFormulier() {
                     opties={klantOpties} onKies={zetKop('klant_id')} onNieuw={nieuweKlant} watLabel="klant" />
                 )}
               </Veld>
+              {klantOpdracht && (
+                <Veld label="Filament" id="d-fi" hint={form.kop.filament_inkoop ? 'Familie & vrienden: het filament wordt aangerekend aan de inkoopprijs (zoals de productiekost), niet aan de verkoopprijs.' : null}>
+                  <label className="keuze" style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0' }}>
+                    <input id="d-fi" type="checkbox" disabled={kopVast} checked={!!form.kop.filament_inkoop} onChange={e => zetKop('filament_inkoop')(e.target.checked)} /> Aan inkoopprijs (familie &amp; vrienden)
+                  </label>
+                </Veld>
+              )}
             </div>
             <div>
               <Veld label="Fase"><FaseBadge fase={fase} /></Veld>

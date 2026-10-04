@@ -229,7 +229,12 @@ export default function KlantFormulier() {
               <Veld label="Gsm" id="k-gsm"><Invoer id="k-gsm" type="tel" waarde={form.gsm || ''} onWijzig={zet('gsm')} /></Veld>
               <Veld label="Telefoon" id="k-tel"><Invoer id="k-tel" type="tel" waarde={form.telefoon || ''} onWijzig={zet('telefoon')} /></Veld>
               <Veld label="Afrekening">
-                <span className="sub">{zakelijk ? `Factuur (het ERP maakt ze en mailt ze naar Accountable)${form.peppol_id && (form.land || 'BE') === 'BE' ? '; via Peppol te versturen vanuit Accountable' : ''}` : 'Bonnetje of factuur (het ERP maakt ze en mailt ze naar Accountable)'}</span>
+                <span className="sub">{zakelijk ? `Factuur (het ERP maakt ze en mailt ze naar Accountable)${form.peppol_id && (form.land || 'BE') === 'BE' ? '; via Peppol te versturen vanuit Accountable' : ''}` : 'Bonnetje (zelf in Accountable ingeven) of factuur (het ERP mailt ze naar Accountable)'}</span>
+              </Veld>
+              <Veld label="Familie / vriend" id="k-familie" hint="Nieuwe dossiers van deze klant rekenen het filament aan inkoopprijs i.p.v. verkoopprijs (per dossier aan te passen).">
+                <label className="keuze" style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0' }}>
+                  <input id="k-familie" type="checkbox" checked={!!form.familie} onChange={e => zet('familie')(e.target.checked)} /> Filament aan inkoopprijs
+                </label>
               </Veld>
             </div>
           </div>

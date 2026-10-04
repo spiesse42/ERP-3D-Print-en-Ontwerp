@@ -7,13 +7,13 @@ import { DomeinFout } from '../domein/hulp.js';
 const r = Router();
 
 const VELDEN = ['type', 'naam', 'voornaam', 'bedrijfsnaam', 'email', 'telefoon', 'gsm',
-  'straat', 'huisnummer', 'postcode', 'gemeente', 'land', 'btw_nummer', 'peppol_id', 'notities'];
+  'straat', 'huisnummer', 'postcode', 'gemeente', 'land', 'btw_nummer', 'peppol_id', 'notities', 'familie'];
 
 // Labels voor de historiek ("Gemeente: Mol → Geel").
 const LABELS = {
   type: 'Type', naam: 'Naam', voornaam: 'Voornaam', bedrijfsnaam: 'Bedrijfsnaam', email: 'E-mail',
   telefoon: 'Telefoon', gsm: 'Gsm', straat: 'Straat', huisnummer: 'Huisnummer', postcode: 'Postcode',
-  gemeente: 'Gemeente', land: 'Land', btw_nummer: 'Ondernemingsnummer', peppol_id: 'Peppol-ID', notities: 'Notities',
+  gemeente: 'Gemeente', land: 'Land', familie: 'Familie / vriend', btw_nummer: 'Ondernemingsnummer', peppol_id: 'Peppol-ID', notities: 'Notities',
 };
 
 // Leest en valideert de velden uit het formulier. Lege tekst wordt NULL.
@@ -26,6 +26,9 @@ function leesKlant(body) {
     k[v] = (w === undefined || w === null || String(w).trim() === '') ? null : String(w).trim();
   }
   k.type = k.type || 'particulier';
+  // familie & vrienden (04-10): hun dossiers rekenen het filament aan inkoopprijs
+  const f = body?.familie;
+  k.familie = f === true || f === 1 || f === '1' || f === 'true' ? 1 : 0;
   if (!['particulier', 'zakelijk'].includes(k.type)) return { fout: 'Type moet particulier of zakelijk zijn' };
   if (k.type === 'particulier' && !k.naam) return { fout: 'Naam is verplicht' };
   if (k.type === 'zakelijk' && !k.naam && !k.bedrijfsnaam) return { fout: 'Bedrijfsnaam is verplicht' };
@@ -86,7 +89,8 @@ r.put('/:id', (req, res) => {
   const bewaar = db.transaction(() => {
     db.prepare(`UPDATE klanten SET ${VELDEN.map(v => `${v}=?`).join(',')} WHERE id=?`)
       .run(...VELDEN.map(v => k[v]), oud.id);
-    const tekst = beschrijfWijzigingen(oud, k, LABELS);
+    const jn = x => ({ ...x, familie: x.familie ? 'ja' : 'nee' });
+    const tekst = beschrijfWijzigingen(jn(oud), jn(k), LABELS);
     if (tekst) logGebeurtenis(db, 'klant', oud.id, 'gewijzigd', tekst);
   });
   try {
