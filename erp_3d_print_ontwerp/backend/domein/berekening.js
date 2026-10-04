@@ -3,6 +3,7 @@
 // Eén plaats, gebruikt door POST /api/bereken en straks door dossiers (stap 5).
 import { getTarieven } from './hulp.js';
 import { bereken } from './rekenmotor.js';
+import { kostPerKg } from '../productie/kost.js';
 
 // Voorbereide opdrachten per databank hergebruiken (29-09): de dossierlijst
 // rekent elk dossier door; opnieuw voorbereiden per regel kostte het meest.
@@ -31,13 +32,20 @@ function prijsgroep(db, { filament_type_id, artikel_id }) {
   return null;
 }
 
-export function verrijk(db, regels) {
+// filamentInkoop (04-10, familie & vrienden): het filament aan de INKOOPprijs
+// per kg (gemiddelde van de rollen in voorraad, anders de laatste aankoop —
+// dezelfde prijs als de productiekost) i.p.v. de verkoopprijs van de prijsgroep.
+export function verrijk(db, regels, { filamentInkoop = false } = {}) {
   const q = sql(db);
   return (Array.isArray(regels) ? regels : []).map(r => {
     if (r?.type === 'printen') {
       const printer = r.printer_id ? q.printer.get(r.printer_id) ?? null : null;
       const materialen = (Array.isArray(r.materialen) ? r.materialen : []).map(m => {
         const pg = prijsgroep(db, m);
+        if (filamentInkoop) {
+          const kg = pg ? kostPerKg(db, m) : null;
+          return { ...m, naam: pg?.naam ?? m.naam ?? null, prijs_per_kg: kg == null ? null : Math.round(kg * 100) / 100, prijs_bron: 'inkoop' };
+        }
         return { ...m, naam: pg?.naam ?? m.naam ?? null, prijs_per_kg: pg ? pg.verkoopprijs_per_kg : null };
       });
       return { ...r, printer, materialen };
@@ -52,6 +60,6 @@ export function verrijk(db, regels) {
 }
 
 // opties.tarieven: al opgehaald (de dossierlijst haalt ze één keer op)
-export function berekenMetDb(db, regels, { tarieven = null, ...opties } = {}) {
-  return bereken(verrijk(db, regels), tarieven || getTarieven(db), opties);
+export function berekenMetDb(db, regels, { tarieven = null, filamentInkoop = false, ...opties } = {}) {
+  return bereken(verrijk(db, regels, { filamentInkoop }), tarieven || getTarieven(db), opties);
 }
