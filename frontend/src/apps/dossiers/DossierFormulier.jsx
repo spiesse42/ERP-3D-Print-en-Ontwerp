@@ -196,6 +196,7 @@ export default function DossierFormulier() {
     const run = r?.productie?.te_koppelen_runs?.[0];
     return run ? `${startTekst} Op ${run.printer} staat een run die nog niet gekoppeld is: koppel hem hieronder (Volgende stap).` : startTekst;
   });
+  const annuleren = () => actie('annuleren', 'Dossier geannuleerd.', { vraag: { titel: 'Dossier annuleren', tekst: `${d.nummer} annuleren? Het hele dossier stopt: er wordt niets afgerekend of geleverd, en open printopdrachten worden mee geannuleerd. Krijgt de klant het wel, maar zonder te betalen? Gebruik dan "Gratis geleverd". Heropenen kan later nog.`, bevestigLabel: 'Dossier annuleren', annuleerLabel: 'Terug' } });
   const workflow = nieuw ? null : <>
     {acties.starten && <button type="button" className="btn" disabled={vuil} title={vuil ? 'Sla eerst je wijzigingen op.' : startUitleg} onClick={starten}><Icoon naam="start" maat={14} /> Starten</button>}
     {afrekenKnop}
@@ -206,7 +207,7 @@ export default function DossierFormulier() {
     {d.soort === 'klant' && d.regels.length > 0 && fase !== 'geannuleerd' && <button type="button" className="btn" onClick={() => open('overname')}>Overnamefiche</button>}
     {acties.betaling_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('betaling-ongedaan', 'Betaling ongedaan gemaakt.', { vraag: { titel: 'Betaling ongedaan maken', tekst: 'Het dossier gaat terug naar afgerekend.', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Betaling ongedaan</button>}
     {acties.afrekening_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('afrekening-ongedaan', 'Afrekening ongedaan gemaakt.', { vraag: { titel: 'Afrekening ongedaan maken', tekst: `De verwijzing naar ${String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`} wordt gewist en het dossier kan weer gewijzigd worden. Pas dit ook aan in Accountable (bv. een creditnota).`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug', gevaarlijk: true } })}>Afrekening ongedaan</button>}
-    {acties.annuleren && <button type="button" className="btn ghost" title="Het hele dossier stopt: niets af te rekenen of te leveren" onClick={() => actie('annuleren', 'Dossier geannuleerd.', { vraag: { titel: 'Dossier annuleren', tekst: `${d.nummer} annuleren? Het hele dossier stopt: er wordt niets afgerekend of geleverd, en open printopdrachten worden mee geannuleerd. Krijgt de klant het wel, maar zonder te betalen? Gebruik dan "Gratis geleverd". Heropenen kan later nog.`, bevestigLabel: 'Dossier annuleren', annuleerLabel: 'Terug' } })}>Dossier annuleren</button>}
+    {acties.annuleren && <button type="button" className="btn ghost" title="Het hele dossier stopt: niets af te rekenen of te leveren" onClick={annuleren}>Dossier annuleren</button>}
     {acties.heropenen && <button type="button" className="btn" onClick={() => actie('heropenen', 'Dossier heropend.')}>Heropenen</button>}
     {acties.samenvoegen && <button type="button" className="btn ghost" title="Andere open dossiers van deze klant hierin samenvoegen (regels, printopdrachten, runs, leveringen, bijlagen)" onClick={() => open('samenvoegen')}>Samenvoegen…</button>}
   </>;
@@ -230,7 +231,7 @@ export default function DossierFormulier() {
           )}
           {!nieuw && <VolgendeStap d={d} vuil={vuil} afrekenReden={afrekenReden} onStarten={starten} onAfrekenen={() => open('afrekenen')}
             onBonnetje={() => open('bonnetje')} onFactuur={() => open('factuur')} onBonnetjeMailen={() => open('bonnetje-mail')}
-            onBetaald={() => open('betaald')} onGratis={() => open('gratis')} onHeropenen={() => actie('heropenen', 'Dossier heropend.')}
+            onBetaald={() => open('betaald')} onGratis={() => open('gratis')} onHeropenen={() => actie('heropenen', 'Dossier heropend.')} onAnnuleren={annuleren}
             naarTab={t => { setTab(t); document.querySelector('.tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
             herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} />}
           <div className="sheet-head">

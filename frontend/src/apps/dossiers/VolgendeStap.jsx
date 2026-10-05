@@ -7,7 +7,7 @@ import { BevestigDialoog } from '../productie/opdracht.jsx';
 // "Volgende stap" bovenaan een dossier (25-09): één zin met wat er nu moet
 // gebeuren en de knop erbij. De zin komt uit de backend (volgende_stap);
 // hier enkel de knop per soort. Plus de uitleg "Hoe werkt een dossier?".
-export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBonnetje, onFactuur, onBonnetjeMailen, onBetaald, onGratis, onHeropenen, naarTab, herlaad }) {
+export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBonnetje, onFactuur, onBonnetjeMailen, onBetaald, onGratis, onHeropenen, onAnnuleren, naarTab, herlaad }) {
   const { melding, navigeer } = useOmgeving();
   const [bevestig, setBevestig] = useState(null);
   const [uitleg, setUitleg] = useState(false);
@@ -30,6 +30,7 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
   const KNOP = {
     regels: () => naar('Naar de regels', 'regels', false),
     offerte_wacht: () => naar('Naar de offerte', 'offertes'),
+    offerte_geweigerd: () => <>{knop('Dossier annuleren', onAnnuleren)}{naar('Naar de offerte', 'offertes', false)}</>,
     starten: () => knop(<><Icoon naam="start" maat={14} /> Starten</>, onStarten),
     koppelen: () => (s.run.voorstel ? knop(`Koppelen aan "${s.run.voorstel.naam}"`, koppel) : naar('Naar Productie', 'productie')),
     bevestigen: () => knop('Bevestigen', () => setBevestig(opdracht(s.opdracht_id))),
