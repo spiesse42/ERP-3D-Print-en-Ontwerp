@@ -303,6 +303,11 @@ export function volgendeStap(d) {
   if (klant && offerte && !offerte.aanvaard_op && !offerte.geweigerd_op && !d.gestart_op && !d.productie?.aantal_opdrachten) {
     return { soort: 'offerte_wacht', tekst: `Offerte ${offerte.weergave} is verstuurd. Wacht op het antwoord van de klant: zet ze op aanvaard (start dan vanzelf) of geweigerd.`, extra: [] };
   }
+  // 05-10: laatste offerte geweigerd en nog niets gestart → afsluiten of nieuwe versie
+  if (klant && offerte?.geweigerd_op && !d.gestart_op && !d.productie?.aantal_opdrachten && d.acties?.annuleren) {
+    return { soort: 'offerte_geweigerd', tekst: `Offerte ${offerte.weergave} is geweigerd. Gaat de opdracht niet door? Annuleer het dossier (heropenen kan later nog).`,
+      extra: ['Wil de klant toch, aan een andere prijs? Maak een nieuwe versie van de offerte (tab Offertes). Gaat het toch door aan deze prijs? "Antwoord ongedaan" bij de offerte.'] };
+  }
   if (d.acties?.starten) {
     const print = d.regels.some(r => r.type === 'printen');
     return { soort: 'starten', tekst: klant
