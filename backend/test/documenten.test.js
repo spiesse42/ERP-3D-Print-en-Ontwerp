@@ -100,6 +100,8 @@ test('F3. geweigerd / verlopen / antwoord ongedaan', async () => {
   d = (await vraag('POST', `/offertes/${o.id}/geweigerd`)).data;
   assert.equal(d.offertes[0].status, 'geweigerd');
   assert.equal(d.fase, 'nieuw', 'geweigerd → terug naar nieuw');
+  assert.equal(d.volgende_stap.soort, 'offerte_geweigerd', 'geweigerd → voorstel: annuleren of nieuwe versie');
+  assert.match(d.volgende_stap.tekst, /geweigerd.*Annuleer/);
   d = (await vraag('POST', `/offertes/${o.id}/antwoord-ongedaan`)).data;
   assert.equal(d.fase, 'offerte');
   getDb().prepare(`UPDATE offertes SET geldig_tot = '2020-01-01' WHERE id = ?`).run(o.id);
