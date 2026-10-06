@@ -24,5 +24,6 @@ Bijgehouden tijdens de ontwikkeling. Wat hier staat is (nog) niet gebouwd.
 
 - Onderdelen ook afboeken bij een klantdossier dat een product via "Uit product" print
   (nu enkel bij een verkoop uit voorraad).
-- Kleur per bestelling: bij de webshopkoppeling de gevraagde kleur (opmerking) meenemen
-  naar de printopdracht.
+- Kleur per bestelling: de webshop bewaart de gekozen kleur sinds 06-10 in
+  `orders.items[].color` (webshop-PR "Kleurenpalet + kleurkeuze"); bij de koppeling
+  meenemen naar de printopdracht (kleurenpalet in Sanity heeft per kleur ook het filament).
