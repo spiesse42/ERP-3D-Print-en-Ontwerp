@@ -9,7 +9,7 @@ import Historiek from '../../schil/Historiek.jsx';
 import Bijlagen from '../../schil/Bijlagen.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import KeuzeMetToevoegen from '../../components/KeuzeMetToevoegen.jsx';
-import RegelEditor, { Totalen, TYPES, nieuweRegel, naarApi, vanApi, useBerekening } from '../../components/RegelEditor.jsx';
+import RegelEditor, { Totalen, TYPES, nieuweRegel, naarApi, vanApi, useBerekening, regelUitProduct } from '../../components/RegelEditor.jsx';
 import { euro, datum } from '../../lib/formaat.js';
 import { klantNaam } from '../klanten/klant.js';
 import { FASE, SOORT, FaseBadge, VOOR_AFREKENING } from './dossier.jsx';
@@ -41,6 +41,7 @@ export default function DossierFormulier() {
   const { data: printersAlle } = useData('/printers');
   const { data: artikelenAlle, herlaad: herlaadArtikelen } = useData('/voorraad/artikelen?archief=alle');
   const { data: prijsgroepen } = useData('/filament/types');
+  const { data: producten } = useData('/productie/printprofielen');
   const { data: tarievenLijst } = useData('/tarieven');
   const { data: instellingen } = useData('/instellingen');
   const bedrijfNaam = (instellingen || []).find(i => i.sleutel === 'bedrijf_naam')?.waarde || '';
@@ -298,11 +299,18 @@ export default function DossierFormulier() {
                   filamenten={artikelenZicht.filter(a => a.type === 'filament')} prijsgroepen={prijsgroepen}
                   artikelen={artikelenZicht.filter(a => a.type !== 'filament' && a.wordt_verkocht)}
                   herkomst="dossier" onArtikelGemaakt={herlaadArtikelen}
-                  eindproducten={form.kop.soort === 'eigen' ? artikelenZicht.filter(a => a.type === 'artikel' && a.zelf_geprint) : null} />
+                  eindproducten={form.kop.soort === 'eigen' ? artikelenZicht.filter(a => a.type === 'artikel' && a.zelf_geprint) : null} producten={producten} />
                 {!kopVast && (
                   <div className="toevoegen">
                     {TYPES.map(([w, l]) => <button key={w} type="button" className="btn" onClick={() => setForm(f => ({ ...f, regels: [...f.regels, nieuweRegel(w)] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}
                     <button type="button" className="btn" title="Printregels uit een geslicet 3mf-bestand van Bambu Studio" onClick={() => { setSlicerBoven(false); setDialoog('slicer'); }}><Icoon naam="plus" maat={14} /> Uit slicerbestand</button>
+                    {producten?.length > 0 && <select className="inp" style={{ width: 'auto' }} aria-label="Printregel uit een product (printprofiel)" value="" onChange={e => {
+                      const a = producten.find(x => String(x.id) === e.target.value);
+                      if (a) setForm(f => ({ ...f, regels: [...f.regels, regelUitProduct(a, f.kop.soort === 'eigen' ? artikelenZicht.filter(x => x.type === 'artikel' && x.zelf_geprint) : null)] }));
+                    }}>
+                      <option value="">+ Uit product…</option>
+                      {producten.map(a => <option key={a.id} value={a.id}>{a.naam}</option>)}
+                    </select>}
                   </div>
                 )}
                 <Totalen uitkomst={form.regels.length ? uitkomst : null} />

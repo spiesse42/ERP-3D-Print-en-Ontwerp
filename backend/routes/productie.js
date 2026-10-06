@@ -14,6 +14,7 @@ import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wi
   voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer, herbereken, leesMaterialen, zetMaterialen } from '../productie/opdrachten.js';
 import { productiekost } from '../productie/kost.js';
 import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct } from '../productie/materiaal.js';
+import { artikelMetProfiel, bewaarProfiel, leesProfielen } from '../productie/printprofiel.js';
 
 const r = Router();
 function metFouten(fn) {
@@ -374,6 +375,13 @@ r.post('/rol-leeg/:mutatie/ongedaan', metFouten((req, res) => {
   res.json({ ok: true });
 }));
 // Te bestellen → Printopdracht maken (dossier "Eigen product" + opdracht)
+// Printprofielen van vaste producten (06-10)
+r.get('/printprofielen', metFouten((req, res) => res.json(leesProfielen(getDb()))));
+r.get('/printprofiel/:artikel', metFouten((req, res) => res.json({ profiel: artikelMetProfiel(getDb(), req.params.artikel).profiel })));
+r.put('/printprofiel/:artikel', metFouten((req, res) => {
+  const db = getDb();
+  res.json({ profiel: db.transaction(() => bewaarProfiel(db, req.params.artikel, req.body?.profiel ?? null))() });
+}));
 r.post('/eigen-product', metFouten((req, res) => {
   const db = getDb();
   res.status(201).json(db.transaction(() => maakEigenProduct(db, req.body || {}))());
