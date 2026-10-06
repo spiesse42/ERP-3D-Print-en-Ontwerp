@@ -13,6 +13,7 @@ const Instellingen = lazy(() => import('./apps/instellingen/Instellingen.jsx'));
 const ArtikelenLijst = lazy(() => import('./apps/voorraad/ArtikelenLijst.jsx'));
 const ArtikelFormulier = lazy(() => import('./apps/voorraad/ArtikelFormulier.jsx'));
 const TeBestellen = lazy(() => import('./apps/voorraad/TeBestellen.jsx'));
+const Producten = lazy(() => import('./apps/voorraad/Producten.jsx'));
 const Mutaties = lazy(() => import('./apps/voorraad/Mutaties.jsx'));
 const Voorraadtelling = lazy(() => import('./apps/voorraad/Voorraadtelling.jsx'));
 const Categorieen = lazy(() => import('./apps/voorraad/Categorieen.jsx'));
@@ -57,6 +58,7 @@ export default function App() {
             <Route path="voorraad/artikelen" element={<ArtikelenLijst />} />
             <Route path="voorraad/artikelen/:id" element={<ArtikelFormulier />} />
             <Route path="voorraad/te-bestellen" element={<TeBestellen />} />
+            <Route path="voorraad/producten" element={<Producten />} />
             <Route path="voorraad/mutaties" element={<Mutaties />} />
             <Route path="voorraad/telling" element={<Voorraadtelling />} />
             <Route path="voorraad/categorieen" element={<Categorieen />} />

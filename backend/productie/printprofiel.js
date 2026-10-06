@@ -8,6 +8,8 @@
 // artikelen.printprofiel; de ids worden bij het bewaren gecontroleerd.
 import { DomeinFout } from '../domein/hulp.js';
 import { getal } from '../domein/rekenmotor.js';
+import { getTarieven } from '../domein/hulp.js';
+import { kostPerKg } from './kost.js';
 
 function nietNeg(v, wat) {
   if (v === null || v === undefined || v === '') return null;
@@ -81,4 +83,41 @@ export function leesProfielen(db) {
     WHERE type = 'artikel' AND zelf_geprint = 1 AND gearchiveerd = 0 AND printprofiel IS NOT NULL ORDER BY naam COLLATE NOCASE`).all()
     .map(({ printprofiel, ...a }) => { try { return { ...a, profiel: JSON.parse(printprofiel) }; } catch { return null; } })
     .filter(Boolean);
+}
+
+// ── kost per stuk VOORAF geschat uit het profiel (06-10) ─────────────────
+// Zelfde opbouw als de gemeten productiekost (productie/kost.js), maar met
+// de printtijd van het profiel i.p.v. gemeten runs: filament aan inkoopprijs,
+// elektriciteit (watt × tijd), machinetarief, BMCU per plaat. Arbeid apart:
+// voorbereiding per plaat + nabewerking per stuk. Plus de onderdelen.
+export function schatKost(db, profiel, onderdelen = []) {
+  const t = getTarieven(db);
+  const ontbreekt = [];
+  const pp = profiel?.per_plaat > 0 ? profiel.per_plaat : 1;
+  let filament = 0, energie = 0, machine = 0, bmcu = 0, arbeid = 0;
+  if (profiel) {
+    for (const m of profiel.materialen || []) {
+      if (!m.gram) continue;
+      const kg = kostPerKg(db, m);
+      if (kg == null) ontbreekt.push('inkoopprijs filament'); else filament += m.gram / 1000 * kg;
+    }
+    const uren = (profiel.tijd_min || 0) / 60;
+    const p = profiel.printer_id ? db.prepare('SELECT naam, machine_per_uur, verbruik_watt FROM printers WHERE id = ?').get(profiel.printer_id) : null;
+    if (!p) ontbreekt.push('printer in het printprofiel');
+    else {
+      if (p.verbruik_watt == null || t.kwh_prijs == null) ontbreekt.push('verbruik (watt) of kWh-prijs'); else energie = p.verbruik_watt / 1000 * uren * t.kwh_prijs;
+      if (p.machine_per_uur == null) ontbreekt.push(`machinetarief ${p.naam}`); else machine = uren * p.machine_per_uur;
+    }
+    bmcu = (t.bmcu_per_job ?? 0) / pp;
+    const voorb = profiel.voorbereiding_min ?? t.voorbereiding_min ?? 0;
+    const nabew = profiel.nabewerking_min ?? 0;
+    arbeid = (voorb / pp + nabew) / 60 * (t.arbeid_per_uur ?? 0);
+  } else ontbreekt.push('printprofiel');
+  let delen = 0;
+  for (const o of onderdelen) {
+    if (o.prijs == null) ontbreekt.push(`prijs ${o.naam}`); else delen += o.aantal * o.prijs;
+  }
+  const rond = v => Math.round(v * 10000) / 10000;
+  return { filament: rond(filament), energie: rond(energie), machine: rond(machine), bmcu: rond(bmcu), onderdelen: rond(delen),
+    kost: rond(filament + energie + machine + bmcu + delen), arbeid: rond(arbeid), onvolledig: ontbreekt.length > 0, ontbreekt: [...new Set(ontbreekt)] };
 }

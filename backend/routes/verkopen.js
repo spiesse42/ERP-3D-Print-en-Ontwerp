@@ -98,7 +98,7 @@ r.post('/', metFouten(async (req, res) => {
     console.error('[verkopen]', e);
     logGebeurtenis(db, 'verkoop', id, 'status', v.soort === 'factuur' ? `Mailen mislukt: ${e.message}. De factuur is NOG NIET naar Accountable gestuurd.` : `Mailen naar de klant mislukt: ${e.message}.`);
   }
-  res.status(201).json({ ...verkoop(db, id), mail_fout });
+  res.status(201).json({ ...verkoop(db, id), mail_fout, tekort_onderdelen: v.tekort_onderdelen || [] });
 }));
 
 r.get('/:id', metFouten((req, res) => res.json(verkoop(getDb(), req.params.id))));
