@@ -20,6 +20,7 @@
 import { DomeinFout, rond, getBedrijfsgegevens, VIA_VERKOOP } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
 import { boekUit } from './voorraad.js';
+import { boekOnderdelenUit } from './onderdelen.js';
 import { volgendNummer, overzicht as nummerOverzicht } from './nummering.js';
 import { leesDossier, berekenDossier } from './dossiers.js';
 import { betaaltermijn, plusDagen } from './documenten.js';
@@ -229,11 +230,14 @@ export function maakVerkoop(db, v) {
     .run(nummer, v.datum, v.klant_id, v.omschrijving, v.totaal, soort, v.vervaldatum || null, factuur ? null : v.datum).lastInsertRowid);
   const ins = db.prepare(`INSERT INTO verkoop_regels (verkoop_id, volgorde, soort, artikel_id, dossier_id, printopdracht_id, omschrijving, aantal, prijs_per_stuk, bedrag, berekend)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+  const tekort = [];
   v.regels.forEach((r, k) => {
     const rid = Number(ins.run(id, k, r.soort, r.artikel_id, r.dossier_id, r.printopdracht_id, r.omschrijving, r.aantal, r.prijs_per_stuk, r.bedrag, r.berekend).lastInsertRowid);
     if (r.soort === 'artikel' && r.type !== 'dienst') {
       boekUit(db, { artikelId: r.artikel_id, aantal: r.aantal, reden: 'levering', bronType: 'verkoop_regel', bronId: rid, notitie: `Verkoop ${nummer}` });
     }
+    // 06-10: onderdelen per stuk (sleutelring, zakje…) gaan mee
+    if (r.soort === 'artikel') tekort.push(...boekOnderdelenUit(db, { artikelId: r.artikel_id, aantal: r.aantal, regelId: rid, notitie: `Verkoop ${nummer} (onderdeel)` }));
     if (r.soort === 'dossier') {
       rekenAf(db, leesDossier(db, r.dossier_id), {
         waarom: `bij de verkoop ${nummer}`,
@@ -244,7 +248,9 @@ export function maakVerkoop(db, v) {
   });
   logGebeurtenis(db, 'verkoop', id, 'aangemaakt', `${nummer} gemaakt (${euro(v.totaal)}): verkocht${factuur ? `, vervalt op ${v.vervaldatum.split('-').reverse().join('-')}` : ' en meteen betaald'}`
     + `${v.regels.some(r => r.soort === 'artikel' && r.type !== 'dienst') ? '; voorraad uitgeboekt' : ''}`
-    + `${v.regels.some(r => r.soort === 'dossier') ? `; dossier${v.regels.filter(r => r.soort === 'dossier').length > 1 ? 's' : ''} afgerekend` : ''}`);
+    + `${v.regels.some(r => r.soort === 'dossier') ? `; dossier${v.regels.filter(r => r.soort === 'dossier').length > 1 ? 's' : ''} afgerekend` : ''}`
+    + `${tekort.length ? `. Let op, onderdelen tekort: ${tekort.join(', ')}` : ''}`);
+  v.tekort_onderdelen = tekort;
   return id;
 }
 
