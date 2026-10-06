@@ -14,32 +14,39 @@ import { eenheid } from './artikel.js';
 // regels omzetten naar conceptaankopen: één per voorkeursleverancier.
 // Zelf printen → printopdracht (stap 6c): maakt een dossier "Eigen product"
 // met een printregel (de vorige keer als sjabloon) en plant de opdracht.
-function PrintopdrachtDialoog({ a, onSluit }) {
+export function PrintopdrachtDialoog({ a, onSluit }) {
   const { navigeer, melding } = useOmgeving();
   const { data: printers } = useData('/printers');
+  // 06-10: met een printprofiel → printer van het profiel, opdrachten per plaat
+  const { data: pp } = useData(`/productie/printprofiel/${a.id}`);
+  const profiel = pp?.profiel;
   const [f, setF] = useState({ aantal: naarInvoer(a.voorstel), printer_id: '' });
+  const printerId = f.printer_id || (profiel?.printer_id ? String(profiel.printer_id) : '');
   const [bezig, setBezig] = useState(false);
   async function ok() {
     setBezig(true);
     try {
-      const u = await api.post('/productie/eigen-product', { artikel_id: a.id, aantal: f.aantal, printer_id: Number(f.printer_id) });
-      melding(u.sjabloon ? `Dossier ${u.nummer} en printopdracht gemaakt (printregel van de vorige keer).` : `Dossier ${u.nummer} en printopdracht gemaakt. Vul printtijd en filament nog aan.`);
-      navigeer(`/dossiers/${u.dossier_id}?tab=${u.sjabloon ? 'productie' : 'regels'}`);
+      const u = await api.post('/productie/eigen-product', { artikel_id: a.id, aantal: f.aantal, printer_id: Number(printerId) });
+      melding(u.profiel ? `Dossier ${u.nummer} gemaakt volgens het printprofiel: ${u.opdrachten} printopdracht${u.opdrachten === 1 ? '' : 'en'}.`
+        : u.sjabloon ? `Dossier ${u.nummer} en printopdracht gemaakt (printregel van de vorige keer).` : `Dossier ${u.nummer} en printopdracht gemaakt. Vul printtijd en filament nog aan.`);
+      navigeer(`/dossiers/${u.dossier_id}?tab=${u.profiel || u.sjabloon ? 'productie' : 'regels'}`);
     } catch (e) { melding(e.message, 'fout'); setBezig(false); }
   }
   return (
     <Dialoog titel={`Printopdracht · ${a.weergave}`} onSluit={onSluit}
-      voet={<><button type="button" className="btn" onClick={onSluit}>Annuleren</button><button type="button" className="btn primary" disabled={bezig || !f.printer_id} onClick={ok}>Plannen</button></>}>
+      voet={<><button type="button" className="btn" onClick={onSluit}>Annuleren</button><button type="button" className="btn primary" disabled={bezig || !printerId} onClick={ok}>Plannen</button></>}>
       <div className="fgrid">
         <div><label htmlFor="tp-aantal">Aantal stuks</label><input id="tp-aantal" className="inp num" inputMode="decimal" value={f.aantal} onChange={e => setF(x => ({ ...x, aantal: e.target.value }))} /></div>
         <div><label htmlFor="tp-printer">Printer</label>
-          <select id="tp-printer" className="inp" value={f.printer_id} onChange={e => setF(x => ({ ...x, printer_id: e.target.value }))}>
+          <select id="tp-printer" className="inp" value={printerId} onChange={e => setF(x => ({ ...x, printer_id: e.target.value }))}>
             <option value="">— kies —</option>
             {(printers || []).filter(p => p.actief).map(p => <option key={p.id} value={p.id}>{p.naam}</option>)}
           </select></div>
       </div>
       <p className="sub"><Link naar={`/voorraad/artikelen/${a.id}`}>Artikel openen</Link> · voorraad {aantal(a.voorraad)}{a.in_productie ? ` · ${aantal(a.in_productie)} in productie` : ''}</p>
-      <p className="note" style={{ marginBottom: 0 }}>Er komt een dossier "Eigen product" met een printregel voor dit artikel; printtijd en filament worden overgenomen van de vorige keer (herschaald naar het aantal). Bij het bevestigen gaan de goede stuks in voorraad.</p>
+      <p className="note" style={{ marginBottom: 0 }}>Er komt een dossier "Eigen product" met een printregel voor dit artikel; {profiel
+        ? <>printtijd en filament komen uit het <b>printprofiel</b> (× het aantal){profiel.per_plaat ? `, één printopdracht per plaat van ${profiel.per_plaat} stuks` : ''}.</>
+        : 'printtijd en filament worden overgenomen van de vorige keer (herschaald naar het aantal). Tip: geef het artikel een printprofiel.'} Bij het bevestigen gaan de goede stuks in voorraad.</p>
     </Dialoog>
   );
 }

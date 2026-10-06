@@ -10,7 +10,8 @@
 // - materiaal = gram ÷ 1000 × VERKOOPPRIJS/kg × faalfactor, ZONDER marge;
 //   multicolor = één materiaalregel per kleur
 // - machinekost = tarief van de gekozen printer, GEEN terugval
-// - BMCU/AMS-slijtage bij ELKE print (1× per printregel)
+// - BMCU/AMS-slijtage bij ELKE print (1× per printregel; 06-10: met "stuks
+//   per plaat" 1× per plaat, net als de standaard-voorbereiding)
 // - tijd en gewicht zijn die van de HELE print (bv. een plaat met 10
 //   sleutelhangers): energie, machine en BMCU worden NIET × aantal gerekend;
 //   het aantal dient enkel voor de prijs per stuk
@@ -77,16 +78,19 @@ function berekenRegel(regel, t, stand) {
     const materiaal = materialen.reduce((s, m) => s + m.kost, 0);
     const energie = kwh !== null ? kwh * t.kwh_prijs : (p.verbruik_watt / 1000) * uren * t.kwh_prijs;
     const machine = uren * p.machine_per_uur;
-    const voorb = of(regel.voorbereiding_min, t.voorbereiding_min);
+    // 06-10: stuks per plaat → aantal platen (elke plaat = een print)
+    const pp = getal(regel.per_plaat);
+    const platen = pp > 0 ? Math.max(1, Math.ceil(of(regel.aantal, 1) / pp - 1e-9)) : 1;
+    const voorb = of(regel.voorbereiding_min, t.voorbereiding_min * platen);
     const nabew = of(regel.nabewerking_min, t.nabewerking_min);
     const arbeid = (voorb + nabew) / 60 * t.arbeid_per_uur;
-    const bmcu = t.bmcu_per_job;
+    const bmcu = t.bmcu_per_job * platen;
     return {
       met_marge: energie + machine + arbeid + bmcu,
       zonder_marge: materiaal,
       vaste_prijs: false,
       tijd_u: uren,
-      detail: { materialen, materiaal, energie, energie_bron: kwh !== null ? 'gemeten' : 'geschat', machine, arbeid, voorbereiding_min: voorb, nabewerking_min: nabew, bmcu, uren },
+      detail: { materialen, materiaal, energie, energie_bron: kwh !== null ? 'gemeten' : 'geschat', machine, arbeid, voorbereiding_min: voorb, nabewerking_min: nabew, bmcu, uren, platen },
     };
   }
 

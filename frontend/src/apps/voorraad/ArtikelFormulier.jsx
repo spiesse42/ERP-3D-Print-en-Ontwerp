@@ -12,6 +12,8 @@ import { euro, aantal, datum, naarInvoer } from '../../lib/formaat.js';
 import { naarFormulier, naarBody, voorstelVerkoopprijs, LEGE_REGEL, TYPE_LABEL, eenheid } from './artikel.js';
 import { StatusBadge, Kleurstaal } from './ArtikelenLijst.jsx';
 import BoekingDialoog from './BoekingDialoog.jsx';
+import Printprofiel from './Printprofiel.jsx';
+import { PrintopdrachtDialoog } from './TeBestellen.jsx';
 
 // Invoervelden op moduleniveau (niet genest), anders verliezen ze de focus.
 function Invoer({ id, waarde, onWijzig, ...rest }) {
@@ -104,6 +106,7 @@ export default function ArtikelFormulier() {
   const [bezig, setBezig] = useState(false);
   const [versie, setVersie] = useState(0);
   const [boeking, setBoeking] = useState(null);   // 'in' | 'uit' | 'corrigeer'
+  const [bijprinten, setBijprinten] = useState(false);
 
   const origineel = useMemo(() => naarFormulier(nieuw ? null : art, startType), [art, nieuw, startType]);
   useEffect(() => { setForm(origineel); }, [origineel]);
@@ -116,6 +119,7 @@ export default function ArtikelFormulier() {
   // Tabblad dat bij dit type niet (meer) bestaat → eerste geldige tonen.
   const tabs = [
     ...(heeftVoorraad && !nieuw ? [['voorraad', 'Voorraad']] : []),
+    ...(t === 'artikel' && form.zelf_geprint && origineel.zelf_geprint && !nieuw ? [['printprofiel', 'Printprofiel']] : []),
     ...(form.wordt_gekocht ? [['inkoop', `Inkoop${form.leveranciers.length ? ` (${form.leveranciers.length})` : ''}`]] : []),
     ['notities', 'Notities'],
   ];
@@ -334,6 +338,7 @@ export default function ArtikelFormulier() {
                   <button type="button" className="btn" onClick={() => startBoeking('in')}><Icoon naam="plus" maat={16} /> {form.zelf_geprint && !form.wordt_gekocht ? 'Geproduceerd' : 'Ontvangen'}</button>
                   <button type="button" className="btn" disabled={!art.voorraad} onClick={() => startBoeking('uit')}>{t === 'filament' ? 'Rol eraf / leeg' : 'Eraf boeken'}</button>
                   <button type="button" className="btn ghost" onClick={() => startBoeking('corrigeer')}>Aantal aanpassen</button>
+                  {t === 'artikel' && origineel.zelf_geprint && <button type="button" className="btn" onClick={() => setBijprinten(true)}>Bijprinten…</button>}
                 </div>
                 {!partijen ? <Laden /> : partijen.length === 0 ? <p className="note">Nog geen partijen. Voorraad komt binnen via een aankoop (stap 3b) of met de knop hierboven.</p> : (
                   <div className="tabelvak">
@@ -358,6 +363,7 @@ export default function ArtikelFormulier() {
                 )}
               </>
             )}
+            {actieveTab === 'printprofiel' && <Printprofiel id={id} onBijprinten={() => setBijprinten(true)} />}
             {actieveTab === 'inkoop' && (
               <>
                 <p className="note" style={{ marginTop: 0 }}>Wat elke leverancier over dit artikel weet. De productcode (of omschrijving) van de leverancier gebruikt de factuurherkenning om een regel automatisch aan dit artikel te koppelen. De voorkeursleverancier verschijnt bij "te bestellen".</p>
@@ -396,6 +402,7 @@ export default function ArtikelFormulier() {
         </div>
         {!nieuw && <Historiek entiteit="artikel" id={id} versie={versie} />}
       </div>
+      {bijprinten && <PrintopdrachtDialoog a={{ id: Number(id), weergave: art.weergave, voorraad: art.voorraad, in_productie: art.in_productie, voorstel: Math.max(1, (art.min_eff ?? 0) - (art.voorraad ?? 0) - (art.in_productie ?? 0)) }} onSluit={() => setBijprinten(false)} />}
       {boeking && <BoekingDialoog richting={boeking} artikel={art} onSluit={() => setBoeking(null)} onKlaar={naBoeking} />}
     </>
   );
