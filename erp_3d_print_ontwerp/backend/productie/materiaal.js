@@ -14,6 +14,8 @@ import { weergaveNaam } from '../domein/artikelen.js';
 import { volgendNummer } from '../domein/nummering.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { maakOpdracht } from './opdrachten.js';
+import { artikelMetProfiel, regelUitProfiel } from './printprofiel.js';
+import { start } from '../domein/uitvoering.js';
 
 const FILAMENT = `SELECT a.id, a.type, a.filament_type_id, m.naam AS merk, mat.naam AS materiaal, k.naam AS kleur,
     (SELECT COALESCE(SUM(aantal_resterend), 0) FROM voorraad_partijen p WHERE p.artikel_id = a.id) AS voorraad
@@ -85,27 +87,46 @@ export function rolLeegOngedaan(db, mutatieId) {
 // Sjabloon = de laatste printregel met dit eindproduct (printer, tijd,
 // filament, voorbereiding), herschaald naar het gevraagde aantal. Zonder
 // sjabloon: een lege printregel die je in het dossier aanvult.
+// 06-10: met een printprofiel (tijd en gram per stuk, stuks per plaat) komt
+// de printregel uit het profiel en wordt het dossier meteen gestart: één
+// printopdracht per plaat. Zonder profiel: de printregel van de vorige keer.
 export function maakEigenProduct(db, { artikel_id, aantal, printer_id }) {
   const a = db.prepare(`SELECT id, naam FROM artikelen WHERE id = ? AND type = 'artikel' AND zelf_geprint = 1`).get(Number(artikel_id));
   if (!a) throw new DomeinFout('Enkel een artikel dat we zelf printen');
   const n = typeof aantal === 'number' ? aantal : parseFloat(String(aantal ?? '').replace(',', '.'));
   if (!Number.isFinite(n) || n <= 0) throw new DomeinFout('Aantal stuks moet groter dan 0 zijn');
-  const printer = db.prepare('SELECT id, naam FROM printers WHERE id = ? AND actief = 1').get(Number(printer_id));
+  const profiel = artikelMetProfiel(db, a.id).profiel;
+  const printer = db.prepare('SELECT id, naam FROM printers WHERE id = ? AND actief = 1').get(Number(printer_id || profiel?.printer_id));
   if (!printer) throw new DomeinFout('Kies een (actieve) printer');
-  const sjabloon = db.prepare(`SELECT r.* FROM dossier_regels r JOIN dossiers d ON d.id = r.dossier_id
+  const sjabloon = profiel ? null : db.prepare(`SELECT r.* FROM dossier_regels r JOIN dossiers d ON d.id = r.dossier_id
     WHERE r.type = 'printen' AND r.artikel_id = ? AND d.soort = 'eigen' ORDER BY r.id DESC LIMIT 1`).get(a.id);
   const factor = sjabloon ? n / (Number(sjabloon.aantal) || 1) : 1;
   const nummer = volgendNummer(db, 'D');
   const dossierId = Number(db.prepare('INSERT INTO dossiers (nummer, soort, titel) VALUES (?,?,?)').run(nummer, 'eigen', `Voorraad: ${a.naam}`).lastInsertRowid);
-  const regelId = Number(db.prepare(`INSERT INTO dossier_regels (dossier_id, volgorde, type, omschrijving, aantal, printer_id, tijd_min, voorbereiding_min, nabewerking_min, artikel_id)
-    VALUES (?, 0, 'printen', ?, ?, ?, ?, ?, ?, ?)`).run(dossierId, a.naam, n, printer.id,
-    sjabloon ? Math.round((sjabloon.tijd_min || 0) * factor * 100) / 100 : 0, sjabloon?.voorbereiding_min ?? null, sjabloon?.nabewerking_min ?? null, a.id).lastInsertRowid);
-  if (sjabloon) {
-    const ins = db.prepare('INSERT INTO dossier_regel_materialen (regel_id, volgorde, artikel_id, filament_type_id, gram) VALUES (?,?,?,?,?)');
-    db.prepare('SELECT * FROM dossier_regel_materialen WHERE regel_id = ? ORDER BY volgorde').all(sjabloon.id)
-      .forEach((m, i) => ins.run(regelId, i, m.artikel_id, m.filament_type_id, Math.round(m.gram * factor * 100) / 100));
+  const ins = db.prepare('INSERT INTO dossier_regel_materialen (regel_id, volgorde, artikel_id, filament_type_id, gram) VALUES (?,?,?,?,?)');
+  const insRegel = db.prepare(`INSERT INTO dossier_regels (dossier_id, volgorde, type, omschrijving, aantal, printer_id, tijd_min, voorbereiding_min, nabewerking_min, artikel_id, per_stuk, per_plaat)
+    VALUES (?, 0, 'printen', ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  let regelId;
+  if (profiel) {
+    const r = regelUitProfiel(profiel, n);
+    regelId = Number(insRegel.run(dossierId, a.naam, n, printer.id, r.tijd_min, r.voorbereiding_min, r.nabewerking_min, a.id, 1, r.per_plaat).lastInsertRowid);
+    r.materialen.forEach((m, i) => ins.run(regelId, i, m.artikel_id, m.filament_type_id, m.gram));
+  } else {
+    regelId = Number(insRegel.run(dossierId, a.naam, n, printer.id,
+      sjabloon ? Math.round((sjabloon.tijd_min || 0) * factor * 100) / 100 : 0, sjabloon?.voorbereiding_min ?? null, sjabloon?.nabewerking_min ?? null, a.id, 0, null).lastInsertRowid);
+    if (sjabloon) {
+      db.prepare('SELECT * FROM dossier_regel_materialen WHERE regel_id = ? ORDER BY volgorde').all(sjabloon.id)
+        .forEach((m, i) => ins.run(regelId, i, m.artikel_id, m.filament_type_id, Math.round(m.gram * factor * 100) / 100));
+    }
   }
-  logGebeurtenis(db, 'dossier', dossierId, 'aangemaakt', `Vanuit Te bestellen: ${String(n).replace('.', ',')} × ${a.naam}${sjabloon ? ' (printregel overgenomen van de vorige keer)' : ''}`);
-  const opdrachtId = maakOpdracht(db, { printer_id: printer.id, dossier_regel_id: regelId });
-  return { dossier_id: dossierId, nummer, opdracht_id: opdrachtId, sjabloon: !!sjabloon };
+  logGebeurtenis(db, 'dossier', dossierId, 'aangemaakt', `Bijprinten: ${String(n).replace('.', ',')} × ${a.naam}${profiel ? ' (volgens het printprofiel)' : sjabloon ? ' (printregel overgenomen van de vorige keer)' : ''}`);
+  let opdrachtId;
+  if (profiel) {
+    start(db, dossierId, { waarom: 'bijprinten' });
+    opdrachtId = db.prepare('SELECT id FROM printopdrachten WHERE dossier_regel_id = ? ORDER BY id LIMIT 1').get(regelId)?.id ?? null;
+  } else {
+    opdrachtId = maakOpdracht(db, { printer_id: printer.id, dossier_regel_id: regelId });
+  }
+  const opdrachten = db.prepare('SELECT COUNT(*) n FROM printopdrachten WHERE dossier_regel_id = ?').get(regelId).n;
+  return { dossier_id: dossierId, nummer, opdracht_id: opdrachtId, opdrachten, sjabloon: !!sjabloon, profiel: !!profiel };
 }

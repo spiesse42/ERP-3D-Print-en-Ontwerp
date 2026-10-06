@@ -475,6 +475,8 @@ export function annuleerVoorDossier(db, dossierId) {
 // - te veel → geplande opdrachten worden kleiner of verdwijnen; is er al
 //   meer geprint dan nodig, dan enkel een melding (productieOverzicht)
 // - printregel zonder printer → geen nieuwe opdracht (melding)
+// - 06-10: "stuks per plaat" op de regel → één geplande opdracht per plaat
+//   (nooit meer stuks dan op een plaat passen; een te grote wordt gesplitst)
 const EPS = 1e-9;
 const naamVanRegel = (r, nummer) => String(r.omschrijving || '').trim() || `Printwerk ${nummer}`;
 
@@ -495,7 +497,7 @@ export function verdeling(r, ops) {
 export function synchroniseer(db, dossierId, { oudeRegels = null, behoud = null } = {}) {
   const d = db.prepare('SELECT id, nummer, gestart_op, geannuleerd_op FROM dossiers WHERE id = ?').get(dossierId);
   if (!d?.gestart_op || d.geannuleerd_op) return;
-  const regels = db.prepare(`SELECT id, omschrijving, aantal, printer_id FROM dossier_regels WHERE dossier_id = ? AND type = 'printen' ORDER BY volgorde, id`).all(dossierId);
+  const regels = db.prepare(`SELECT id, omschrijving, aantal, printer_id, per_plaat FROM dossier_regels WHERE dossier_id = ? AND type = 'printen' ORDER BY volgorde, id`).all(dossierId);
   const ops = db.prepare(`SELECT o.*, (SELECT COUNT(*) FROM printruns x WHERE x.printopdracht_id = o.id) AS aantal_runs
     FROM printopdrachten o JOIN dossier_regels r ON r.id = o.dossier_regel_id WHERE r.dossier_id = ? ORDER BY o.volgorde, o.id`).all(dossierId);
   const oud = new Map((oudeRegels || []).map(r => [r.id, r]));
@@ -504,6 +506,12 @@ export function synchroniseer(db, dossierId, { oudeRegels = null, behoud = null 
   const nl = v => String(Math.round(v * 1000) / 1000).replace('.', ',');
   const logboek = [];
   for (const r of regels) {
+    const cap = r.per_plaat > 0 ? Number(r.per_plaat) : Infinity;
+    // te grote geplande opdrachten (meer dan één plaat) inkorten; de rest wordt tekort
+    for (const o of ops) {
+      if (o.dossier_regel_id !== r.id || o.geannuleerd_op || o.voltooid_op || o.aantal_runs > 0 || o.id === behoud) continue;
+      if (Number(o.aantal) > cap + EPS) { zetAantal.run(cap, o.id); o.aantal = cap; }
+    }
     const v = verdeling(r, ops);
     const o0 = oud.get(r.id);
     // printer / naam van geplande opdrachten volgen een wijziging op de regel,
@@ -518,13 +526,24 @@ export function synchroniseer(db, dossierId, { oudeRegels = null, behoud = null 
       }
     }
     if (v.tekort > EPS) {
-      const groei = v.gepland.find(o => o.id !== behoud);
-      if (groei) {
-        zetAantal.run(Number(groei.aantal) + v.tekort, groei.id);
-      } else if (r.printer_id && db.prepare('SELECT 1 FROM printers WHERE id = ? AND actief = 1').get(r.printer_id)) {
+      // eerst geplande opdrachten aanvullen (tot de plaat vol is), dan nieuwe
+      let rest = v.tekort;
+      for (const o of v.gepland.filter(x => x.id !== behoud)) {
+        if (rest <= EPS) break;
+        const bij = Math.min(cap - Number(o.aantal), rest);
+        if (bij <= EPS) continue;
+        zetAantal.run(Number(o.aantal) + bij, o.id);
+        rest -= bij;
+      }
+      if (rest > EPS && r.printer_id && db.prepare('SELECT 1 FROM printers WHERE id = ? AND actief = 1').get(r.printer_id)) {
         const extra = v.vast.length > 0;
-        maakOpdracht(db, { printer_id: r.printer_id, dossier_regel_id: r.id, aantal: v.tekort, naam: naamVanRegel(r, d.nummer) });
-        if (extra) logboek.push(`extra printopdracht voor ${nl(v.tekort)} stuk${v.tekort === 1 ? '' : 's'} van "${naamVanRegel(r, d.nummer)}"`);
+        const nieuw = rest;
+        while (rest > EPS) {
+          const n = Math.min(cap, rest);
+          maakOpdracht(db, { printer_id: r.printer_id, dossier_regel_id: r.id, aantal: n, naam: naamVanRegel(r, d.nummer) });
+          rest -= n;
+        }
+        if (extra) logboek.push(`extra printopdracht voor ${nl(nieuw)} stuk${nieuw === 1 ? '' : 's'} van "${naamVanRegel(r, d.nummer)}"`);
       }
     } else if (v.tekort < -EPS) {
       let teVeel = -v.tekort;
