@@ -3,7 +3,7 @@ import { api } from '../../lib/api.js';
 import { useData } from '../../schil/useData.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
 import Icoon from '../../schil/Icoon.jsx';
-import { aantal as fmtAantal } from '../../lib/formaat.js';
+import { aantal as fmtAantal, euro } from '../../lib/formaat.js';
 
 // Printprofiel van een vast product (06-10): tijd en gram PER STUK, stuks
 // per plaat, printer, voorbereiding per plaat, nabewerking per stuk. Wordt
@@ -25,12 +25,13 @@ function naarBody(f) {
     materialen: f.materialen.filter(m => m.keuze).map(m => { const [s, id] = m.keuze.split(':'); return { [s === 'a' ? 'artikel_id' : 'filament_type_id']: Number(id), gram: nr(m.gram) ?? 0 }; }) };
 }
 
-export default function Printprofiel({ id, onBijprinten }) {
+export default function Printprofiel({ id, gewicht = null, onBijprinten }) {
   const { melding, bevestig } = useOmgeving();
   const { data, herlaad } = useData(`/productie/printprofiel/${id}`);
   const { data: printers } = useData('/printers');
   const { data: artikelen } = useData('/voorraad/artikelen');
   const { data: groepen } = useData('/filament/types');
+  const { data: kost, herlaad: herlaadKost } = useData(`/producten/${id}/kost`);
   const [f, setF] = useState(leeg);
   const [bezig, setBezig] = useState(false);
   useEffect(() => { if (data) setF(naarForm(data.profiel)); }, [data]);
@@ -39,7 +40,7 @@ export default function Printprofiel({ id, onBijprinten }) {
   const vuil = data && JSON.stringify(f) !== JSON.stringify(naarForm(data.profiel));
   async function bewaar(profiel) {
     setBezig(true);
-    try { await api.put(`/productie/printprofiel/${id}`, { profiel }); await herlaad(); melding(profiel ? 'Printprofiel bewaard.' : 'Printprofiel gewist.'); }
+    try { await api.put(`/productie/printprofiel/${id}`, { profiel }); await herlaad(); herlaadKost(); melding(profiel ? 'Printprofiel bewaard.' : 'Printprofiel gewist.'); }
     catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
   }
@@ -80,6 +81,8 @@ export default function Printprofiel({ id, onBijprinten }) {
         ))}
         <button type="button" className="linkish" onClick={() => setF(x => ({ ...x, materialen: [...x.materialen, { keuze: '', gram: '' }] }))}>+ kleur (multicolor)</button>
       </div>
+      {gewicht != null && <p className="sub">Gewicht volgens de webshop: {fmtAantal(gewicht)} g per stuk (zonder steunmateriaal en afval).</p>}
+      {kost?.profiel && <p className="sub">Geschatte kost per stuk: <b>{euro(kost.schatting.kost)}</b> (filament {euro(kost.schatting.filament)}, stroom {euro(kost.schatting.energie)}, machine {euro(kost.schatting.machine)}, BMCU {euro(kost.schatting.bmcu)}{kost.schatting.onderdelen ? `, onderdelen ${euro(kost.schatting.onderdelen)}` : ''}) + arbeid {euro(kost.schatting.arbeid)}{kost.schatting.onvolledig ? ` · ontbreekt: ${kost.schatting.ontbreekt.join(', ')}` : ''}{kost.gemeten ? ` · gemeten: ${euro(kost.gemeten.kost)} (${fmtAantal(kost.gemeten.stuks)} stuks)` : ''}</p>}
       {b.per_plaat && (b.tijd_min > 0 || gram > 0) && <p className="sub">Volle plaat: {b.per_plaat} stuks · {Math.floor(b.tijd_min * b.per_plaat / 60)} u {Math.round(b.tijd_min * b.per_plaat % 60)} min · {fmtAantal(Math.round(gram * b.per_plaat * 10) / 10)} g</p>}
       <div className="tabacties" style={{ marginTop: 12 }}>
         <button type="button" className="btn primary" disabled={bezig || !vuil} onClick={() => bewaar(b)}>Profiel bewaren</button>

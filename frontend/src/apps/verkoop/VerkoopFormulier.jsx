@@ -149,6 +149,8 @@ function NieuweVerkoop() {
       zetVuil(false);
       if (r.mail_fout) melding(`${r.nummer} is gemaakt, maar het mailen mislukte: ${r.mail_fout} Het is nog NIET bij Accountable: gebruik "${factuur ? 'Factuur' : 'Bonnetje'} mailen".`, 'fout');
       else melding(factuur ? `${r.nummer} gemaakt en gemaild naar Accountable${naarKlant ? ` en ${m.aan}` : ''}.` : `${r.nummer} gemaakt${naarKlant ? ` en gemaild naar ${m.aan}` : ''}.`);
+      // 06-10: onderdelen (sleutelring…) tekort → apart melden, de verkoop is wel gemaakt
+      if (r.tekort_onderdelen?.length) melding(`Onderdelen tekort in voorraad: ${r.tekort_onderdelen.join(', ')}. Vul de voorraad aan.`, 'fout');
       navigeer(`/verkoop/${r.id}`);
     } catch (e) { melding(e.message, 'fout'); setBezig(false); }
   }

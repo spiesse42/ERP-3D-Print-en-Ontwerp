@@ -26,5 +26,6 @@ import * as m023 from './023_factuur_vervaldatum.js';
 import * as m024 from './024_verkoop_factuur.js';
 import * as m025 from './025_filament_inkoop.js';
 import * as m026 from './026_printprofiel.js';
+import * as m027 from './027_webshop_onderdelen.js';
 
-export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021, m022, m023, m024, m025, m026];
+export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021, m022, m023, m024, m025, m026, m027];
