@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { api, BASE } from '../../lib/api.js';
 import { useData } from '../../schil/useData.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
@@ -58,6 +58,22 @@ function NieuweVerkoop() {
   const doc = factuur ? 'de factuur' : 'het bonnetje';
   const [regels, setRegels] = useState(() => [nieuweRegel('artikel')]);
   const [toonFilament, setToonFilament] = useState(false);
+  // 07-10: "Verkoop maken" vanuit een webshopbestelling (?webshop=<id>)
+  const [zoekParams] = useSearchParams();
+  const webshopId = zoekParams.get('webshop');
+  const { data: wsData } = useData(webshopId ? '/webshopbestellingen' : null);
+  const [wsGeladen, setWsGeladen] = useState(false);
+  useEffect(() => {
+    const b = wsData?.bestellingen?.find(x => x.id === webshopId);
+    if (!b || wsGeladen) return;
+    setWsGeladen(true);
+    setF(x => ({ ...x, omschrijving: `Webshop: ${b.klant_naam || ''}`.trim(), klant_id: b.klant_id ? String(b.klant_id) : x.klant_id }));
+    setRegels([
+      ...b.items.map(i => ({ ...nieuweRegel(i.artikel ? 'artikel' : 'vrij'), artikel_id: i.artikel ? String(i.artikel.id) : '', aantal: naarInvoer(i.aantal), prijs: naarInvoer(i.prijs),
+        omschrijving: i.artikel && !i.kleuren.length ? '' : [i.artikel ? i.artikel.naam : i.naam, i.kleuren.length ? `(${i.kleuren.join(' / ')})` : ''].filter(Boolean).join(' ') })),
+      ...(b.verzendkost > 0 ? [{ ...nieuweRegel('vrij'), omschrijving: `Verzending${b.verzending ? ` (${b.verzending})` : ''}`, aantal: '1', prijs: naarInvoer(b.verzendkost) }] : []),
+    ]);
+  }, [wsData, webshopId, wsGeladen]);
   const [naarKlant, setNaarKlant] = useState(false);
   const [mail, setMail] = useState(null);
   const [bezig, setBezig] = useState(false);
@@ -130,7 +146,7 @@ function NieuweVerkoop() {
     : factuur && !f.klant_id ? 'Een factuur is op naam: kies een klant.'
     : factuur && vervaldatum && vervaldatum < f.datum ? 'De vervaldatum ligt vóór de factuurdatum.'
     : !factuur && !kaalNr ? 'Vul het nummer van het bonnetje uit Accountable in.' : null;
-  const body = () => ({ soort: f.soort, datum: f.datum, ...(factuur ? { vervaldatum } : { nummer: kaalNr }), klant_id: f.klant_id || null, omschrijving: f.omschrijving,
+  const body = () => ({ webshop_bestelling: webshopId || null, soort: f.soort, datum: f.datum, ...(factuur ? { vervaldatum } : { nummer: kaalNr }), klant_id: f.klant_id || null, omschrijving: f.omschrijving,
     regels: ingevuld.map(r => ({ soort: r.soort, artikel_id: r.soort === 'artikel' ? Number(r.artikel_id) : undefined,
       dossier_id: r.soort === 'dossier' ? Number(r.dossier_id) : undefined, printopdracht_id: r.soort === 'printopdracht' ? Number(r.printopdracht_id) : undefined,
       aantal: r.aantal, prijs_per_stuk: r.prijs, omschrijving: r.omschrijving })) });
