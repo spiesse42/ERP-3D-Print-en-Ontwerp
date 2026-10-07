@@ -2,15 +2,12 @@
 
 Bijgehouden tijdens de ontwikkeling. Wat hier staat is (nog) niet gebouwd.
 
-## On hold
+## Gebouwd: webshopbestellingen (07-10-2026)
 
-- **Webshopkoppeling** (06-10-2026): bestellingen uit de webshop automatisch in het ERP
-  (uit voorraad leveren of bijprinten), verzending opvolgen via **Sendcloud**.
-  De webshop is eigen code (repo `spiesse42/3dprintenontwerp-webshop`: Next.js op Netlify,
-  producten in **Sanity**, bestellingen in **Supabase** `orders.items` met `slug`,
-  `quantity`, `price` en `variantLabel`, betalingen via Mollie, labels via Sendcloud).
-  Bestellingen kunnen dus rechtstreeks uit Supabase gelezen worden (geen mail nodig).
-  Wacht op: vaste producten in het ERP (zie hieronder).
+- Verkoop → **Webshop**: het ERP haalt de betaalde bestellingen zelf op uit Supabase (geen
+  wijziging aan de webshop, geen Netlify-build). Per regel het gekoppelde artikel, voorraad,
+  gekozen kleur(en) en Bijprinten; "Verkoop maken" vult een nieuwe verkoop in en zet de
+  bestelling op afgehandeld. Instellen: `supabase_url` + `supabase_key` in de add-on.
 
 ## Gebouwd: vaste producten (06-10-2026)
 

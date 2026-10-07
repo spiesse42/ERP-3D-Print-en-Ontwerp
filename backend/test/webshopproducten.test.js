@@ -8,11 +8,15 @@ import { stopWachter } from '../productie/wachter.js';
 
 const echteFetch = globalThis.fetch;
 let sanity = [];
+let supabaseOrders = [];
 let server, basis;
 before(async () => {
+  process.env.SUPABASE_URL = 'https://test.supabase.co'; process.env.SUPABASE_KEY = 'sleutel';
   globalThis.fetch = async (url, o) => (String(url).includes('sanity.io')
     ? new Response(JSON.stringify({ result: sanity }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-    : echteFetch(url, o));
+    : String(url).includes('supabase.co')
+      ? new Response(JSON.stringify(supabaseOrders), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      : echteFetch(url, o));
   initDb(':memory:');
   server = maakApp().listen(0);
   await new Promise(r => server.once('listening', r));
@@ -96,4 +100,19 @@ test('W4. productoverzicht: geschatte kost uit profiel + onderdelen, marge', asy
   assert.equal(p.webshop.slug, 'sleutelhanger-hond'); assert.equal(p.verkoopprijs, 5);
   assert.equal(p.marge, Math.round((5 - p.kost) * 100) / 100);
   assert.equal(p.verkocht_30d, 0, 'ongedane verkoop telt niet');
+});
+
+test('W5. webshopbestellingen: ophalen, koppelen aan artikel, verkoop maakt ze afgehandeld', async () => {
+  supabaseOrders = [{ id: 'abc-1', created_at: '2026-10-07T10:00:00Z', status: 'paid', customer_name: 'Jan', customer_email: 'jan@x.be', street: 'Straat 1', postal_city: '8700 Tielt',
+    items: [{ slug: 'sleutelhanger-hond', name: 'Sleutelhanger hond', quantity: 2, price: 5, variantLabel: null, colors: ['Rood'] }], total: 14.5, shipping_method_label: 'Bpost', shipping_price: 4.5 }];
+  assert.equal(ok(await vraag('POST', '/webshopbestellingen/ophalen')).nieuw, 1);
+  assert.equal(ok(await vraag('POST', '/webshopbestellingen/ophalen')).nieuw, 0, 'niet dubbel');
+  const l = ok(await vraag('GET', '/webshopbestellingen'));
+  const b = l.bestellingen[0];
+  assert.equal(b.items[0].artikel.id, bestaand); assert.deepEqual(b.items[0].kleuren, ['Rood']); assert.equal(b.afgehandeld, false);
+  ok(await vraag('POST', `/voorraad/artikelen/${bestaand}/boeking`, { richting: 'in', aantal: 2, prijs_per_eenheid: 0.5, datum: '2026-09-01' }));
+  const v = ok(await vraag('POST', '/verkopen', { soort: 'bonnetje', nummer: `${jaar}-777`, datum: `${jaar}-10-07`, webshop_bestelling: 'abc-1',
+    regels: [{ soort: 'artikel', artikel_id: bestaand, aantal: 2, prijs_per_stuk: 5 }] }), 201);
+  const na = ok(await vraag('GET', '/webshopbestellingen')).bestellingen[0];
+  assert.equal(na.afgehandeld, true); assert.equal(na.verkoop_id, v.id);
 });

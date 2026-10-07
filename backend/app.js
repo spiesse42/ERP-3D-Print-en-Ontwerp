@@ -29,6 +29,7 @@ import verkopen from './routes/verkopen.js';
 import slicer from './routes/slicer.js';
 import mail from './routes/mail.js';
 import producten from './routes/producten.js';
+import webshopbestellingen from './routes/webshopbestellingen.js';
 import { slankDossier } from './domein/dossiers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -116,6 +117,7 @@ export function maakApp() {
   app.use('/api/slicer',       slicer);        // 28-09 (slicerbestand → printregels)
   app.use('/api/mail',         mail);          // 30-09 (mailbox: IMAP + versturen)
   app.use('/api/producten',    producten);     // 06-10 (vaste producten, webshop, onderdelen)
+  app.use('/api/webshopbestellingen', webshopbestellingen); // 07-10
 
   // Onbekende API-route: nette JSON-fout i.p.v. de index.html van de frontend.
   app.use('/api', (req, res) => res.status(404).json({ error: 'Onbekende API-route' }));

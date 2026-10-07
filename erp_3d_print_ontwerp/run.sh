@@ -21,6 +21,9 @@ if [ -f /data/options.json ]; then
   I="$(optie imap_host)";     [ -n "$I" ] && export IMAP_HOST="$I"
   IP="$(optie imap_port)";    [ -n "$IP" ] && export IMAP_PORT="$IP"
   T="$(optie tijdzone)";      [ -n "$T" ] && export TZ="$T"
+  # webshopbestellingen (07-10): Supabase van de webshop, enkel lezen
+  export SUPABASE_URL="$(optie supabase_url)"
+  export SUPABASE_KEY="$(optie supabase_key)"
 fi
 # Backup terugzetten: leg het bestand als "terugzetten.db" in de add-on-map
 # (/addon_configs/<…>_erp_3d_print_ontwerp via Samba/SSH) en herstart de add-on.

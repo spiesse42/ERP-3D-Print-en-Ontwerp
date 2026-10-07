@@ -209,7 +209,10 @@ export function leesVerkoop(db, body, { voorbeeld = false } = {}) {
   const nummer = soort !== 'bonnetje' ? null
     : voorbeeld ? (String(body?.nummer ?? '').trim() ? `Bonnetje ${String(body.nummer).trim().replace(/^bonnetje\s*/i, '')}` : 'Bonnetje …')
     : leesBonnummer(db, body?.nummer);
-  return { soort, datum, vervaldatum, klant_id, omschrijving: tekst(body?.omschrijving), regels, totaal, nummer };
+  // 07-10: verkoop voor een webshopbestelling
+  const webshop_bestelling = tekst(body?.webshop_bestelling);
+  if (webshop_bestelling && !db.prepare('SELECT 1 FROM webshop_bestellingen WHERE id = ?').get(webshop_bestelling)) throw new DomeinFout('Onbekende webshopbestelling');
+  return { soort, datum, vervaldatum, klant_id, omschrijving: tekst(body?.omschrijving), regels, totaal, nummer, webshop_bestelling };
 }
 
 // Wat het bonnetje ZOU worden (venster/voorbeeld): nummer zonder het uit te geven.
@@ -226,8 +229,9 @@ export function maakVerkoop(db, v) {
   const factuur = soort === 'factuur';
   const nummer = factuur ? volgendNummer(db, REEKS[soort], { jaar: Number(v.datum.slice(0, 4)) }) : v.nummer;
   if (!nummer) throw new DomeinFout('Vul het nummer van het bonnetje uit Accountable in.');
-  const id = Number(db.prepare('INSERT INTO verkopen (nummer, datum, klant_id, omschrijving, totaal, soort, vervaldatum, betaald_op) VALUES (?,?,?,?,?,?,?,?)')
-    .run(nummer, v.datum, v.klant_id, v.omschrijving, v.totaal, soort, v.vervaldatum || null, factuur ? null : v.datum).lastInsertRowid);
+  const id = Number(db.prepare('INSERT INTO verkopen (nummer, datum, klant_id, omschrijving, totaal, soort, vervaldatum, betaald_op, webshop_bestelling) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(nummer, v.datum, v.klant_id, v.omschrijving, v.totaal, soort, v.vervaldatum || null, factuur ? null : v.datum, v.webshop_bestelling || null).lastInsertRowid);
+  if (v.webshop_bestelling) db.prepare(`UPDATE webshop_bestellingen SET afgehandeld_op = COALESCE(afgehandeld_op, datetime('now')) WHERE id = ?`).run(v.webshop_bestelling);
   const ins = db.prepare(`INSERT INTO verkoop_regels (verkoop_id, volgorde, soort, artikel_id, dossier_id, printopdracht_id, omschrijving, aantal, prijs_per_stuk, bedrag, berekend)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
   const tekort = [];
