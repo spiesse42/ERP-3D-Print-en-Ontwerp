@@ -18,7 +18,10 @@ rem Eerst de nieuwste code van GitHub ophalen (vervangt Fetch/Pull in
 rem GitHub Desktop). gc.auto uit: anders telkens "Deletion of directory
 rem '.git/objects/..' failed". Lokale wijzigingen? Dan stoppen.
 echo [ophalen] Nieuwste code van GitHub...
+rem GIT_ASK_YESNO=false: vragen als "Should I try again? (y/n)" automatisch "nee"
+set "GIT_ASK_YESNO=false"
 git config gc.auto 0
+git config maintenance.auto false
 for /f %%i in ('git status --porcelain --untracked-files^=no') do (
   echo.
   echo *** Er zijn lokale wijzigingen - eerst nakijken in GitHub Desktop: ***
