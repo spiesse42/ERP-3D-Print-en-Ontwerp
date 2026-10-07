@@ -12,6 +12,6 @@ echo.
 echo Frontend:  http://localhost:5173
 echo Backend:   http://localhost:3010
 echo.
-echo (Nog niet uitgevoerd: install.bat draaien als je dat nog niet deed.)
+echo (Eerst build_deploy.bat gedraaid? Die installeert ook de onderdelen.)
 echo.
 pause

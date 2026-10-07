@@ -6,10 +6,8 @@ Eigen ERP voor 3Dplezier met een Odoo-achtige schil: dossiers (offerte, werkbon,
 
 | Script | Wat het doet |
 |---|---|
-| `install.bat` | dependencies van backend en frontend installeren (opnieuw na elke update met nieuwe packages) |
 | `dev.bat` | backend (poort 3010) en frontend (poort 5173) starten → http://localhost:5173 |
-| `test.bat` | de backendtests draaien |
-| `build_deploy.bat` | tests → frontend bouwen → kopie naar `erp_3d_print_ontwerp/` (de add-on) → versie +1 → commit & push naar GitHub |
+| `build_deploy.bat` | **na elke update dubbelklikken**: nieuwste code ophalen van GitHub → onderdelen installeren → tests → frontend bouwen → kopie naar `erp_3d_print_ontwerp/` (de add-on) → versie +1 → commit & push naar GitHub |
 
 Lokale instellingen voor koppelingen: als omgevingsvariabelen (nooit in de databank), bv. `setx GEMINI_API_KEY "…"`, `setx HA_URL "http://192.168.1.50:8123"`, `setx HA_TOKEN "…"`, `setx SMTP_USER "…"`, `setx SMTP_PASS "…"`. Daarna `dev.bat` opnieuw starten.
 

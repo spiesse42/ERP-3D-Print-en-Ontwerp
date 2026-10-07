@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Windows-batchbestanden altijd met CRLF (anders kan cmd labels/goto verkeerd lezen)
+*.bat text eol=crlf
