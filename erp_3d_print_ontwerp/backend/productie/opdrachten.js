@@ -513,6 +513,10 @@ export function synchroniseer(db, dossierId, { oudeRegels = null, behoud = null 
       if (Number(o.aantal) > cap + EPS) { zetAantal.run(cap, o.id); o.aantal = cap; }
     }
     const v = verdeling(r, ops);
+    // 07-10: al geleverd (pakbon) telt als gemaakt — wat al bij de klant is,
+    // hoeft niet meer geprint te worden (geplande opdrachten vervallen)
+    const geleverd = db.prepare('SELECT COALESCE(SUM(aantal), 0) n FROM levering_regels WHERE dossier_regel_id = ?').get(r.id).n;
+    if (geleverd > v.bijdrage + EPS) v.tekort -= geleverd - v.bijdrage;
     const o0 = oud.get(r.id);
     // printer / naam van geplande opdrachten volgen een wijziging op de regel,
     // tenzij je die opdracht zelf anders zette
