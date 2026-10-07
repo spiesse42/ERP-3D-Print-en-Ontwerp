@@ -388,7 +388,7 @@ export default function ArtikelFormulier() {
                 )}
               </>
             )}
-            {actieveTab === 'printprofiel' && <Printprofiel id={id} gewicht={art?.webshop_gewicht_g} onBijprinten={() => setBijprinten(true)} />}
+            {actieveTab === 'printprofiel' && <Printprofiel id={id} naam={form.naam} gewicht={art?.webshop_gewicht_g} onBijprinten={() => setBijprinten(true)} />}
             {actieveTab === 'onderdelen' && <Onderdelen id={id} />}
             {actieveTab === 'webshop' && <WebshopTab art={art} onKlaar={herlaad} />}
             {actieveTab === 'inkoop' && (
