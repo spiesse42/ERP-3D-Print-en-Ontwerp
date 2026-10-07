@@ -7,6 +7,7 @@ import { DomeinFout, getBedrijfsgegevens } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { leesDossier } from '../domein/dossiers.js';
 import { maakLevering, verwijderLevering } from '../domein/leveringen.js';
+import { synchroniseer } from '../productie/opdrachten.js';
 import { pakbonHtml } from '../documenten/sjabloon.js';
 import { htmlNaarPdf } from '../documenten/pdf.js';
 import { verstuurMail, MailFout } from '../documenten/mail.js';
@@ -47,14 +48,14 @@ r.post('/dossiers/:id/leveringen', metFouten((req, res) => {
       : d.fase === 'geannuleerd' ? 'Dit dossier is geannuleerd.'
       : d.lever_status === 'geleverd' ? 'Alles is al geleverd.' : 'Er is niets te leveren (voeg print- of artikelregels toe).');
   }
-  db.transaction(() => maakLevering(db, d, req.body))();
+  db.transaction(() => { maakLevering(db, d, req.body); synchroniseer(db, d.id); })();
   res.status(201).json(leesDossier(db, d.id));
 }));
 
 r.delete('/leveringen/:id', metFouten((req, res) => {
   const db = getDb();
   const { l, d } = levering(db, req.params.id);
-  db.transaction(() => verwijderLevering(db, l))();
+  db.transaction(() => { verwijderLevering(db, l); synchroniseer(db, d.id); })();
   res.json(leesDossier(db, d.id));
 }));
 

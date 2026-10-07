@@ -73,3 +73,15 @@ test('P3. printprofiel bewaren (validatie) en bijprinten volgens profiel', async
   // profiel wissen
   assert.equal(ok(await vraag('PUT', `/productie/printprofiel/${medaillon}`, { profiel: null })).profiel, null);
 });
+
+test('P4. volledig geleverde printregel: geplande printopdrachten vervallen; levering ongedaan → komen terug', async () => {
+  const d = ok(await vraag('POST', '/dossiers', { soort: 'klant', klant_id: klant, titel: 'Geleverd', regels: [
+    { type: 'printen', omschrijving: 'Testprint', printer_id: mini, aantal: 1, tijd_min: 30, materialen: [{ artikel_id: zwart, gram: 10 }] }] }), 201);
+  const s = ok(await vraag('POST', `/dossiers/${d.id}/starten`));
+  assert.equal(s.productie.regels[0].opdrachten.length, 1);
+  const na = ok(await vraag('POST', `/dossiers/${d.id}/leveringen`, { datum: '2026-10-07', regels: [{ regel_id: s.regels[0].id, aantal: 1 }] }), 201);
+  assert.equal(na.productie.regels[0].opdrachten.filter(o => !o.geannuleerd_op).length, 0, 'geplande opdracht weg');
+  const lev = getDb().prepare('SELECT id FROM leveringen WHERE dossier_id = ?').get(d.id).id;
+  const terug = ok(await vraag('DELETE', `/leveringen/${lev}`));
+  assert.equal(terug.productie.regels[0].opdrachten.length, 1, 'levering ongedaan → opdracht terug');
+});
