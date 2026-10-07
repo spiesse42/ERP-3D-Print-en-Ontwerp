@@ -14,13 +14,34 @@ if not exist .git (
   pause & exit /b 1
 )
 
-rem Nieuwe onderdelen (dependencies) na een Fetch/Pull meteen installeren,
+rem Eerst de nieuwste code van GitHub ophalen (vervangt Fetch/Pull in
+rem GitHub Desktop). gc.auto uit: anders telkens "Deletion of directory
+rem '.git/objects/..' failed". Lokale wijzigingen? Dan stoppen.
+echo [ophalen] Nieuwste code van GitHub...
+git config gc.auto 0
+for /f %%i in ('git status --porcelain --untracked-files^=no') do (
+  echo.
+  echo *** Er zijn lokale wijzigingen - eerst nakijken in GitHub Desktop: ***
+  git status --short --untracked-files=no
+  echo Niet nodig? Kies daar "Discard changes" en start dit bestand opnieuw.
+  pause & exit /b 1
+)
+git fetch origin
+if %errorlevel% neq 0 ( echo. & echo *** GitHub niet bereikbaar - internet? *** & pause & exit /b 1 )
+git checkout main
+if %errorlevel% neq 0 ( echo. & echo *** Kon niet naar de branch main. *** & pause & exit /b 1 )
+git merge --ff-only origin/main
+if %errorlevel% neq 0 ( echo. & echo *** Nieuwste code niet automatisch binnen te halen - stuur een screenshot. *** & pause & exit /b 1 )
+git log --oneline -1
+echo.
+
+rem Nieuwe onderdelen (dependencies) na het ophalen meteen installeren,
 rem anders vinden de tests ze niet (bv. qrcode voor de factuur). Snel als er
 rem niets veranderd is.
 echo [0/5] Onderdelen bijwerken (npm install)...
 cd backend
 call npm install --no-audit --no-fund
-if %errorlevel% neq 0 ( echo. & echo *** FOUT bij npm install backend - zie install.bat. *** & pause & exit /b 1 )
+if %errorlevel% neq 0 ( echo. & echo *** FOUT bij npm install backend. Faalt het op better-sqlite3, dan ontbreken de Windows build-tools: https://github.com/nodejs/node-gyp#on-windows *** & pause & exit /b 1 )
 cd ..\frontend
 call npm install --no-audit --no-fund
 if %errorlevel% neq 0 ( echo. & echo *** FOUT bij npm install frontend. *** & pause & exit /b 1 )
