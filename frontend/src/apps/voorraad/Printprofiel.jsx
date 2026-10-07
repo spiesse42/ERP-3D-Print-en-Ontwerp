@@ -4,6 +4,7 @@ import { useData } from '../../schil/useData.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { aantal as fmtAantal, euro } from '../../lib/formaat.js';
+import ProfielUitSlicer from './ProfielUitSlicer.jsx';
 
 // Printprofiel van een vast product (06-10): tijd en gram PER STUK, stuks
 // per plaat, printer, voorbereiding per plaat, nabewerking per stuk. Wordt
@@ -25,7 +26,7 @@ function naarBody(f) {
     materialen: f.materialen.filter(m => m.keuze).map(m => { const [s, id] = m.keuze.split(':'); return { [s === 'a' ? 'artikel_id' : 'filament_type_id']: Number(id), gram: nr(m.gram) ?? 0 }; }) };
 }
 
-export default function Printprofiel({ id, gewicht = null, onBijprinten }) {
+export default function Printprofiel({ id, naam = '', gewicht = null, onBijprinten }) {
   const { melding, bevestig } = useOmgeving();
   const { data, herlaad } = useData(`/productie/printprofiel/${id}`);
   const { data: printers } = useData('/printers');
@@ -34,6 +35,7 @@ export default function Printprofiel({ id, gewicht = null, onBijprinten }) {
   const { data: kost, herlaad: herlaadKost } = useData(`/producten/${id}/kost`);
   const [f, setF] = useState(leeg);
   const [bezig, setBezig] = useState(false);
+  const [slicer, setSlicer] = useState(false);
   useEffect(() => { if (data) setF(naarForm(data.profiel)); }, [data]);
   const zet = k => e => setF(x => ({ ...x, [k]: e.target.value }));
   const zetMat = (k, w) => setF(x => ({ ...x, materialen: x.materialen.map((m, j) => (j === k ? { ...m, ...w } : m)) }));
@@ -48,6 +50,12 @@ export default function Printprofiel({ id, gewicht = null, onBijprinten }) {
     if (await bevestig({ titel: 'Printprofiel wissen', tekst: 'Het profiel verdwijnt; bestaande dossiers blijven zoals ze zijn.', bevestigLabel: 'Wissen', annuleerLabel: 'Terug', gevaarlijk: true })) bewaar(null);
   }
   if (!data) return null;
+  function uitSlicer(x) {
+    const u = Math.floor(x.tijd_min / 60), m = Math.round((x.tijd_min - u * 60) * 100) / 100;
+    setF(v => ({ ...v, printer_id: x.printer_id || v.printer_id, tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: x.per_plaat, materialen: x.materialen }));
+    setSlicer(false);
+    melding('Overgenomen uit het slicerbestand. Kijk het filament na en klik op "Profiel bewaren".');
+  }
   const b = naarBody(f);
   const gram = b.materialen.reduce((s, m) => s + Number(m.gram || 0), 0);
   const filamenten = (artikelen || []).filter(a => a.type === 'filament');
@@ -86,9 +94,11 @@ export default function Printprofiel({ id, gewicht = null, onBijprinten }) {
       {b.per_plaat && (b.tijd_min > 0 || gram > 0) && <p className="sub">Volle plaat: {b.per_plaat} stuks · {Math.floor(b.tijd_min * b.per_plaat / 60)} u {Math.round(b.tijd_min * b.per_plaat % 60)} min · {fmtAantal(Math.round(gram * b.per_plaat * 10) / 10)} g</p>}
       <div className="tabacties" style={{ marginTop: 12 }}>
         <button type="button" className="btn primary" disabled={bezig || !vuil} onClick={() => bewaar(b)}>Profiel bewaren</button>
+        <button type="button" className="btn" disabled={bezig} onClick={() => setSlicer(true)}>Uit slicerbestand…</button>
         {data.profiel && <button type="button" className="btn" disabled={bezig || vuil} onClick={onBijprinten}>Bijprinten…</button>}
         {data.profiel && <button type="button" className="btn ghost" disabled={bezig} onClick={wis}>Wissen</button>}
       </div>
+      {slicer && <ProfielUitSlicer naam={naam} onOvernemen={uitSlicer} onSluit={() => setSlicer(false)} />}
     </>
   );
 }
