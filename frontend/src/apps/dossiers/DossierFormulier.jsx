@@ -313,7 +313,7 @@ export default function DossierFormulier() {
                     </select>}
                   </div>
                 )}
-                <Totalen uitkomst={form.regels.length ? uitkomst : null} />
+                <Totalen uitkomst={form.regels.length ? uitkomst : null} gemeten={d?.productie?.gemeten} />
                 {kopVast && fase === 'samengevoegd' && <p className="note">Dit dossier is samengevoegd in {d.samengevoegd_in_nummer || 'een ander dossier'}: de regels staan daar.</p>}
                 {kopVast && fase !== 'geannuleerd' && fase !== 'samengevoegd' && <p className="note">Dit dossier is afgerekend en ligt vast. Wil je nog iets wijzigen, maak dan eerst de afrekening ongedaan.</p>}
               </>

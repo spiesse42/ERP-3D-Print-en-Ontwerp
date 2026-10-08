@@ -353,6 +353,9 @@ label.btn.bezig { opacity:.6; pointer-events:none; }
 .totalen > div > span:first-child { color:var(--muted); }
 .totalen .groot { font-size:17px; font-weight:700; border-top:2px solid var(--line-strong); margin-top:4px; padding-top:6px; }
 .totalen .groot > span:first-child { color:var(--ink); }
+.totalen .intern { font-size:12.5px; }
+.totalen .intern > span:last-child { color:var(--pos); }
+.totalen .groot + .intern { border-top:1px dashed var(--line); margin-top:6px; padding-top:6px; }
 
 
 /* ── ontbrekende gegevens + nieuw-artikelvenster (stap 4b) ── */

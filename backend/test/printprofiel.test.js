@@ -85,3 +85,20 @@ test('P4. volledig geleverde printregel: geplande printopdrachten vervallen; lev
   const terug = ok(await vraag('DELETE', `/leveringen/${lev}`));
   assert.equal(terug.productie.regels[0].opdrachten.length, 1, 'levering ongedaan → opdracht terug');
 });
+
+test('P5. productiekost (schatting) per printregel, totaal en per geplande printopdracht', async () => {
+  getDb().prepare('UPDATE artikelen SET inkoopprijs = 20 WHERE id = ?').run(zwart);   // 20 €/rol van 1 kg
+  const regel = { type: 'printen', printer_id: mini, aantal: 2, tijd_min: 120, materialen: [{ artikel_id: zwart, gram: 100 }] };
+  const b = ok(await vraag('POST', '/bereken', { regels: [regel] }));
+  const k = b.regels[0]._berekend.kost;
+  const rolg = getDb().prepare('SELECT rolgewicht_g g FROM filament_types WHERE id = ?').get(pg).g;
+  assert.equal(k.filament, Math.round(100 / 1000 * 20 / rolg * 1000 * 10000) / 10000, 'filament aan inkoopprijs, zonder faalfactor');
+  assert.equal(k.machine, 0.4, '2 u × 0,20');
+  assert.ok(Math.abs(k.kost - (k.filament + k.energie + k.machine + k.bmcu)) < 1e-3);
+  assert.ok(Math.abs(k.winst - (b.regels[0]._berekend.eindbedrag - k.kost)) < 1e-3);
+  assert.equal(b.productiekost.kost, k.kost);
+  const d = ok(await vraag('POST', '/dossiers', { soort: 'klant', klant_id: klant, titel: 'Kost', regels: [{ ...regel, omschrijving: 'Kost' }] }), 201);
+  const s = ok(await vraag('POST', `/dossiers/${d.id}/starten`));
+  const o = s.productie.regels[0].opdrachten[0];
+  assert.ok(o.kost_schatting && Math.abs(o.kost_schatting.machine - 0.4) < 1e-3, 'geplande opdracht krijgt een schatting');
+});
