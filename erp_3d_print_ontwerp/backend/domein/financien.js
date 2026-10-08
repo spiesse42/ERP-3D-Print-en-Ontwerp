@@ -19,6 +19,7 @@ import { kostVan } from './verkopen.js';
 
 import { leverbaar, nogTeLeveren } from './leveringen.js';
 import { leesRegelsVan } from './dossiers.js';
+import { berekenMetDb } from './berekening.js';
 
 const r2 = v => Math.round((v || 0) * 100) / 100;
 
@@ -145,7 +146,7 @@ export function marges(db, jaar) {
   // ook "gratis geleverd" (25-09): bedrag € 0, soort 'gratis', waarde = werkbon
   const dossiers = db.prepare(`SELECT d.id, d.nummer, d.titel, COALESCE(d.afgerekend_op, d.gratis_op) AS afgerekend_op,
       CASE WHEN d.gratis_op IS NOT NULL THEN 0 ELSE d.afgerekend_bedrag END AS afgerekend_bedrag,
-      CASE WHEN d.gratis_op IS NOT NULL THEN 'gratis' ELSE d.afgerekend_soort END AS afgerekend_soort, d.gratis_waarde AS waarde, ${KLANTNAAM} klant
+      CASE WHEN d.gratis_op IS NOT NULL THEN 'gratis' ELSE d.afgerekend_soort END AS afgerekend_soort, d.gratis_waarde AS waarde, d.filament_inkoop, ${KLANTNAAM} klant
     FROM dossiers d LEFT JOIN klanten k ON k.id = d.klant_id
     WHERE (d.afgerekend_op IS NOT NULL OR d.gratis_op IS NOT NULL) AND substr(COALESCE(d.afgerekend_op, d.gratis_op), 1, 4) = ?
     ORDER BY COALESCE(d.afgerekend_op, d.gratis_op) DESC, d.id DESC`).all(String(jaar));
@@ -172,7 +173,15 @@ export function marges(db, jaar) {
     const kost = r2(print + (a?.kost || 0));
     const marge = r2(d.afgerekend_bedrag - kost);
     const margeArbeid = r2(marge - arbeid);
-    return { ...d, kost_print: r2(print), kost_artikelen: r2(a?.kost || 0), kost, arbeid: r2(arbeid), marge, marge_met_arbeid: margeArbeid,
+    // 08-10: wat het printuurmodel voor deze regels zou vragen (vergelijking)
+    let nieuw = null;
+    if (d.afgerekend_soort !== 'gratis') {
+      try {
+        const b = berekenMetDb(db, leesRegelsVan(db, d.id), { stand: 'schatting', filamentInkoop: !!d.filament_inkoop, vergelijk: false });
+        if (b.model === 'printuur' && b.volledig) nieuw = b.totaal;
+      } catch { /* tarieven onvolledig: geen vergelijking */ }
+    }
+    return { ...d, nieuw_model: nieuw, kost_print: r2(print), kost_artikelen: r2(a?.kost || 0), kost, arbeid: r2(arbeid), marge, marge_met_arbeid: margeArbeid,
       marge_pct: d.afgerekend_bedrag > 0 ? Math.round(marge / d.afgerekend_bedrag * 1000) / 10 : null,
       onvolledig, redenen: [...redenen] };
   });
@@ -194,5 +203,8 @@ export function marges(db, jaar) {
   }
   rijen.sort((x, y) => String(y.afgerekend_op).localeCompare(String(x.afgerekend_op)));
   const som = k => r2(rijen.reduce((t, x) => t + (x[k] || 0), 0));
-  return { jaar: Number(jaar), rijen, totaal: { bedrag: som('afgerekend_bedrag'), kost: som('kost'), arbeid: som('arbeid'), marge: som('marge'), marge_met_arbeid: som('marge_met_arbeid') } };
+  const vgl = rijen.filter(x => x.nieuw_model != null);
+  const vergelijking = vgl.length ? { dossiers: vgl.length, afgerekend: r2(vgl.reduce((t, x) => t + x.afgerekend_bedrag, 0)),
+    nieuw: r2(vgl.reduce((t, x) => t + x.nieuw_model, 0)) } : null;
+  return { jaar: Number(jaar), rijen, vergelijking, totaal: { bedrag: som('afgerekend_bedrag'), kost: som('kost'), arbeid: som('arbeid'), marge: som('marge'), marge_met_arbeid: som('marge_met_arbeid') } };
 }
