@@ -115,6 +115,20 @@ export function useBerekening(regels, stand = 'schatting', filamentInkoop = fals
   return { uitkomst, fout };
 }
 
+// 08-10: productiekost (intern, schatting): wat de print JOU kost + winst
+const pctVan = (w, t) => (t > 0 ? ` (${fmtAantal(Math.round(w / t * 1000) / 10)} %)` : '');
+function KostRegel({ k, bedrag }) {
+  const r = v => euro(Math.round(v * 100) / 100);
+  return (
+    <div className="kostregel" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '0 12px', color: 'var(--pos)' }}>
+      <span>productiekost {r(k.kost)}{k.per_stuk !== k.kost ? ` (${r(k.per_stuk)}/stuk)` : ''}: filament {r(k.filament)} · stroom {r(k.energie)} · machine {r(k.machine)} · BMCU {r(k.bmcu)}</span>
+      <span>+ arbeid {r(k.arbeid)}</span>
+      <span>winst {r(k.winst)}{pctVan(k.winst, bedrag)} · na arbeid {r(k.winst_na_arbeid)}</span>
+      {k.onvolledig && <span>ontbreekt: {k.ontbreekt.join(', ')}</span>}
+    </div>
+  );
+}
+
 function Detail({ b, type }) {
   if (!b) return null;
   if (b.fout) return <div className="regelfout"><Icoon naam="let" maat={14} /> {b.fout}</div>;
@@ -128,6 +142,7 @@ function Detail({ b, type }) {
       {type === 'printen' && <span>{fmtAantal(Math.round(d.uren * 100) / 100)} u{d.energie_bron === 'gemeten' ? ' · energie gemeten' : ''}</span>}
       {b.handmatig && <span className="badge b-info">handmatig (berekend {euro(Math.round(b.natuurlijk_eindbedrag * 100) / 100)})</span>}
       {b.per_stuk != null && <span>per stuk {euro(b.per_stuk)}</span>}
+      {b.kost && <KostRegel k={b.kost} bedrag={b.eindbedrag} />}
     </div>
   );
 }
@@ -268,9 +283,11 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
   );
 }
 
-export function Totalen({ uitkomst }) {
+export function Totalen({ uitkomst, gemeten = null }) {
   if (!uitkomst) return null;
   const u = uitkomst;
+  const k = u.productiekost;
+  const r = v => euro(Math.round(v * 100) / 100);
   return (
     <div className="totalen">
       <div><span>Totale printtijd</span><span className="num">{fmtAantal(Math.round(u.totale_tijd_u * 100) / 100)} u</span></div>
@@ -280,6 +297,11 @@ export function Totalen({ uitkomst }) {
       {u.vast > 0 && <div><span>Vaste prijs (buiten btw-grondslag)</span><span className="num">{euro(Math.round(u.vast * 100) / 100)}</span></div>}
       <div><span>Btw-grondslag</span><span className="num">{euro(u.btw_grondslag)}</span></div>
       <div className="groot"><span>Totaal</span><span className="num">{euro(u.totaal)}</span></div>
+      {k && <>
+        <div className="intern" title="Intern, komt niet op offerte of werkbon"><span>Productiekost printwerk (schatting){k.onvolledig ? ' — onvolledig' : ''}</span><span className="num">{r(k.kost)} + arbeid {r(k.arbeid)}</span></div>
+        {gemeten && <div className="intern"><span>Productiekost gemeten ({gemeten.voltooid} van {gemeten.totaal} opdrachten voltooid){gemeten.onvolledig ? ' — onvolledig' : ''}</span><span className="num">{r(gemeten.kost)} + arbeid {r(gemeten.arbeid)}</span></div>}
+        <div className="intern"><span>Winst op printwerk (schatting)</span><span className="num">{r(k.winst)}{pctVan(k.winst, k.bedrag)} · na arbeid {r(k.winst_na_arbeid)}</span></div>
+      </>}
       {!u.volledig && <div className="regelfout">Niet volledig: {u.fouten.length} regel(s) kunnen niet berekend worden (zie hierboven).</div>}
     </div>
   );

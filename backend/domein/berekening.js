@@ -61,5 +61,36 @@ export function verrijk(db, regels, { filamentInkoop = false } = {}) {
 
 // opties.tarieven: al opgehaald (de dossierlijst haalt ze één keer op)
 export function berekenMetDb(db, regels, { tarieven = null, filamentInkoop = false, ...opties } = {}) {
-  return bereken(verrijk(db, regels, { filamentInkoop }), tarieven || getTarieven(db), opties);
+  const uit = bereken(verrijk(db, regels, { filamentInkoop }), tarieven || getTarieven(db), opties);
+  voegKostToe(db, uit, regels);
+  return uit;
+}
+
+// ── PRODUCTIEKOST per printregel (08-10, intern) ─────────────────────────
+// Wat de print JOU kost: filament aan inkoopprijs (zonder faalfactor, zoals
+// de gemeten productiekost), energie, machine en BMCU uit de rekenmotor
+// (die rekenen zonder marge). Arbeid apart. Winst = eindbedrag − kost.
+function voegKostToe(db, uit, regels) {
+  const r4 = v => Math.round(v * 10000) / 10000;
+  let kost = 0, arbeid = 0, bedrag = 0, onvolledig = false, n = 0;
+  uit.regels.forEach((r, i) => {
+    const b = r._berekend;
+    if (r.type !== 'printen' || !b || b.fout || !b.detail) return;
+    const ontbreekt = [];
+    let filament = 0;
+    for (const m of regels[i]?.materialen || []) {
+      const gram = Number(String(m.gram ?? '').replace(',', '.')) || 0;
+      if (!gram || !(m.artikel_id || m.filament_type_id)) continue;
+      const kg = kostPerKg(db, m);
+      if (kg == null) ontbreekt.push('inkoopprijs filament'); else filament += gram / 1000 * kg;
+    }
+    const d = b.detail;
+    const k = filament + d.energie + d.machine + d.bmcu;
+    const a = Number(String(r.aantal ?? 1).replace(',', '.')) || 1;
+    b.kost = { filament: r4(filament), energie: r4(d.energie), machine: r4(d.machine), bmcu: r4(d.bmcu), kost: r4(k), arbeid: r4(d.arbeid),
+      per_stuk: r4(k / a), winst: r4(b.eindbedrag - k), winst_na_arbeid: r4(b.eindbedrag - k - d.arbeid),
+      onvolledig: ontbreekt.length > 0, ontbreekt };
+    kost += k; arbeid += d.arbeid; bedrag += b.eindbedrag; onvolledig ||= ontbreekt.length > 0; n++;
+  });
+  uit.productiekost = n ? { kost: r4(kost), arbeid: r4(arbeid), bedrag: r4(bedrag), winst: r4(bedrag - kost), winst_na_arbeid: r4(bedrag - kost - arbeid), onvolledig } : null;
 }

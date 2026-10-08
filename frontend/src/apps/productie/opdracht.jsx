@@ -173,6 +173,12 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit: sluit, 
       <label className="lbl" htmlFor="po-not" style={{ marginTop: 12 }}>Notities</label>
       <textarea id="po-not" className="inp" rows={2} disabled={afgesloten} value={f.notities} onChange={zet('notities')} placeholder="bv. plaat 2 van 3, kleurwissel na laag 40" />
       {!o && !vast && <p className="note">Een printopdracht voor een klant maak je vanuit het dossier (tabblad Productie), zodat ze bij de juiste regel hoort.</p>}
+      {o?.kost_schatting && o.status !== 'voltooid' && o.status !== 'geannuleerd' && (
+        <p className="sub">Geschatte productiekost: <b>{euro(o.kost_schatting.kost)}</b>{o.aantal > 1 ? <> ({euro(o.kost_schatting.per_stuk)} per stuk)</> : null} · filament {euro(o.kost_schatting.filament)}, stroom {euro(o.kost_schatting.energie)}, machine {euro(o.kost_schatting.machine)}, BMCU {euro(o.kost_schatting.bmcu)}{o.kost_schatting.arbeid ? <> + arbeid {euro(o.kost_schatting.arbeid)}</> : null}{o.kost_schatting.onvolledig ? ` · ontbreekt: ${o.kost_schatting.ontbreekt.join(', ')}` : ''}</p>
+      )}
+      {o?.productiekost_stuk != null && o.kost_schatting?.per_stuk != null && (
+        <p className="sub">Geschat vooraf: {euro(o.kost_schatting.per_stuk)} per stuk.</p>
+      )}
       {o?.productiekost_stuk != null && (
         <p className="sub">Productiekost: <b>{euro(o.productiekost_stuk)}</b> per stuk{o.arbeid_stuk ? <> + arbeid {euro(o.arbeid_stuk)}</> : null}{o.kost_onvolledig ? ' (onvolledig: een prijs of meting ontbreekt)' : ''}</p>
       )}
@@ -200,12 +206,13 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit: sluit, 
       {o && (
         <div className="tabelvak" style={{ marginTop: 12 }}>
           <table className="mini">
-            <thead><tr><th>Run</th><th>Uitkomst</th><th className="r">kWh</th></tr></thead>
+            <thead><tr><th>Run</th><th>Uitkomst</th><th className="r">kWh</th><th className="r" title="Stroom + machinetijd + BMCU van deze run (zonder filament)">Kost</th></tr></thead>
             <tbody>
-              {o.runs.length === 0 ? <tr><td colSpan={3} className="sub">Nog geen runs gekoppeld. Start de print; de run verschijnt dan op de printerkaart om te koppelen.</td></tr>
+              {o.runs.length === 0 ? <tr><td colSpan={4} className="sub">Nog geen runs gekoppeld. Start de print; de run verschijnt dan op de printerkaart om te koppelen.</td></tr>
                 : o.runs.map(r => (
                   <tr key={r.id} className="row" tabIndex={0} title="Run openen" onClick={() => setRunOpen(r.id)} onKeyDown={e => { if (e.key === 'Enter') setRunOpen(r.id); }}>
-                    <td className="num">{datumTijd(r.gestart_op)}</td><td>{UITKOMST[r.uitkomst]}</td><td className="r num">{naarInvoer(r.kwh) || '—'}</td></tr>))}
+                    <td className="num">{datumTijd(r.gestart_op)}</td><td>{UITKOMST[r.uitkomst]}</td><td className="r num">{naarInvoer(r.kwh) || '—'}</td>
+                    <td className="r num" title={r.kost ? `stroom ${r.kost.energie == null ? '?' : euro(r.kost.energie)} · machine ${r.kost.machine == null ? '?' : euro(r.kost.machine)} · BMCU ${euro(r.kost.bmcu)}` : ''}>{r.kost ? `${euro(r.kost.kost)}${r.kost.onvolledig ? ' *' : ''}` : '—'}</td></tr>))}
             </tbody>
           </table>
         </div>

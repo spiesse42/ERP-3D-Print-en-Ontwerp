@@ -11,10 +11,10 @@
 // - status afgeleid: gepland / bezig / te_bevestigen / voltooid / mislukt /
 //   geannuleerd
 // - werkbon: enkel GESLAAGDE runs (optie A, 25-09); mislukte = kost voor jou
-import { DomeinFout } from '../domein/hulp.js';
+import { DomeinFout, getTarieven } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { boekIn } from '../domein/voorraad.js';
-import { productiekost } from './kost.js';
+import { productiekost, schatOpdracht, runKost } from './kost.js';
 
 export const OPDRACHT_STATUS = {
   gepland: 'Gepland', bezig: 'Bezig', te_bevestigen: 'Te bevestigen', voltooid: 'Voltooid', mislukt: 'Mislukt', geannuleerd: 'Geannuleerd',
@@ -60,10 +60,13 @@ function metRuns(db, lijst) {
   const runsVan = db.prepare('SELECT * FROM printruns WHERE printopdracht_id = ? ORDER BY gestart_op');
   const mat = db.prepare(MATERIAAL_SQL('dossier_regel_materialen', 'regel_id'));
   const matLos = db.prepare(MATERIAAL_SQL('printopdracht_materialen', 'printopdracht_id'));
+  const t = getTarieven(db);
   return lijst.map(o => {
     const runs = runsVan.all(o.id);
-    return { ...o, status: statusVan(o, runs), runs: runs.map(r => ({ id: r.id, uitkomst: r.uitkomst, gestart_op: r.gestart_op, geeindigd_op: r.geeindigd_op, kwh: r.kwh, printer_id: r.printer_id, gewicht_g: r.gewicht_g ?? null })),
+    const uit = { ...o, status: statusVan(o, runs), runs: runs.map(r => ({ id: r.id, uitkomst: r.uitkomst, gestart_op: r.gestart_op, geeindigd_op: r.geeindigd_op, kwh: r.kwh, printer_id: r.printer_id, gewicht_g: r.gewicht_g ?? null, kost: runKost(db, r, t) })),
       materialen: o.dossier_regel_id ? mat.all(o.dossier_regel_id) : matLos.all(o.id) };
+    uit.kost_schatting = schatOpdracht(db, uit);   // 08-10: geschatte productiekost
+    return uit;
   });
 }
 
@@ -365,6 +368,16 @@ export function productieVan(db, dossierId) {
 
 // Voor het Productie-tabblad van een dossier: per printregel besteld, gepland,
 // goed en de opdrachten zelf.
+// 08-10: gemeten productiekost van de voltooide opdrachten (kost per goed stuk × goede stuks)
+function gemetenKost(ops) {
+  const actief = ops.filter(o => !o.geannuleerd_op);
+  const klaar = actief.filter(o => o.voltooid_op && o.productiekost_stuk != null);
+  if (!klaar.length) return null;
+  const r2 = v => Math.round(v * 100) / 100;
+  return { kost: r2(klaar.reduce((t, o) => t + o.productiekost_stuk * (o.aantal_goed || 0), 0)),
+    arbeid: r2(klaar.reduce((t, o) => t + (o.arbeid_stuk || 0) * (o.aantal_goed || 0), 0)),
+    voltooid: klaar.length, totaal: actief.length, onvolledig: klaar.some(o => o.kost_onvolledig) };
+}
 export function productieOverzicht(db, dossierId, regels) {
   const printregels = regels.filter(r => r.type === 'printen');
   const ops = leesOpdrachten(db, { dossier_id: dossierId });
@@ -372,6 +385,7 @@ export function productieOverzicht(db, dossierId, regels) {
   return {
     status: statusUit(printregels, ops),
     aantal_opdrachten: ops.length,
+    gemeten: gemetenKost(ops),
     te_koppelen_runs: teKoppelenVoorDossier(db, dossierId, ops),
     regels: printregels.map(r => {
       const eigen = ops.filter(o => o.dossier_regel_id === r.id);

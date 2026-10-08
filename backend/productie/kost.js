@@ -100,3 +100,48 @@ export function productiekost(db, opdracht, goed = opdracht.aantal_goed, { mater
     onvolledig: ontbreekt.length > 0, ontbreekt: [...new Set(ontbreekt)],
   };
 }
+
+// ── SCHATTING vooraf van een printopdracht (08-10) ───────────────────────
+// Zelfde opbouw als hierboven, maar met de printtijd van de dossierregel
+// (naar rato van de stuks) en het verbruik (watt) van de printer i.p.v.
+// metingen. Een losse opdracht heeft geen printtijd: enkel het filament.
+export function schatOpdracht(db, o) {
+  const t = getTarieven(db);
+  const regel = o.dossier_regel_id ? db.prepare('SELECT * FROM dossier_regels WHERE id = ?').get(o.dossier_regel_id) : null;
+  const deel = regel ? Number(o.aantal) / (Number(regel.aantal) || 1) : 1;
+  const ontbreekt = [];
+  let filament = 0;
+  for (const m of o.materialen || []) {
+    if (!m.gram) continue;
+    const kg = kostPerKg(db, m);
+    if (kg == null) ontbreekt.push(`inkoopprijs filament ${m.naam || ''}`.trim()); else filament += m.gram * deel / 1000 * kg;
+  }
+  const p = db.prepare('SELECT naam, machine_per_uur, verbruik_watt FROM printers WHERE id = ?').get(o.printer_id);
+  const uren = regel?.tijd_min != null ? Number(regel.tijd_min) * deel / 60 : null;
+  let energie = 0, machine = 0;
+  if (uren == null) ontbreekt.push('printtijd');
+  else {
+    if (p?.verbruik_watt == null || t.kwh_prijs == null) ontbreekt.push('verbruik (watt) of kWh-prijs'); else energie = p.verbruik_watt / 1000 * uren * t.kwh_prijs;
+    if (p?.machine_per_uur == null) ontbreekt.push(`machinetarief ${p?.naam || ''}`.trim()); else machine = uren * p.machine_per_uur;
+  }
+  const bmcu = t.bmcu_per_job ?? 0;
+  const voorb = regel?.voorbereiding_min ?? t.voorbereiding_min ?? 0;
+  const nabew = regel?.nabewerking_min ?? t.nabewerking_min ?? 0;
+  const arbeid = (voorb + nabew) / 60 * (t.arbeid_per_uur ?? 0) * deel;
+  const kost = filament + energie + machine + bmcu;
+  const n = Number(o.aantal) || 0;
+  return { filament: rond(filament), energie: rond(energie), machine: rond(machine), bmcu: rond(bmcu), arbeid: rond(arbeid), kost: rond(kost),
+    per_stuk: n > 0 ? rond(kost / n) : null, arbeid_stuk: n > 0 ? rond(arbeid / n) : null, onvolledig: ontbreekt.length > 0, ontbreekt: [...new Set(ontbreekt)] };
+}
+
+// ── kost van één run (08-10): stroom (gemeten kWh), machinetijd, BMCU.
+// Filament telt niet mee: wat een mislukte poging verbruikte is niet gekend.
+export function runKost(db, r, t = getTarieven(db)) {
+  if (r.uitkomst === 'bezig' || !r.gestart_op) return null;
+  const p = db.prepare('SELECT machine_per_uur FROM printers WHERE id = ?').get(r.printer_id);
+  const energie = r.kwh != null && t.kwh_prijs != null ? r.kwh * t.kwh_prijs : null;
+  const machine = p?.machine_per_uur != null ? duurU(r) * p.machine_per_uur : null;
+  const bmcu = t.bmcu_per_job ?? 0;
+  return { energie: energie == null ? null : rond(energie), machine: machine == null ? null : rond(machine), bmcu: rond(bmcu),
+    kost: rond((energie ?? 0) + (machine ?? 0) + bmcu), onvolledig: energie == null || machine == null };
+}
