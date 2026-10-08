@@ -66,7 +66,10 @@ function berekenRegel(regel, t, stand) {
     const faal = 1 + t.faalfactor_pct / 100;
     const materialen = (regel.materialen || []).map(m => {
       const gram = of(m.gram, 0);
-      const prijs = getal(m.prijs_per_kg);
+      let prijs = getal(m.prijs_per_kg);
+      // 08-10 printuurmodel: het hoogste van de verkoopprijs/kg en inkoop × opslag
+      const ink = getal(m.inkoop_per_kg);
+      if (t.nieuw && t.opslag > 0 && ink !== null && m.prijs_bron !== 'inkoop') prijs = Math.max(prijs ?? 0, ink * t.opslag / 100);
       if (gram > 0 && prijs === null) {
         fouten.push(m.prijs_bron === 'inkoop'
           ? `Geen inkoopprijs gekend voor ${m.naam || 'het gekozen filament'} (Voorraad → artikel → inkoopprijs, of ontvang een aankoop)`
@@ -85,12 +88,14 @@ function berekenRegel(regel, t, stand) {
     const nabew = of(regel.nabewerking_min, t.nabewerking_min);
     const arbeid = (voorb + nabew) / 60 * t.arbeid_per_uur;
     const bmcu = t.bmcu_per_job * platen;
+    // 08-10 printuurmodel: winst per printuur; boven de grens aan een lager pct
+    const winst = t.nieuw ? t.winst_u * (Math.min(uren, t.winst_grens) + Math.max(0, uren - t.winst_grens) * t.winst_lang / 100) : 0;
     return {
-      met_marge: energie + machine + arbeid + bmcu,
+      met_marge: energie + machine + arbeid + bmcu + winst,
       zonder_marge: materiaal,
       vaste_prijs: false,
       tijd_u: uren,
-      detail: { materialen, materiaal, energie, energie_bron: kwh !== null ? 'gemeten' : 'geschat', machine, arbeid, voorbereiding_min: voorb, nabewerking_min: nabew, bmcu, uren, platen },
+      detail: { materialen, materiaal, energie, energie_bron: kwh !== null ? 'gemeten' : 'geschat', machine, arbeid, voorbereiding_min: voorb, nabewerking_min: nabew, bmcu, winst, uren, platen },
     };
   }
 
@@ -110,16 +115,25 @@ function berekenRegel(regel, t, stand) {
   return { fout: `Onbekend soort regel: ${type}`, tijd_u: 0 };
 }
 
-export function bereken(regels, tarieven, { stand = 'schatting' } = {}) {
+// model: 'nieuw' (standaard: printuurmodel zodra winst_per_printuur > 0) of
+// 'oud' (08-10: de vroegere berekening met getrapte marge, ter vergelijking)
+export function bereken(regels, tarieven, { stand = 'schatting', model = 'nieuw' } = {}) {
   const ontbreekt = NODIGE_TARIEVEN.filter(k => getal(tarieven?.[k]) === null);
   if (ontbreekt.length) throw new Error(`Tarieven ontbreken: ${ontbreekt.join(', ')}`);
   const t = Object.fromEntries(NODIGE_TARIEVEN.map(k => [k, getal(tarieven[k])]));
+  // Printuurmodel (08-10): winst per printuur i.p.v. de getrapte marge, en
+  // materiaal minstens inkoop × opslag. Uit (0) = de oude berekening.
+  t.winst_u = of(tarieven.winst_per_printuur, 0);
+  t.winst_grens = of(tarieven.winst_lang_grens_uur, 12);
+  t.winst_lang = of(tarieven.winst_lang_pct, 100);
+  t.opslag = of(tarieven.materiaal_opslag_pct, 0);
+  t.nieuw = model !== 'oud' && t.winst_u > 0;
 
   // Doorgang 1: de "natuurlijke" berekening per regel + de totale printtijd,
   // die de marge bepaalt (een handmatig bedrag verandert de printtijd niet).
   const natuurlijk = (regels || []).map(r => berekenRegel(r, t, stand));
   const totale_tijd_u = natuurlijk.reduce((s, r) => s + (r.tijd_u || 0), 0);
-  const marge_pct = totale_tijd_u >= t.marge_grens_uur ? t.marge_groot_pct : t.marge_klein_pct;
+  const marge_pct = t.nieuw ? 0 : totale_tijd_u >= t.marge_grens_uur ? t.marge_groot_pct : t.marge_klein_pct;
   const factor = 1 + marge_pct / 100;
 
   // Doorgang 2: handmatige eindbedragen, eindbedrag per regel, totalen.
@@ -156,6 +170,7 @@ export function bereken(regels, tarieven, { stand = 'schatting' } = {}) {
   return {
     regels: uit,
     stand,
+    model: t.nieuw ? 'printuur' : 'marge',
     totale_tijd_u: r4(totale_tijd_u),
     marge_pct,
     kost_met_marge: r4(met),          // wat de marge krijgt (vóór marge)

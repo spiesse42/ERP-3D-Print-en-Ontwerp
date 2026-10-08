@@ -134,7 +134,7 @@ function Detail({ b, type }) {
   if (b.fout) return <div className="regelfout"><Icoon naam="let" maat={14} /> {b.fout}</div>;
   const d = b.detail || {};
   const delen = type === 'printen'
-    ? [[d.materialen?.some(m => m.prijs_bron === 'inkoop') ? 'materiaal (inkoopprijs)' : 'materiaal', d.materiaal], ['energie', d.energie], ['machine', d.machine], ['arbeid', d.arbeid], ['BMCU/AMS', d.bmcu]]
+    ? [[d.materialen?.some(m => m.prijs_bron === 'inkoop') ? 'materiaal (inkoopprijs)' : 'materiaal', d.materiaal], ['energie', d.energie], ['machine', d.machine], ['arbeid', d.arbeid], ['BMCU/AMS', d.bmcu], ...(d.winst ? [['winst printuren', d.winst]] : [])]
     : [];
   return (
     <div className="regeldetail sub">
@@ -142,6 +142,7 @@ function Detail({ b, type }) {
       {type === 'printen' && <span>{fmtAantal(Math.round(d.uren * 100) / 100)} u{d.energie_bron === 'gemeten' ? ' · energie gemeten' : ''}</span>}
       {b.handmatig && <span className="badge b-info">handmatig (berekend {euro(Math.round(b.natuurlijk_eindbedrag * 100) / 100)})</span>}
       {b.per_stuk != null && <span>per stuk {euro(b.per_stuk)}</span>}
+      {b.oud != null && Math.abs(b.oud - b.eindbedrag) >= 0.01 && <span className="oudprijs" title="Wat de oude berekening (getrapte marge) voor deze regel vroeg">oude berekening {euro(b.oud)} ({b.eindbedrag > b.oud ? '+' : ''}{euro(Math.round((b.eindbedrag - b.oud) * 100) / 100)})</span>}
       {b.kost && <KostRegel k={b.kost} bedrag={b.eindbedrag} />}
     </div>
   );
@@ -291,12 +292,17 @@ export function Totalen({ uitkomst, gemeten = null }) {
   return (
     <div className="totalen">
       <div><span>Totale printtijd</span><span className="num">{fmtAantal(Math.round(u.totale_tijd_u * 100) / 100)} u</span></div>
-      <div><span>Marge (klein/groot volgens printtijd)</span><span className="num">{fmtAantal(u.marge_pct)} %</span></div>
-      <div><span>Kost waar marge op komt</span><span className="num">{euro(Math.round(u.kost_met_marge * 100) / 100)}</span></div>
+      {u.model === 'printuur'
+        ? <div><span>Rekenmodel</span><span className="num">winst per printuur</span></div>
+        : <>
+          <div><span>Marge (klein/groot volgens printtijd)</span><span className="num">{fmtAantal(u.marge_pct)} %</span></div>
+          <div><span>Kost waar marge op komt</span><span className="num">{euro(Math.round(u.kost_met_marge * 100) / 100)}</span></div>
+        </>}
       <div><span>Zonder marge (materiaal, artikelen, handmatig)</span><span className="num">{euro(Math.round(u.zonder_marge * 100) / 100)}</span></div>
       {u.vast > 0 && <div><span>Vaste prijs (buiten btw-grondslag)</span><span className="num">{euro(Math.round(u.vast * 100) / 100)}</span></div>}
       <div><span>Btw-grondslag</span><span className="num">{euro(u.btw_grondslag)}</span></div>
       <div className="groot"><span>Totaal</span><span className="num">{euro(u.totaal)}</span></div>
+      {u.oud && Math.abs(u.oud.totaal - u.totaal) >= 0.01 && <div className="intern oud"><span>Oude berekening (getrapte marge)</span><span className="num">{euro(u.oud.totaal)} → {u.totaal > u.oud.totaal ? '+' : ''}{euro(Math.round((u.totaal - u.oud.totaal) * 100) / 100)}</span></div>}
       {k && <>
         <div className="intern" title="Intern, komt niet op offerte of werkbon"><span>Productiekost printwerk (schatting){k.onvolledig ? ' — onvolledig' : ''}</span><span className="num">{r(k.kost)} + arbeid {r(k.arbeid)}</span></div>
         {gemeten && <div className="intern"><span>Productiekost gemeten ({gemeten.voltooid} van {gemeten.totaal} opdrachten voltooid){gemeten.onvolledig ? ' — onvolledig' : ''}</span><span className="num">{r(gemeten.kost)} + arbeid {r(gemeten.arbeid)}</span></div>}

@@ -40,6 +40,11 @@ export default function Marges() {
             <div className="kpi"><div className="l">Marge</div><div className="w">{euro(m.totaal.marge)}</div><div className="s">{m.totaal.bedrag ? pct(Math.round(m.totaal.marge / m.totaal.bedrag * 1000) / 10) : ''}</div></div>
             <div className="kpi"><div className="l">Marge na arbeid</div><div className="w">{euro(m.totaal.marge_met_arbeid)}</div></div>
           </div>
+          {m.vergelijking && m.vergelijking.nieuw > m.vergelijking.afgerekend && (
+            <div className="waarschuwing" style={{ marginBottom: 12 }}>
+              Volgens het <b>nieuwe rekenmodel</b> (winst per printuur) had je voor deze {m.vergelijking.dossiers} dossier{m.vergelijking.dossiers === 1 ? '' : 's'} <b>{euro(m.vergelijking.nieuw)}</b> gevraagd in plaats van {euro(m.vergelijking.afgerekend)}: <b>{euro(Math.round((m.vergelijking.nieuw - m.vergelijking.afgerekend) * 100) / 100)} meer</b> (+{pct(m.vergelijking.afgerekend > 0 ? Math.round((m.vergelijking.nieuw / m.vergelijking.afgerekend - 1) * 1000) / 10 : null)}).
+            </div>
+          )}
           <div className="panel">
             <Lijst sleutel={d => d.id} onOpen={d => navigeer(d.verkoop_id ? `/verkoop/${d.verkoop_id}` : `/dossiers/${d.id}`)} groepen={[{ titel: null, rijen: m.rijen }]}
               kolommen={[
@@ -52,6 +57,8 @@ export default function Marges() {
                 { kop: 'Arbeid', klasse: 'r', cel: d => <span className="num">{euro(d.arbeid)}</span> },
                 { kop: 'Marge', klasse: 'r', cel: d => <span className={`num${d.marge < 0 ? ' neg' : ''}`}>{euro(d.marge)} <span className="sub">{pct(d.marge_pct)}</span></span> },
                 { kop: 'Na arbeid', klasse: 'r', cel: d => <span className={`num${d.marge_met_arbeid < 0 ? ' neg' : ''}`}>{euro(d.marge_met_arbeid)}</span> },
+                ...(m.vergelijking ? [{ kop: 'Nieuw model', klasse: 'r', cel: d => (d.nieuw_model == null ? <span className="sub">—</span>
+                  : <span className="num" title="Wat het nieuwe rekenmodel (winst per printuur) voor deze regels vraagt">{euro(d.nieuw_model)} <span className="sub">{d.nieuw_model >= d.afgerekend_bedrag ? '+' : ''}{euro(Math.round((d.nieuw_model - d.afgerekend_bedrag) * 100) / 100)}</span></span>) }] : []),
               ]}
               kaart={d => ({ titel: d.titel, rechts: <b className="num">{euro(d.marge)}</b>, regel: `${d.nummer} · ${d.klant || ''}`, onder: `${euro(d.afgerekend_bedrag)} − kost ${euro(d.kost)}`, badge: d.afgerekend_soort === 'gratis' ? <span className="badge b-info">gratis</span> : d.onvolledig ? <span className="badge b-warn">onvolledig</span> : null })}
               leeg={<><b>Nog niets afgerekend in {jaar}.</b>Afgerekende klantopdrachten verschijnen hier met hun marge.</>} />

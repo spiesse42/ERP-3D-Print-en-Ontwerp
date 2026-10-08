@@ -356,6 +356,8 @@ label.btn.bezig { opacity:.6; pointer-events:none; }
 .totalen .intern { font-size:12.5px; }
 .totalen .intern > span:last-child { color:var(--pos); }
 .totalen .groot + .intern { border-top:1px dashed var(--line); margin-top:6px; padding-top:6px; }
+.totalen .oud > span:last-child { color:var(--warn); }
+.regeldetail .oudprijs { color:var(--warn); }
 
 
 /* ── ontbrekende gegevens + nieuw-artikelvenster (stap 4b) ── */
