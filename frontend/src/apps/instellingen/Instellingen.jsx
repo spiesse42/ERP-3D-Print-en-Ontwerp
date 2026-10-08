@@ -54,7 +54,8 @@ export default function Instellingen() {
 /* ── Tarieven ─────────────────────────────────────────────────────────── */
 const TARIEF_GROEPEN = [
   ['Energie & slijtage', ['kwh_prijs', 'bmcu_per_job']],
-  ['Marge & faalfactor', ['marge_grens_uur', 'marge_klein_pct', 'marge_groot_pct', 'faalfactor_pct']],
+  ['Winst per printuur & materiaal', ['winst_per_printuur', 'winst_lang_grens_uur', 'winst_lang_pct', 'materiaal_opslag_pct', 'faalfactor_pct']],
+  ['Oude berekening: getrapte marge (enkel als winst per printuur 0 is, en ter vergelijking)', ['marge_grens_uur', 'marge_klein_pct', 'marge_groot_pct']],
   ['Vaste arbeid per print', ['voorbereiding_min', 'nabewerking_min']],
   ['Regietarieven', ['arbeid_per_uur', 'ontwerp_tarief', 'nabewerking_tarief']],
 ];
@@ -113,7 +114,7 @@ function Tarieven() {
             </FragmentGroep>
           ))}
         </div>
-        <p className="note" style={{ marginBottom: 0 }}>Machinekost: het tarief van elke printer zelf (zie <Link naar="/instellingen/printers">Printers</Link>), zonder terugval. BMCU/AMS-slijtage: bij elke print. Materiaal: verkoopprijs per kg per prijsgroep (zie Materiaalprijzen), zonder marge. De marge klein/groot geldt voor energie, machine, arbeid, BMCU en extra's. Uitproberen kan in <Link naar="/instellingen/proef">Proefberekening</Link>.</p>
+        <p className="note" style={{ marginBottom: 0 }}>Machinekost: het tarief van elke printer zelf (zie <Link naar="/instellingen/printers">Printers</Link>), zonder terugval. BMCU/AMS-slijtage: bij elke print. Materiaal: het hoogste van de verkoopprijs per kg van de prijsgroep (zie Materiaalprijzen) en je inkoopprijs × de opslag, plus de faalfactor. Winst per printuur: bovenop de kosten, per uur printtijd (boven de grens aan het lagere percentage); dan geldt geen getrapte marge. Staat winst per printuur op 0, dan rekent het ERP zoals vroeger: getrapte marge op energie, machine, arbeid, BMCU en extra's. Uitproberen kan in <Link naar="/instellingen/proef">Proefberekening</Link>.</p>
       </div>
     </div>
   );

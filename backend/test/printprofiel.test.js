@@ -102,3 +102,22 @@ test('P5. productiekost (schatting) per printregel, totaal en per geplande print
   const o = s.productie.regels[0].opdrachten[0];
   assert.ok(o.kost_schatting && Math.abs(o.kost_schatting.machine - 0.4) < 1e-3, 'geplande opdracht krijgt een schatting');
 });
+
+test('P6. printuurmodel: winst per printuur, materiaal minstens inkoop × opslag, oude berekening ter vergelijking', async () => {
+  ok(await vraag('PUT', '/tarieven', { winst_per_printuur: 1, materiaal_opslag_pct: 200, winst_lang_grens_uur: 12, winst_lang_pct: 60 }));
+  try {
+    getDb().prepare('UPDATE artikelen SET inkoopprijs = 20 WHERE id = ?').run(zwart);
+    const regel = { type: 'printen', printer_id: mini, aantal: 1, tijd_min: 20 * 60, materialen: [{ artikel_id: zwart, gram: 100 }] };
+    const b = ok(await vraag('POST', '/bereken', { regels: [regel] }));
+    const d = b.regels[0]._berekend.detail;
+    assert.equal(b.model, 'printuur');
+    assert.equal(b.marge_pct, 0);
+    assert.ok(Math.abs(d.winst - (12 + 8 * 0.6)) < 1e-9, '12 u × € 1 + 8 u × € 0,60');
+    const kg = d.materialen[0].prijs_per_kg;
+    assert.ok(kg >= 25 && Math.abs(kg - Math.max(25, 20 / (getDb().prepare('SELECT rolgewicht_g g FROM filament_types WHERE id = ?').get(pg).g / 1000) * 2)) < 0.01, 'max(verkoop, inkoop × 2)');
+    assert.ok(b.oud && b.oud.totaal < b.totaal, 'oude berekening lager');
+    assert.equal(b.regels[0]._berekend.oud, b.oud.regels[0]);
+  } finally {
+    ok(await vraag('PUT', '/tarieven', { winst_per_printuur: 0, materiaal_opslag_pct: 0 }));
+  }
+});

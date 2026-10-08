@@ -46,7 +46,8 @@ export function verrijk(db, regels, { filamentInkoop = false } = {}) {
           const kg = pg ? kostPerKg(db, m) : null;
           return { ...m, naam: pg?.naam ?? m.naam ?? null, prijs_per_kg: kg == null ? null : Math.round(kg * 100) / 100, prijs_bron: 'inkoop' };
         }
-        return { ...m, naam: pg?.naam ?? m.naam ?? null, prijs_per_kg: pg ? pg.verkoopprijs_per_kg : null };
+        const ink = pg ? kostPerKg(db, m) : null;   // 08-10: voor "inkoop × opslag"
+        return { ...m, naam: pg?.naam ?? m.naam ?? null, prijs_per_kg: pg ? pg.verkoopprijs_per_kg : null, inkoop_per_kg: ink == null ? null : Math.round(ink * 100) / 100 };
       });
       return { ...r, printer, materialen };
     }
@@ -61,8 +62,16 @@ export function verrijk(db, regels, { filamentInkoop = false } = {}) {
 
 // opties.tarieven: al opgehaald (de dossierlijst haalt ze één keer op)
 export function berekenMetDb(db, regels, { tarieven = null, filamentInkoop = false, ...opties } = {}) {
-  const uit = bereken(verrijk(db, regels, { filamentInkoop }), tarieven || getTarieven(db), opties);
+  const t = tarieven || getTarieven(db);
+  const verrijkt = verrijk(db, regels, { filamentInkoop });
+  const uit = bereken(verrijkt, t, opties);
   voegKostToe(db, uit, regels);
+  // 08-10: ter vergelijking wat de OUDE berekening (getrapte marge) gaf
+  if (uit.model === 'printuur' && opties.vergelijk !== false) {
+    const oud = bereken(verrijkt, t, { ...opties, model: 'oud' });
+    uit.oud = { totaal: oud.totaal, regels: oud.regels.map(r => r._berekend?.eindbedrag ?? null) };
+    uit.regels.forEach((r, i) => { if (r._berekend && !r._berekend.fout) r._berekend.oud = uit.oud.regels[i]; });
+  }
   return uit;
 }
 

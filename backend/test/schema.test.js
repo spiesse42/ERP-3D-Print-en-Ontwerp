@@ -33,10 +33,10 @@ test('lege databank wordt gemigreerd tot de laatste versie', () => {
   sluitDb();
 });
 
-test('seed: 11 tarieven (machine_per_uur weg sinds 005), 8 merken, 8 materialen, 16 kleuren, 3 printers', () => {
+test('seed: 15 tarieven (machine_per_uur weg sinds 005, +4 printuurmodel sinds 030), 8 merken, 8 materialen, 16 kleuren, 3 printers', () => {
   const db = initDb(':memory:');
   const t = getTarieven(db);
-  assert.equal(Object.keys(t).length, 11);
+  assert.equal(Object.keys(t).length, 15);
   assert.equal(t.kwh_prijs, 0.35);
   assert.equal(t.machine_per_uur, undefined, 'geen globaal machinetarief meer (beslissing 24-09)');
   assert.deepEqual(db.prepare('SELECT naam, machine_per_uur, actief FROM printers ORDER BY id').all().map(p => [p.naam, p.machine_per_uur, p.actief]),
@@ -55,7 +55,7 @@ test('opnieuw opstarten op een bestaande databank voert niets dubbel uit en bewa
   db = initDb(pad);
   assert.equal(huidigeVersie(db), MIGRATIES.at(-1).versie);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM klanten').get().c, 1);
-  assert.equal(db.prepare('SELECT COUNT(*) c FROM tarieven').get().c, 11, 'seed mag niet opnieuw lopen');
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM tarieven').get().c, 15, 'seed mag niet opnieuw lopen');
   sluitDb();
 });
 

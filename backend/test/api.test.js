@@ -51,7 +51,7 @@ test('klanten: aanmaken, lezen, wijzigen (incl. Peppol-ID), verwijderen', async 
 
 test('tarieven: lijst en wijzigen; een 0 blijft 0', async () => {
   let r = await vraag('GET', '/tarieven');
-  assert.equal(r.data.length, 11);
+  assert.equal(r.data.length, 15);
   r = await vraag('PUT', '/tarieven/faalfactor_pct', { waarde: 0 });
   assert.equal(r.status, 200);
   assert.equal(getDb().prepare(`SELECT waarde FROM tarieven WHERE sleutel='faalfactor_pct'`).get().waarde, 0);
