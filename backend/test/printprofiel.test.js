@@ -121,3 +121,13 @@ test('P6. printuurmodel: winst per printuur, materiaal minstens inkoop × opslag
     ok(await vraag('PUT', '/tarieven', { winst_per_printuur: 0, materiaal_opslag_pct: 0 }));
   }
 });
+
+test('P7. adviesprijs per stuk uit het printprofiel; slicerbestand als bijlage bij het artikel', async () => {
+  ok(await vraag('PUT', `/productie/printprofiel/${medaillon}`, { profiel: { printer_id: mini, tijd_min: 30, per_plaat: 8, materialen: [{ artikel_id: zwart, gram: 12 }] } }));
+  const k = ok(await vraag('GET', `/producten/${medaillon}/kost`));
+  assert.ok(k.advies?.stuk > 0, 'adviesprijs voor 1 stuk');
+  assert.equal(k.advies.per_plaat, 8);
+  assert.ok(k.advies.plaat_stuk > 0 && k.advies.plaat_stuk <= k.advies.stuk, 'volle plaat: per stuk niet duurder');
+  const p = ok(await vraag('PUT', `/productie/printprofiel/${medaillon}`, { profiel: { printer_id: mini, tijd_min: 30, slicer_bijlage_id: 999999, materialen: [] } }));
+  assert.equal(p.profiel?.slicer_bijlage_id ?? p.slicer_bijlage_id ?? undefined, undefined, 'onbekende bijlage valt weg');
+});

@@ -23,6 +23,8 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
   const [d, setD] = useState(null);
   const [plaat, setPlaat] = useState(0);
   const [stuks, setStuks] = useState('1');
+  const [bestand, setBestand] = useState(null);
+  const [bewaren, setBewaren] = useState(true);
 
   async function leesIn(bestand) {
     if (!bestand) return;
@@ -33,7 +35,7 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
       const r = await api.upload('/slicer', fd);
       // voorkeur: de plaat met een object met de naam van dit product
       const i = Math.max(0, r.platen.findIndex(p => p.objecten.some(o => norm(o).includes(norm(naam)) || norm(naam).includes(norm(o)))));
-      setD(r); setPlaat(i); setStuks(stuksOp(r.platen[i], naam));
+      setD(r); setBestand(bestand); setPlaat(i); setStuks(stuksOp(r.platen[i], naam));
     } catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
   }
@@ -45,6 +47,7 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
       tijd_min: Math.round(p.tijd_min / n * 100) / 100,
       per_plaat: String(n),
       materialen: p.filamenten.length ? p.filamenten.map(f => ({ keuze: f.keuze || '', gram: naarInvoer(Math.round(f.gram / n * 100) / 100) })) : [{ keuze: '', gram: '' }],
+      bestand: bewaren ? bestand : null, plaat: p.nummer,
     });
   }
 
@@ -79,6 +82,7 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
             {n > 0 && <p className="sub">Per stuk: {uurMin(p.tijd_min / n)} · {naarInvoer(Math.round(p.gram / n * 100) / 100)} g</p>}
           </div>
         </div>
+        <label className="vinkje" style={{ marginTop: 8 }}><input type="checkbox" checked={bewaren} onChange={e => setBewaren(e.target.checked)} /> Slicerbestand bewaren bij dit artikel (downloaden vanuit het printprofiel)</label>
         <p className="note">Staan er ook andere producten op deze plaat, dan krijgt elk stuk een gelijk deel van tijd en gram. Slice voor een juiste kost liefst een plaat met enkel dit product. Filament dat niet herkend wordt, kies je daarna zelf in het profiel.</p>
       </>}
     </Dialoog>

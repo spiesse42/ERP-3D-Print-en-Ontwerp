@@ -9,7 +9,8 @@ import { leesArtikelen } from '../domein/artikelen.js';
 import { leesOnderdelen, bewaarOnderdelen } from '../domein/onderdelen.js';
 import { webshopRijen, vergelijk, neemOver, ontkoppel } from '../domein/webshop.js';
 import { haalProducten, WebshopFout } from '../integraties/sanity.js';
-import { artikelMetProfiel, schatKost } from '../productie/printprofiel.js';
+import { artikelMetProfiel, schatKost, regelUitProfiel } from '../productie/printprofiel.js';
+import { berekenMetDb } from '../domein/berekening.js';
 
 const r = Router();
 function metFouten(fn) {
@@ -35,7 +36,24 @@ export function kostVanArtikel(db, a) {
     WHERE dr.artikel_id = ? AND d.soort = 'eigen' AND o.voltooid_op IS NOT NULL AND o.aantal_goed > 0 AND o.productiekost_stuk IS NOT NULL`).get(a.id);
   const delen = schatting.onderdelen;
   const gemeten = g?.n ? { kost: r2(g.k / g.n + delen), arbeid: r2(g.ar / g.n), stuks: g.n } : null;
-  return { profiel: !!profiel, onderdelen, schatting, gemeten };
+  return { profiel: !!profiel, onderdelen, schatting, gemeten, advies: adviesprijs(db, profiel, delen) };
+}
+
+// 09-10: adviesprijs per stuk volgens de rekenmotor (dezelfde berekening als
+// een printregel in een dossier): voor 1 stuk en per stuk bij een volle plaat,
+// plus de onderdelen aan inkoopprijs.
+function adviesprijs(db, profiel, onderdelen = 0) {
+  if (!profiel?.printer_id) return null;
+  const voor = n => {
+    const b = berekenMetDb(db, [{ type: 'printen', printer_id: profiel.printer_id, aantal: n, ...regelUitProfiel(profiel, n) }], { vergelijk: false });
+    const x = b.regels[0]?._berekend;
+    return x && !x.fout ? r2(x.eindbedrag / n + onderdelen) : null;
+  };
+  try {
+    const stuk = voor(1);
+    const pp = profiel.per_plaat > 1 ? profiel.per_plaat : null;
+    return stuk == null ? null : { stuk, per_plaat: pp, plaat_stuk: pp ? voor(pp) : null };
+  } catch { return null; }
 }
 
 r.get('/', metFouten((req, res) => {
