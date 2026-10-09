@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../../lib/api.js';
+import { api, BASE } from '../../lib/api.js';
 import { useData } from '../../schil/useData.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
 import Icoon from '../../schil/Icoon.jsx';
@@ -12,17 +12,19 @@ import ProfielUitSlicer from './ProfielUitSlicer.jsx';
 // Bijprinten (één printopdracht per plaat).
 const alsInvoer = v => (v == null ? '' : String(v).replace('.', ','));
 const nr = v => (String(v ?? '').trim() === '' ? null : String(v).trim().replace(',', '.'));
-const leeg = { printer_id: '', tijd_u: '', tijd_m: '', per_plaat: '', voorbereiding_min: '', nabewerking_min: '', materialen: [{ keuze: '', gram: '' }] };
+const leeg = { printer_id: '', tijd_u: '', tijd_m: '', per_plaat: '', voorbereiding_min: '', nabewerking_min: '', slicer_bijlage_id: null, slicer_plaat: null, materialen: [{ keuze: '', gram: '' }] };
 function naarForm(p) {
   if (!p) return leeg;
   const t = Number(p.tijd_min) || 0, u = Math.floor(t / 60), m = Math.round((t - u * 60) * 100) / 100;
   return { printer_id: p.printer_id ? String(p.printer_id) : '', tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: alsInvoer(p.per_plaat),
     voorbereiding_min: alsInvoer(p.voorbereiding_min), nabewerking_min: alsInvoer(p.nabewerking_min),
+    slicer_bijlage_id: p.slicer_bijlage_id ?? null, slicer_plaat: p.slicer_plaat ?? null,
     materialen: p.materialen?.length ? p.materialen.map(x => ({ keuze: x.artikel_id ? `a:${x.artikel_id}` : `p:${x.filament_type_id}`, gram: alsInvoer(x.gram) })) : leeg.materialen };
 }
 function naarBody(f) {
   return { printer_id: f.printer_id || null, tijd_min: Number(nr(f.tijd_u) ?? 0) * 60 + Number(nr(f.tijd_m) ?? 0), per_plaat: nr(f.per_plaat),
     voorbereiding_min: nr(f.voorbereiding_min), nabewerking_min: nr(f.nabewerking_min),
+    slicer_bijlage_id: f.slicer_bijlage_id, slicer_plaat: f.slicer_plaat,
     materialen: f.materialen.filter(m => m.keuze).map(m => { const [s, id] = m.keuze.split(':'); return { [s === 'a' ? 'artikel_id' : 'filament_type_id']: Number(id), gram: nr(m.gram) ?? 0 }; }) };
 }
 
@@ -36,6 +38,8 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
   const [f, setF] = useState(leeg);
   const [bezig, setBezig] = useState(false);
   const [slicer, setSlicer] = useState(false);
+  const [nieuwBestand, setNieuwBestand] = useState(null);
+  const { data: bijlagen } = useData(`/bijlagen/artikel/${id}`);
   useEffect(() => { if (data) setF(naarForm(data.profiel)); }, [data]);
   const zet = k => e => setF(x => ({ ...x, [k]: e.target.value }));
   const zetMat = (k, w) => setF(x => ({ ...x, materialen: x.materialen.map((m, j) => (j === k ? { ...m, ...w } : m)) }));
@@ -50,9 +54,20 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
     if (await bevestig({ titel: 'Printprofiel wissen', tekst: 'Het profiel verdwijnt; bestaande dossiers blijven zoals ze zijn.', bevestigLabel: 'Wissen', annuleerLabel: 'Terug', gevaarlijk: true })) bewaar(null);
   }
   if (!data) return null;
-  function uitSlicer(x) {
+  async function uitSlicer(x) {
     const u = Math.floor(x.tijd_min / 60), m = Math.round((x.tijd_min - u * 60) * 100) / 100;
-    setF(v => ({ ...v, printer_id: x.printer_id || v.printer_id, tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: x.per_plaat, materialen: x.materialen }));
+    // 09-10: het bestand zelf als bijlage bij het artikel (koppeling bij "Profiel bewaren")
+    let bijlage = {};
+    if (x.bestand) {
+      try {
+        const fd = new FormData();
+        fd.append('bestand', x.bestand);
+        const b = await api.upload(`/bijlagen/artikel/${id}`, fd);
+        bijlage = { slicer_bijlage_id: b.id, slicer_plaat: x.plaat };
+        setNieuwBestand(b.bestandsnaam);
+      } catch (e) { melding(`Bestand niet bewaard: ${e.message}`, 'fout'); }
+    }
+    setF(v => ({ ...v, printer_id: x.printer_id || v.printer_id, tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: x.per_plaat, materialen: x.materialen, ...bijlage }));
     setSlicer(false);
     melding('Overgenomen uit het slicerbestand. Kijk het filament na en klik op "Profiel bewaren".');
   }
@@ -90,6 +105,8 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
         <button type="button" className="linkish" onClick={() => setF(x => ({ ...x, materialen: [...x.materialen, { keuze: '', gram: '' }] }))}>+ kleur (multicolor)</button>
       </div>
       {gewicht != null && <p className="sub">Gewicht volgens de webshop: {fmtAantal(gewicht)} g per stuk (zonder steunmateriaal en afval).</p>}
+      {f.slicer_bijlage_id && <p className="sub">Slicerbestand: <a href={`${BASE}/bijlagen/bestand/${f.slicer_bijlage_id}`} title="Downloaden (openen in Bambu Studio)">{(bijlagen || []).find(x => x.id === f.slicer_bijlage_id)?.bestandsnaam || nieuwBestand || 'slicerbestand'}</a>{f.slicer_plaat ? ` · plaat ${f.slicer_plaat}` : ''}{vuil ? ' (wordt gekoppeld bij "Profiel bewaren")' : ''}</p>}
+      {kost?.advies && <p className="sub">Adviesprijs volgens de rekenmotor: <b>{euro(kost.advies.stuk)}</b> voor 1 stuk{kost.advies.plaat_stuk != null ? <> · <b>{euro(kost.advies.plaat_stuk)}</b> per stuk bij een volle plaat ({kost.advies.per_plaat} stuks)</> : null}. Vergelijk met je verkoopprijs (webshop: aanpassen in Sanity).</p>}
       {kost?.profiel && <p className="sub">Geschatte kost per stuk: <b>{euro(kost.schatting.kost)}</b> (filament {euro(kost.schatting.filament)}, stroom {euro(kost.schatting.energie)}, machine {euro(kost.schatting.machine)}, BMCU {euro(kost.schatting.bmcu)}{kost.schatting.onderdelen ? `, onderdelen ${euro(kost.schatting.onderdelen)}` : ''}) + arbeid {euro(kost.schatting.arbeid)}{kost.schatting.onvolledig ? ` · ontbreekt: ${kost.schatting.ontbreekt.join(', ')}` : ''}{kost.gemeten ? ` · gemeten: ${euro(kost.gemeten.kost)} (${fmtAantal(kost.gemeten.stuks)} stuks)` : ''}</p>}
       {b.per_plaat && (b.tijd_min > 0 || gram > 0) && <p className="sub">Volle plaat: {b.per_plaat} stuks · {Math.floor(b.tijd_min * b.per_plaat / 60)} u {Math.round(b.tijd_min * b.per_plaat % 60)} min · {fmtAantal(Math.round(gram * b.per_plaat * 10) / 10)} g</p>}
       <div className="tabacties" style={{ marginTop: 12 }}>
