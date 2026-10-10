@@ -5,6 +5,7 @@ import { useOmgeving } from '../../schil/Omgeving.jsx';
 import { ControlePaneel, Chip, Lijst, Kaarten, Laden, Fout, initialen, avatarKleur } from '../../schil/Weergaven.jsx';
 import { euro, aantal } from '../../lib/formaat.js';
 import { TYPE_LABEL, STATUS, vinkjesTekst, eenheid } from './artikel.js';
+import MapImport from './MapImport.jsx';
 
 const TYPES = [['filament', 'Filament'], ['artikel', 'Artikelen'], ['dienst', 'Diensten']];
 const GROEPERING = { geen: null, categorie: 'Categorie', type: 'Type' };
@@ -33,7 +34,8 @@ export default function ArtikelenLijst() {
   const [groep, setGroep] = useState(() => onthoud('artikelen.groep', 'geen'));
   const [weergave, setWeergaveState] = useState(() => onthoud('artikelen.weergave', 'lijst'));
   const [sortering, setSortering] = useState({ kolom: 0, op: true });
-  const { data, fout, laden } = useData(archief ? '/voorraad/artikelen?archief=1' : '/voorraad/artikelen');
+  const { data, fout, laden, herlaad } = useData(archief ? '/voorraad/artikelen?archief=1' : '/voorraad/artikelen');
+  const [importOpen, setImportOpen] = useState(false);
 
   const setWeergave = w => { setWeergaveState(w); bewaar('artikelen.weergave', w); };
   const kiesGroep = g => { setGroep(g); bewaar('artikelen.groep', g); };
@@ -78,10 +80,14 @@ export default function ArtikelenLijst() {
 
   return (
     <>
+      {importOpen && <MapImport onSluit={() => setImportOpen(false)} onKlaar={() => { setImportOpen(false); herlaad(); }} />}
       <ControlePaneel
         kruimels={[{ label: 'Artikelen' }]}
         zoek={zoek} onZoek={setZoek} facetten={facetten}
-        acties={<button type="button" className="btn primary" onClick={() => navigeer(`/voorraad/artikelen/nieuw${type ? `?type=${type}` : ''}`)}>Nieuw</button>}
+        acties={<>
+          <button type="button" className="btn" onClick={() => setImportOpen(true)} title="Artikels aanmaken uit een map met downloads (bv. Patreon)">Importeren uit map…</button>
+          <button type="button" className="btn primary" onClick={() => navigeer(`/voorraad/artikelen/nieuw${type ? `?type=${type}` : ''}`)}>Nieuw</button>
+        </>}
         filters={<>
           {TYPES.map(([t, label]) => <Chip key={t} aan={type === t} onClick={() => setType(x => (x === t ? null : t))}>{label}</Chip>)}
           <Chip aan={onderMin} onClick={() => setOnderMin(x => !x)}>Onder minimum</Chip>
