@@ -128,7 +128,7 @@ export function leesArtikel(db, id) {
 //   prijzen komen uit de prijsgroep (dus hier leeg)
 // - artikel: naam; gekocht en/of zelf geprint
 // - dienst: naam; gekocht en/of verkocht; geen voorraad (geen min/max)
-// - verkocht → verkoopprijs verplicht (behalve filament)
+// - verkocht → verkoopprijs (sinds 10-10 niet meer verplicht; behalve filament)
 // - velden die bij de vinkjes niet horen, worden gewist, zodat een oude
 //   waarde nooit onzichtbaar blijft hangen (zelfde afspraak als UX #28)
 function tekst(w) {
@@ -181,7 +181,8 @@ export function leesArtikelInvoer(body) {
       a.zelf_geprint = 0;
       if (!a.wordt_gekocht && !a.wordt_verkocht) throw new DomeinFout('Een dienst wordt gekocht of verkocht (of allebei)');
     }
-    if (a.wordt_verkocht) a.verkoopprijs = getal(body.verkoopprijs, 'Verkoopprijs', { verplicht: true });
+    // 10-10: niet meer verplicht — een nieuw product krijgt pas een prijs na het slicen
+    if (a.wordt_verkocht) a.verkoopprijs = getal(body.verkoopprijs, 'Verkoopprijs');
     if (a.wordt_gekocht) {
       a.inkoopprijs = getal(body.inkoopprijs, 'Inkoopprijs');
       a.marge_pct = a.wordt_verkocht ? getal(body.marge_pct, 'Marge') : null;
