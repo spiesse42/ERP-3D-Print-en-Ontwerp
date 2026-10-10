@@ -8,7 +8,7 @@ import { BevestigDialoog } from '../productie/opdracht.jsx';
 // gebeuren en de knop erbij. De zin komt uit de backend (volgende_stap);
 // hier enkel de knop per soort. Plus de uitleg "Hoe werkt een dossier?".
 export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBonnetje, onFactuur, onBonnetjeMailen, onBetaald, onGratis, onHeropenen, onAnnuleren, naarTab, herlaad }) {
-  const { melding, navigeer } = useOmgeving();
+  const { melding, navigeer, bevestig: bevestigVraag } = useOmgeving();
   const [bevestig, setBevestig] = useState(null);
   const [uitleg, setUitleg] = useState(false);
   const [bezig, setBezig] = useState(false);
@@ -19,6 +19,19 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
     setBezig(true);
     try { await api.post(`/productie/runs/${s.run.id}/koppel`, { printopdracht_id: s.run.voorstel.id }); melding(`Run gekoppeld aan "${s.run.voorstel.naam}".`); await herlaad(); }
     catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
+  // Opgehaald (10-10): één levering met alles wat nog te leveren is, vandaag,
+  // met als opmerking "Opgehaald door de klant" (geen pakbon nodig)
+  async function opgehaald() {
+    const regels = (d.leverbaar || []).filter(x => x.rest > 0).map(x => ({ regel_id: x.regel_id, aantal: x.rest }));
+    if (!regels.length) return;
+    if (!await bevestigVraag({ titel: 'Opgehaald door de klant', tekst: `Alles wat nog te leveren is, staat dan als opgehaald op ${new Date().toLocaleDateString('nl-BE')}. Daarna volgt het afrekenen.`, bevestigLabel: 'Opgehaald', annuleerLabel: 'Terug' })) return;
+    setBezig(true);
+    try {
+      await api.post(`/dossiers/${d.id}/leveringen`, { datum: new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' }), opmerking: 'Opgehaald door de klant', regels });
+      melding('Genoteerd als opgehaald.'); await herlaad();
+    } catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
   }
   // nav: enkel naar een tabblad gaan — kan ook met niet-opgeslagen wijzigingen
@@ -44,6 +57,8 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
     afrekenen: () => (d.klant_gegevens?.type === 'zakelijk'
       ? <>{knop('Factuur maken', onFactuur, { uit: !!afrekenReden })}{knop('Bonnetje maken', onBonnetje, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>
       : <>{knop('Bonnetje maken', onBonnetje, { uit: !!afrekenReden })}{d.klant_id && knop('Factuur maken', onFactuur, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>),
+    // 10-10: na het printen eerst leveren of laten ophalen
+    leveren_of_ophalen: () => <>{naar('Leveren (pakbon)', 'leveringen')}{knop('Opgehaald door de klant', opgehaald, { primair: false })}</>,
     bonnetje_mailen: () => knop(d.afgerekend_soort === 'factuur' ? 'Factuur mailen' : 'Bonnetje mailen', onBonnetjeMailen),
     verkoop_mailen: () => knop('Naar de verkoop', () => navigeer(`/verkoop/${s.verkoop_id}`)),
     betaling: () => knop('Betaald', onBetaald),
