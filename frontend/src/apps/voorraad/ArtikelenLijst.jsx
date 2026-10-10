@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useData, onthoud, bewaar } from '../../schil/useData.js';
-import { api } from '../../lib/api.js';
+import { api, BASE } from '../../lib/api.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
 import { ControlePaneel, Chip, Lijst, Kaarten, Laden, Fout, initialen, avatarKleur } from '../../schil/Weergaven.jsx';
 import { euro, aantal } from '../../lib/formaat.js';
@@ -24,6 +24,34 @@ export function ArtikelNaam({ a }) {
 }
 const minMax = a => (a.min_eff == null && a.max_eff == null ? '—' : `${a.min_eff == null ? '…' : aantal(a.min_eff)} – ${a.max_eff == null ? '…' : aantal(a.max_eff)}`);
 const prijs = a => (a.type === 'filament' ? `${euro(a.verkoopprijs_per_kg)}/kg` : a.wordt_verkocht ? euro(a.verkoopprijs) : '—');
+
+// 10-10: kleine foto in de lijst; klik = groot in een popup, klik ernaast = weg.
+// Eigen foto (bijlage) eerst, anders de foto uit de webshop.
+const fotoVan = (a, groot) => (a.foto_id ? `${BASE}/bijlagen/bestand/${a.foto_id}`
+  : a.webshop_foto ? `${a.webshop_foto}?w=${groot ? 900 : 96}&h=${groot ? 900 : 96}&fit=${groot ? 'max' : 'crop'}` : null);
+function FotoCel({ a, onToon }) {
+  const src = fotoVan(a, false);
+  if (!src) return <span className="sub">—</span>;
+  return <button type="button" className="fotoknop" title="Foto groter tonen" onClick={e => { e.stopPropagation(); onToon(a); }} onKeyDown={e => e.stopPropagation()}>
+    <img src={src} alt="" loading="lazy" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, display: 'block' }} /></button>;
+}
+function FotoPopup({ a, onSluit }) {
+  return (
+    <div role="dialog" aria-label={`Foto ${a.weergave}`} onClick={onSluit} onKeyDown={e => { if (e.key === 'Escape') onSluit(); }} tabIndex={-1}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <figure style={{ margin: 0, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+        <img src={fotoVan(a, true)} alt={a.weergave} style={{ maxWidth: 'min(90vw, 900px)', maxHeight: '80vh', borderRadius: 8, background: '#fff' }} />
+        <figcaption style={{ color: '#fff', marginTop: 8 }}>{a.weergave}</figcaption>
+      </figure>
+    </div>
+  );
+}
+const KOST_UITLEG = { gemeten: 'productiekost per stuk, gemeten', schatting: 'productiekost per stuk, geschat uit het printprofiel', inkoop: 'inkoopprijs' };
+function KostCel({ a }) {
+  const k = a.kost;
+  if (!k) return <span className="sub">—</span>;
+  return <span title={KOST_UITLEG[k.soort]}>{euro(k.bedrag)}{k.per ? `/${k.per}` : ''}<div className="sub">{k.soort === 'schatting' ? `geschat${k.onvolledig ? ' (onvolledig)' : ''}` : k.soort}</div></span>;
+}
 
 // 10-10: verkoopprijs meteen in de lijst invullen of wijzigen (klik of
 // dubbelklik op de prijs; Enter of wegklikken = bewaren, Esc = annuleren).
@@ -57,20 +85,23 @@ export default function ArtikelenLijst() {
   const [archief, setArchief] = useState(false);
   const [groep, setGroep] = useState(() => onthoud('artikelen.groep', 'geen'));
   const [weergave, setWeergaveState] = useState(() => onthoud('artikelen.weergave', 'lijst'));
-  const [sortering, setSortering] = useState({ kolom: 0, op: true });
+  const [sortering, setSortering] = useState({ kolom: 1, op: true });
   const { data, fout, laden, herlaad } = useData(archief ? '/voorraad/artikelen?archief=1' : '/voorraad/artikelen');
   const [importOpen, setImportOpen] = useState(false);
+  const [foto, setFoto] = useState(null);
 
   const setWeergave = w => { setWeergaveState(w); bewaar('artikelen.weergave', w); };
   const kiesGroep = g => { setGroep(g); bewaar('artikelen.groep', g); };
 
   const kolommen = [
+    { kop: <span className="sr-only">Foto</span>, cel: a => <FotoCel a={a} onToon={setFoto} /> },
     { kop: 'Naam', cel: a => <ArtikelNaam a={a} />, sorteer: a => a.weergave.toLowerCase() },
     { kop: 'Categorie', cel: a => a.categorie || <span className="sub">—</span>, sorteer: a => (a.categorie || '').toLowerCase() },
     { kop: 'Type', cel: a => <>{TYPE_LABEL[a.type]}<div className="sub">{vinkjesTekst(a)}</div></>, sorteer: a => a.type },
     { kop: 'Voorraad', klasse: 'r num', cel: a => (a.type === 'dienst' ? <span className="sub">—</span> : <>{aantal(a.voorraad)} <span className="sub">{eenheid(a.voorraad, a.eenheid)}</span>{a.besteld > 0 && <div className="sub">+{aantal(a.besteld)} besteld</div>}{a.in_productie > 0 && <div className="sub">+{aantal(a.in_productie)} in productie</div>}</>), sorteer: a => (a.type === 'dienst' ? -1 : a.voorraad) },
     { kop: 'Min – max', klasse: 'r num', cel: a => (a.type === 'dienst' ? <span className="sub">—</span> : minMax(a)) },
     { kop: 'Status', cel: a => <StatusBadge status={a.status} />, sorteer: a => ['bestellen', 'besteld', 'in_productie', 'ok', 'geen'].indexOf(a.status ?? 'geen') },
+    { kop: 'Kost', klasse: 'r num', cel: a => <KostCel a={a} />, sorteer: a => a.kost?.bedrag ?? -1 },
     { kop: 'Verkoopprijs', klasse: 'r num', cel: a => <PrijsCel a={a} onBewaard={herlaad} />, sorteer: a => (a.type === 'filament' ? a.verkoopprijs_per_kg : a.verkoopprijs) ?? -1 },
   ];
 
@@ -104,6 +135,7 @@ export default function ArtikelenLijst() {
 
   return (
     <>
+      {foto && <FotoPopup a={foto} onSluit={() => setFoto(null)} />}
       {importOpen && <MapImport onSluit={() => setImportOpen(false)} onKlaar={() => { setImportOpen(false); herlaad(); }} />}
       <ControlePaneel
         kruimels={[{ label: 'Artikelen' }]}
