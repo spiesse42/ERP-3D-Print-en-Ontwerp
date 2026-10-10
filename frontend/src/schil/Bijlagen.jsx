@@ -50,9 +50,9 @@ export default function Bijlagen({ entiteit, id, onGewijzigd }) {
       <label className={`btn${bezig ? ' bezig' : ''}`} htmlFor={`bijlage-${entiteit}-${id}`}>
         <Icoon naam="plus" maat={16} /> {bezig ? 'Bezig…' : 'Bijlage toevoegen'}
       </label>
-      <input ref={invoer} id={`bijlage-${entiteit}-${id}`} type="file" className="sr-only" accept={entiteit === 'dossier' ? 'application/pdf,image/*,.3mf,.gcode' : 'application/pdf,image/*'} disabled={bezig}
+      <input ref={invoer} id={`bijlage-${entiteit}-${id}`} type="file" className="sr-only" accept={['dossier', 'artikel'].includes(entiteit) ? 'application/pdf,image/*,.3mf,.stl,.gcode' : 'application/pdf,image/*'} disabled={bezig}
         onChange={e => laadOp(e.target.files?.[0])} />
-      <p className="note">PDF of foto (jpg, png, heic), max. 20 MB{entiteit === 'dossier' ? '; slicerbestand (.3mf, .gcode) tot 200 MB' : ''}. Enkel voor intern gebruik.</p>
+      <p className="note">PDF of foto (jpg, png, heic), max. 20 MB{['dossier', 'artikel'].includes(entiteit) ? '; modelbestand (.3mf, .stl, .gcode) tot 200 MB' : ''}. Enkel voor intern gebruik.</p>
     </div>
   );
 }

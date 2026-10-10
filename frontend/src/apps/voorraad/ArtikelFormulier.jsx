@@ -13,6 +13,8 @@ import { naarFormulier, naarBody, voorstelVerkoopprijs, LEGE_REGEL, TYPE_LABEL, 
 import { StatusBadge, Kleurstaal } from './ArtikelenLijst.jsx';
 import BoekingDialoog from './BoekingDialoog.jsx';
 import Printprofiel from './Printprofiel.jsx';
+import Bijlagen from '../../schil/Bijlagen.jsx';
+import { BASE } from '../../lib/api.js';
 import Onderdelen from './Onderdelen.jsx';
 import { PrintopdrachtDialoog } from './TeBestellen.jsx';
 
@@ -60,6 +62,25 @@ function KleurKeuze({ id, waarde, kleuren, onKies, onNieuw }) {
         <option value="__nieuw__">+ Nieuwe kleur toevoegen</option>
       </select>
     </div>
+  );
+}
+
+// Foto's & bestanden (10-10): foto's van het product en de modelbestanden
+// (3mf, stl) — bv. uit een Patreon-download. De eerste foto staat bovenaan.
+function ArtikelBestanden({ id }) {
+  const [versie, setVersie] = useState(0);
+  const { data } = useData(`/bijlagen/artikel/${id}?v=${versie}`);
+  const fotos = (data || []).filter(b => String(b.mimetype || '').startsWith('image/'));
+  return (
+    <>
+      {fotos.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {fotos.map(f => <a key={f.id} href={`${BASE}/bijlagen/bestand/${f.id}`} target="_blank" rel="noopener noreferrer"><img src={`${BASE}/bijlagen/bestand/${f.id}`} alt={f.bestandsnaam} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 8 }} /></a>)}
+        </div>
+      )}
+      <Bijlagen entiteit="artikel" id={id} onGewijzigd={() => setVersie(v => v + 1)} />
+      <p className="note">Foto's van het ontwerp (bv. van de maker) zijn enkel om het product te herkennen: gebruik ze niet in de webshop of op sociale media als de licentie dat verbiedt.</p>
+    </>
   );
 }
 
@@ -146,6 +167,7 @@ export default function ArtikelFormulier() {
     ...(t === 'artikel' && origineel.wordt_verkocht && !nieuw ? [['onderdelen', 'Onderdelen']] : []),
     ...(!nieuw && art?.webshop_slug ? [['webshop', 'Webshop']] : []),
     ...(form.wordt_gekocht ? [['inkoop', `Inkoop${form.leveranciers.length ? ` (${form.leveranciers.length})` : ''}`]] : []),
+    ...(!nieuw ? [['bestanden', "Foto's & bestanden"]] : []),
     ['notities', 'Notities'],
   ];
   const actieveTab = tabs.some(x => x[0] === tab) ? tab : tabs[0][0];
@@ -390,6 +412,7 @@ export default function ArtikelFormulier() {
             )}
             {actieveTab === 'printprofiel' && <Printprofiel id={id} naam={form.naam} gewicht={art?.webshop_gewicht_g} onBijprinten={() => setBijprinten(true)} />}
             {actieveTab === 'onderdelen' && <Onderdelen id={id} />}
+            {actieveTab === 'bestanden' && <ArtikelBestanden id={id} />}
             {actieveTab === 'webshop' && <WebshopTab art={art} onKlaar={herlaad} />}
             {actieveTab === 'inkoop' && (
               <>
