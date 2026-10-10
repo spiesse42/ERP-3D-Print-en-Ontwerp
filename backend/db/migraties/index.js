@@ -30,5 +30,6 @@ import * as m027 from './027_webshop_onderdelen.js';
 import * as m028 from './028_webshop_bestellingen.js';
 import * as m029 from './029_geleverd_opruimen.js';
 import * as m030 from './030_printuurmodel.js';
+import * as m031 from './031_layer_leaf_verkocht.js';
 
-export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021, m022, m023, m024, m025, m026, m027, m028, m029, m030];
+export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021, m022, m023, m024, m025, m026, m027, m028, m029, m030, m031];
