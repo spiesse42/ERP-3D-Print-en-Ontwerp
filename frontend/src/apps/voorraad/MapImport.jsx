@@ -8,8 +8,8 @@ import Icoon from '../../schil/Icoon.jsx';
 // patreon-dl: elke post staat in een eigen map "<id> - <titel>" met foto's en
 // bijlagen. Per post → één artikel (zelf geprint) in de gekozen categorie, met
 // één foto (de grootste) en de modelbestanden (3mf/stl) als bijlage. Een
-// artikel met dezelfde naam wordt overgeslagen. "Wordt verkocht" staat uit
-// (dan is een verkoopprijs verplicht): aanzetten zodra je de prijs kent.
+// artikel met dezelfde naam wordt overgeslagen. "Wordt verkocht" staat aan,
+// zonder prijs (sinds 10-10 niet meer verplicht; invullen in de lijst).
 const IS_FOTO = /\.(jpe?g|png|webp)$/i;
 const IS_MODEL = /\.(3mf|stl)$/i;
 const MAX_FOTO = 20 * 1024 * 1024;
@@ -68,7 +68,7 @@ export default function MapImport({ onSluit, onKlaar }) {
       setBezig(`${i + 1} / ${gekozen.length}: ${p.naam}`);
       try {
         const { id } = await api.post('/voorraad/artikelen', { type: 'artikel', naam: p.naam, categorie_id: catId || null,
-          zelf_geprint: true, wordt_verkocht: false, notities: bron.trim() || null });
+          zelf_geprint: true, wordt_verkocht: true, notities: bron.trim() || null });
         for (const f of [p.foto, ...p.modellen].filter(Boolean)) {
           const fd = new FormData();
           fd.append('bestand', f);

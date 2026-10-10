@@ -118,6 +118,26 @@ r.put('/artikelen/:id', metFouten((req, res) => {
   res.json({ ok: true });
 }));
 
+// 10-10: enkel de verkoopprijs (snel invullen vanuit de lijst); leeg = geen prijs
+r.patch('/artikelen/:id/verkoopprijs', metFouten((req, res) => {
+  const db = getDb();
+  const id = idVan(req);
+  const oud = db.prepare('SELECT type, verkoopprijs FROM artikelen WHERE id = ?').get(id);
+  if (!oud) return res.status(404).json({ error: 'Artikel niet gevonden' });
+  if (oud.type === 'filament') throw new DomeinFout('Filament heeft een prijs per kg (Materiaalprijzen), geen verkoopprijs per stuk');
+  const w = req.body?.verkoopprijs;
+  const leeg = w === null || w === undefined || String(w).trim() === '';
+  const n = leeg ? null : parseFloat(String(w).replace(',', '.'));
+  if (!leeg && (!Number.isFinite(n) || n < 0)) throw new DomeinFout('Verkoopprijs moet een getal vanaf 0 zijn');
+  const prijs = n === null ? null : Math.round(n * 10000) / 10000;
+  if (prijs === oud.verkoopprijs) return res.json({ ok: true, verkoopprijs: prijs });
+  db.transaction(() => {
+    db.prepare('UPDATE artikelen SET verkoopprijs = ?, wordt_verkocht = CASE WHEN ? IS NULL THEN wordt_verkocht ELSE 1 END WHERE id = ?').run(prijs, prijs, id);
+    logGebeurtenis(db, 'artikel', id, 'gewijzigd', `Verkoopprijs: ${oud.verkoopprijs ?? '—'} → ${prijs ?? '—'}`);
+  })();
+  res.json({ ok: true, verkoopprijs: prijs });
+}));
+
 r.patch('/artikelen/:id/archief', metFouten((req, res) => {
   const db = getDb();
   const id = idVan(req);

@@ -355,7 +355,7 @@ export default function ArtikelFormulier() {
                     hint={voorstel != null && naarInvoer(voorstel) !== form.verkoopprijs
                       ? <>Voorstel uit inkoop + marge: <button type="button" className="linkish" onClick={() => zet('verkoopprijs')(naarInvoer(voorstel))}>{euro(voorstel)}</button></>
                       : null}>
-                    <Bedrag id="a-verkoop" waarde={form.verkoopprijs} onWijzig={zet('verkoopprijs')} eenheid={`€/${form.eenheid || 'eenheid'}`} placeholder="verplicht" />
+                    <Bedrag id="a-verkoop" waarde={form.verkoopprijs} onWijzig={zet('verkoopprijs')} eenheid={`€/${form.eenheid || 'eenheid'}`} placeholder="nog in te vullen" />
                   </Veld>
                 )}
                 {form.wordt_verkocht && (
