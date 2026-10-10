@@ -47,10 +47,13 @@ test('artikelen aanmaken: regels per type en vinkjes', async () => {
   // artikel dat niet gekocht en niet zelf geprint wordt → fout
   let r = await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'X', wordt_verkocht: true, verkoopprijs: 1 });
   assert.equal(r.status, 400);
-  // verkocht zonder verkoopprijs → fout
-  r = await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'X', wordt_gekocht: true, wordt_verkocht: true });
-  assert.equal(r.status, 400);
-  assert.match(r.data.error, /Verkoopprijs/);
+  // verkocht zonder verkoopprijs → mag sinds 10-10 (prijs volgt later); snel invullen via PATCH
+  r = await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Zonder prijs', wordt_gekocht: true, wordt_verkocht: true });
+  assert.equal(r.status, 201);
+  const zp = r.data.id;
+  assert.equal((await vraag('PATCH', `/voorraad/artikelen/${zp}/verkoopprijs`, { verkoopprijs: '4,5' })).data.verkoopprijs, 4.5);
+  assert.equal((await vraag('PATCH', `/voorraad/artikelen/${zp}/verkoopprijs`, { verkoopprijs: '-1' })).status, 400);
+  assert.equal((await vraag('DELETE', `/voorraad/artikelen/${zp}`)).status, 200);
   // gekocht + verkocht: inkoop, marge en verkoopprijs; productieprijs wordt gewist
   ring = ok(await vraag('POST', '/voorraad/artikelen', {
     type: 'artikel', naam: 'Sleutelring 25 mm', wordt_gekocht: true, wordt_verkocht: true,

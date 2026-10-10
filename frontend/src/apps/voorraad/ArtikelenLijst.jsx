@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useData, onthoud, bewaar } from '../../schil/useData.js';
+import { api } from '../../lib/api.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
 import { ControlePaneel, Chip, Lijst, Kaarten, Laden, Fout, initialen, avatarKleur } from '../../schil/Weergaven.jsx';
 import { euro, aantal } from '../../lib/formaat.js';
@@ -23,6 +24,29 @@ export function ArtikelNaam({ a }) {
 }
 const minMax = a => (a.min_eff == null && a.max_eff == null ? '—' : `${a.min_eff == null ? '…' : aantal(a.min_eff)} – ${a.max_eff == null ? '…' : aantal(a.max_eff)}`);
 const prijs = a => (a.type === 'filament' ? `${euro(a.verkoopprijs_per_kg)}/kg` : a.wordt_verkocht ? euro(a.verkoopprijs) : '—');
+
+// 10-10: verkoopprijs meteen in de lijst invullen of wijzigen (klik of
+// dubbelklik op de prijs; Enter of wegklikken = bewaren, Esc = annuleren).
+// Een prijs invullen zet "wordt verkocht" aan. Filament: prijs per kg elders.
+function PrijsCel({ a, onBewaard }) {
+  const { melding } = useOmgeving();
+  const [invoer, setInvoer] = useState(null);
+  if (a.type === 'filament') return prijs(a);
+  const stop = e => e.stopPropagation();
+  async function bewaar() {
+    const w = invoer; setInvoer(null);
+    if (w === null || w.trim() === (a.verkoopprijs == null ? '' : String(a.verkoopprijs).replace('.', ','))) return;
+    try { await api.patch(`/voorraad/artikelen/${a.id}/verkoopprijs`, { verkoopprijs: w }); melding(`Verkoopprijs ${a.weergave} bewaard.`); onBewaard?.(); }
+    catch (e) { melding(e.message, 'fout'); }
+  }
+  if (invoer !== null) {
+    return <input className="inp num" style={{ width: 90 }} autoFocus inputMode="decimal" aria-label={`Verkoopprijs ${a.weergave}`} value={invoer}
+      onClick={stop} onChange={e => setInvoer(e.target.value)} onBlur={bewaar}
+      onKeyDown={e => { stop(e); if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setInvoer(null); }} />;
+  }
+  return <button type="button" className="linkish" title="Klik om de verkoopprijs in te vullen" onClick={e => { stop(e); setInvoer(a.verkoopprijs == null ? '' : String(a.verkoopprijs).replace('.', ',')); }}
+    onKeyDown={stop}>{a.verkoopprijs != null ? euro(a.verkoopprijs) : <span className="sub">+ prijs</span>}</button>;
+}
 
 export default function ArtikelenLijst() {
   const { navigeer } = useOmgeving();
@@ -47,7 +71,7 @@ export default function ArtikelenLijst() {
     { kop: 'Voorraad', klasse: 'r num', cel: a => (a.type === 'dienst' ? <span className="sub">—</span> : <>{aantal(a.voorraad)} <span className="sub">{eenheid(a.voorraad, a.eenheid)}</span>{a.besteld > 0 && <div className="sub">+{aantal(a.besteld)} besteld</div>}{a.in_productie > 0 && <div className="sub">+{aantal(a.in_productie)} in productie</div>}</>), sorteer: a => (a.type === 'dienst' ? -1 : a.voorraad) },
     { kop: 'Min – max', klasse: 'r num', cel: a => (a.type === 'dienst' ? <span className="sub">—</span> : minMax(a)) },
     { kop: 'Status', cel: a => <StatusBadge status={a.status} />, sorteer: a => ['bestellen', 'besteld', 'in_productie', 'ok', 'geen'].indexOf(a.status ?? 'geen') },
-    { kop: 'Verkoopprijs', klasse: 'r num', cel: prijs, sorteer: a => (a.type === 'filament' ? a.verkoopprijs_per_kg : a.verkoopprijs) ?? -1 },
+    { kop: 'Verkoopprijs', klasse: 'r num', cel: a => <PrijsCel a={a} onBewaard={herlaad} />, sorteer: a => (a.type === 'filament' ? a.verkoopprijs_per_kg : a.verkoopprijs) ?? -1 },
   ];
 
   const groepen = useMemo(() => {
