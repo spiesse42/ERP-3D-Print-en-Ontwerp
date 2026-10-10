@@ -15,7 +15,8 @@ const TOEGELATEN = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 
 // printregels (download; later printen vanuit het ERP). Browsers geven er
 // geen vast mimetype aan, dus op extensie.
 const SLICER = { '.3mf': 'model/3mf', '.gcode': 'text/x-gcode', '.gco': 'text/x-gcode' };
-const slicerType = (req, naam) => (req.params.entiteit === 'dossier' ? SLICER[(String(naam).toLowerCase().match(/\.(3mf|gcode|gco)$/) || [''])[0]] : null);
+// 09-10: ook bij een artikel (het bestand achter het printprofiel)
+const slicerType = (req, naam) => (['dossier', 'artikel'].includes(req.params.entiteit) ? SLICER[(String(naam).toLowerCase().match(/\.(3mf|gcode|gco)$/) || [''])[0]] : null);
 const MAX_GEWOON = 20 * 1024 * 1024;
 const MAX_SLICER = 200 * 1024 * 1024;
 const upload = multer({
@@ -65,7 +66,7 @@ r.post('/:entiteit/:id', (req, res) => {
   upload.single('bestand')(req, res, (fout) => {
     if (fout) return res.status(400).json({ error: fout.code === 'LIMIT_FILE_SIZE' ? 'Bestand is groter dan 200 MB' : fout.message });
     const c = controleer(req, res); if (!c) return;
-    if (!req.file) return res.status(400).json({ error: c.entiteit === 'dossier' ? 'Kies een PDF, een foto (jpg, png, webp, heic) of een slicerbestand (.3mf, .gcode)' : 'Kies een PDF of een foto (jpg, png, webp, heic)' });
+    if (!req.file) return res.status(400).json({ error: ['dossier', 'artikel'].includes(c.entiteit) ? 'Kies een PDF, een foto (jpg, png, webp, heic) of een slicerbestand (.3mf, .gcode)' : 'Kies een PDF of een foto (jpg, png, webp, heic)' });
     const oorspronkelijkeNaam = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
     const slicer = TOEGELATEN.includes(req.file.mimetype) ? null : slicerType(req, oorspronkelijkeNaam);
     if (!slicer && req.file.size > MAX_GEWOON) return res.status(400).json({ error: 'Bestand is groter dan 20 MB' });

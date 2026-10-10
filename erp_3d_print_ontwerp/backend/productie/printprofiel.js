@@ -41,6 +41,9 @@ export function leesProfiel(db, b) {
     per_plaat: heel(b?.per_plaat, 'Stuks per plaat'),
     voorbereiding_min: nietNeg(b?.voorbereiding_min, 'Voorbereiding per plaat'),
     nabewerking_min: nietNeg(b?.nabewerking_min, 'Nabewerking per stuk'),
+    // 09-10: het slicerbestand (bijlage bij het artikel) waaruit het profiel komt
+    slicer_bijlage_id: heel(b?.slicer_bijlage_id, 'Slicerbestand'),
+    slicer_plaat: heel(b?.slicer_plaat, 'Plaat'),
     materialen: (Array.isArray(b?.materialen) ? b.materialen : []).map((m, i) => {
       const a = heel(m?.artikel_id, 'Filament'), f = heel(m?.filament_type_id, 'Prijsgroep');
       if (!a === !f) throw new DomeinFout(`Kleur ${i + 1}: kies een filament of een prijsgroep`);
@@ -50,6 +53,8 @@ export function leesProfiel(db, b) {
     }),
   };
   if (p.printer_id && !db.prepare('SELECT 1 FROM printers WHERE id = ?').get(p.printer_id)) throw new DomeinFout('Onbekende printer');
+  if (p.slicer_bijlage_id && !db.prepare(`SELECT 1 FROM bijlagen WHERE id = ? AND entiteit = 'artikel'`).get(p.slicer_bijlage_id)) p.slicer_bijlage_id = null;
+  if (!p.slicer_bijlage_id) { delete p.slicer_bijlage_id; delete p.slicer_plaat; }
   if (!p.tijd_min && !p.materialen.some(m => m.gram > 0)) throw new DomeinFout('Vul minstens de printtijd of het gewicht per stuk in.');
   return p;
 }
