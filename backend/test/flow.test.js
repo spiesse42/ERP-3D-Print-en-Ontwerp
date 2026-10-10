@@ -264,7 +264,12 @@ test('X13. volgende stap: van regels tot afgerond', async () => {
   assert.equal(s.soort, 'bevestigen'); assert.equal(s.opdracht_id, o.id);
   await vraag('POST', `/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: 1 });
   s = await stap(d0.id);
-  assert.equal(s.soort, 'afrekenen'); assert.equal(s.kan, true); assert.match(s.tekst, /Alles is geprint/);
+  // 10-10: eerst leveren of laten ophalen, daarna afrekenen
+  assert.equal(s.soort, 'leveren_of_ophalen'); assert.match(s.tekst, /Alles is geprint/);
+  const regelId = (await vraag('GET', `/dossiers/${d0.id}`)).data.regels[0].id;
+  await vraag('POST', `/dossiers/${d0.id}/leveringen`, { datum: new Date().toISOString().slice(0, 10), opmerking: 'Opgehaald door de klant', regels: [{ regel_id: regelId, aantal: 1 }] });
+  s = await stap(d0.id);
+  assert.equal(s.soort, 'afrekenen'); assert.equal(s.kan, true);
   assert.ok(s.extra.some(t => /Dossier annuleren/.test(t)));
   await vraag('POST', `/dossiers/${d0.id}/afrekenen`, { soort: 'factuur', nummer: 'F-77', datum: new Date().toISOString().slice(0, 10) });
   assert.equal((await stap(d0.id)).soort, 'betaling');

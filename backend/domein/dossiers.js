@@ -334,6 +334,12 @@ export function volgendeStap(d) {
     const tekort = p.regels.find(r => r.goed < r.besteld);
     if (tekort) return { soort: 'plannen', tekst: `Voor "${tekort.omschrijving || 'Printwerk'}" zijn nog ${nlGetal(tekort.besteld - tekort.goed)} stuks nodig: plan een printopdracht (tab Productie).`, extra: [] };
   }
+  // 10-10: eerst leveren of laten ophalen, daarna afrekenen (afrekenen
+  // vooraf blijft mogelijk via de knoppen bovenaan, bv. bij vooruitbetaling)
+  if (klant && ['geen', 'deels'].includes(d.lever_status) && (d.leverbaar || []).some(x => x.rest > 1e-9)) {
+    return { soort: 'leveren_of_ophalen', tekst: `${p?.status === 'klaar' ? 'Alles is geprint. ' : ''}Nu leveren (pakbon) of laten ophalen. Daarna afrekenen.`,
+      extra: ['Betaalt de klant vooraf (overschrijving, webshop)? Dan kan afrekenen nu al via "Bonnetje maken" of "Factuur maken" bovenaan.'] };
+  }
   if (klant) {
     const reden = !(d.werkbon || d.zonder_werkbon)?.volledig ? ' Eerst moeten alle regels berekend kunnen worden.' : '';
     return { soort: 'afrekenen', tekst: `${p?.status === 'klaar' ? 'Alles is geprint. ' : ''}Nog af te rekenen: ${d.klant_gegevens?.type === 'zakelijk' ? 'maak de factuur ("Factuur maken": het ERP mailt ze naar Accountable), of maak toch een bonnetje' : 'maak het bonnetje ("Bonnetje maken"; zelf in Accountable ingeven), of een factuur ("Factuur maken": het ERP mailt ze naar Accountable)'}.${reden}`,
