@@ -8,6 +8,8 @@ import { DomeinFout, isFkFout, isUniekFout, rond } from '../domein/hulp.js';
 import { logGebeurtenis, beschrijfWijzigingen, wisHistoriek } from '../domein/historiek.js';
 import { leesArtikelen, leesArtikel, leesArtikelInvoer, leesLeveranciersInvoer, categoriePaden, maakArtikel, KOLOMMEN } from '../domein/artikelen.js';
 import { boekIn, boekUit, corrigeer, teBestellen, REDENEN_IN, REDENEN_UIT } from '../domein/voorraad.js';
+import { kostPerKg } from '../productie/kost.js';
+import { kostVanArtikel } from './producten.js';
 
 const r = Router();
 
@@ -41,7 +43,28 @@ const euro = n => `€ ${Number(n).toLocaleString('nl-BE', { minimumFractionDigi
 // ── Artikelen ─────────────────────────────────────────────────────────────
 r.get('/artikelen', metFouten((req, res) => {
   const type = req.query.type || null;
-  res.json(leesArtikelen(getDb(), { archief: String(req.query.archief ?? '0'), type }));
+  const db = getDb();
+  // 10-10: foto (eerste afbeelding bij het artikel) en kost per stuk voor de lijst
+  const foto = db.prepare(`SELECT id FROM bijlagen WHERE entiteit = 'artikel' AND entiteit_id = ? AND mimetype LIKE 'image/%' ORDER BY id LIMIT 1`);
+  const partij = db.prepare(`SELECT SUM(aantal_resterend * prijs_per_eenheid) / SUM(aantal_resterend) p FROM voorraad_partijen
+    WHERE artikel_id = ? AND aantal_resterend > 0 AND prijs_per_eenheid IS NOT NULL`);
+  res.json(leesArtikelen(db, { archief: String(req.query.archief ?? '0'), type }).map(a => {
+    let kost = null;
+    try {
+      if (a.type === 'filament') {
+        const kg = kostPerKg(db, { artikel_id: a.id });
+        kost = kg == null ? null : { bedrag: rond(kg, 2), soort: 'inkoop', per: 'kg' };
+      } else if (a.zelf_geprint) {
+        const k = kostVanArtikel(db, a, { advies: false });
+        const b = k.gemeten?.kost ?? (k.profiel ? k.schatting.kost : null);
+        kost = b == null ? null : { bedrag: rond(b, 2), soort: k.gemeten ? 'gemeten' : 'schatting', onvolledig: !k.gemeten && k.schatting.onvolledig };
+      } else if (a.wordt_gekocht) {
+        const b = partij.get(a.id).p ?? a.inkoopprijs;
+        kost = b == null ? null : { bedrag: rond(b, 2), soort: 'inkoop' };
+      }
+    } catch { kost = null; }
+    return { ...a, foto_id: foto.get(a.id)?.id ?? null, kost };
+  }));
 }));
 
 r.get('/artikelen/:id', metFouten((req, res) => {

@@ -27,7 +27,7 @@ function metFouten(fn) {
 const r2 = v => (v == null ? null : Math.round(v * 100) / 100);
 
 // Kost per stuk van één artikel: geschat (profiel + onderdelen) en gemeten
-export function kostVanArtikel(db, a) {
+export function kostVanArtikel(db, a, { advies = true } = {}) {
   const { profiel } = artikelMetProfiel(db, a.id);
   const onderdelen = leesOnderdelen(db, a.id);
   const schatting = schatKost(db, profiel, onderdelen);
@@ -36,7 +36,7 @@ export function kostVanArtikel(db, a) {
     WHERE dr.artikel_id = ? AND d.soort = 'eigen' AND o.voltooid_op IS NOT NULL AND o.aantal_goed > 0 AND o.productiekost_stuk IS NOT NULL`).get(a.id);
   const delen = schatting.onderdelen;
   const gemeten = g?.n ? { kost: r2(g.k / g.n + delen), arbeid: r2(g.ar / g.n), stuks: g.n } : null;
-  return { profiel: !!profiel, onderdelen, schatting, gemeten, advies: adviesprijs(db, profiel, delen) };
+  return { profiel: !!profiel, onderdelen, schatting, gemeten, advies: advies ? adviesprijs(db, profiel, delen) : null };
 }
 
 // 09-10: adviesprijs per stuk volgens de rekenmotor (dezelfde berekening als
