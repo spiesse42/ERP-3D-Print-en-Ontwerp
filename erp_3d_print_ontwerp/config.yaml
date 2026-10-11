@@ -38,6 +38,7 @@ options:
   tijdzone: "Europe/Brussels"
   supabase_url: ""
   supabase_key: ""
+  sanity_token: ""
 schema:
   gemini_api_key: password?
   gemini_model: str?
@@ -51,3 +52,4 @@ schema:
   tijdzone: str?
   supabase_url: str?
   supabase_key: password?
+  sanity_token: password?

@@ -7,6 +7,7 @@ import { ControlePaneel, Chip, Lijst, Kaarten, Laden, Fout, initialen, avatarKle
 import { euro, aantal } from '../../lib/formaat.js';
 import { TYPE_LABEL, STATUS, vinkjesTekst, eenheid } from './artikel.js';
 import MapImport from './MapImport.jsx';
+import WebshopBulk from './WebshopBulk.jsx';
 
 const TYPES = [['filament', 'Filament'], ['artikel', 'Artikelen'], ['dienst', 'Diensten']];
 const GROEPERING = { geen: null, categorie: 'Categorie', type: 'Type' };
@@ -89,6 +90,7 @@ export default function ArtikelenLijst() {
   const { data, fout, laden, herlaad } = useData(archief ? '/voorraad/artikelen?archief=1' : '/voorraad/artikelen');
   const [importOpen, setImportOpen] = useState(false);
   const [foto, setFoto] = useState(null);
+  const [bulk, setBulk] = useState(false);
 
   const setWeergave = w => { setWeergaveState(w); bewaar('artikelen.weergave', w); };
   const kiesGroep = g => { setGroep(g); bewaar('artikelen.groep', g); };
@@ -135,12 +137,14 @@ export default function ArtikelenLijst() {
 
   return (
     <>
+      {bulk && <WebshopBulk artikelen={groepen.flatMap(g => g.rijen)} onSluit={() => setBulk(false)} onKlaar={herlaad} />}
       {foto && <FotoPopup a={foto} onSluit={() => setFoto(null)} />}
       {importOpen && <MapImport onSluit={() => setImportOpen(false)} onKlaar={() => { setImportOpen(false); herlaad(); }} />}
       <ControlePaneel
         kruimels={[{ label: 'Artikelen' }]}
         zoek={zoek} onZoek={setZoek} facetten={facetten}
         acties={<>
+          <button type="button" className="btn" onClick={() => setBulk(true)} title="De verkochte artikels uit deze lijst in één keer naar de webshop (Sanity)">Naar webshop…</button>
           <button type="button" className="btn" onClick={() => setImportOpen(true)} title="Artikels aanmaken uit een map met downloads (bv. Patreon)">Importeren uit map…</button>
           <button type="button" className="btn primary" onClick={() => navigeer(`/voorraad/artikelen/nieuw${type ? `?type=${type}` : ''}`)}>Nieuw</button>
         </>}

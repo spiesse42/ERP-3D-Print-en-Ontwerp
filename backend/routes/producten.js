@@ -11,6 +11,7 @@ import { webshopRijen, vergelijk, neemOver, ontkoppel } from '../domein/webshop.
 import { haalProducten, WebshopFout } from '../integraties/sanity.js';
 import { artikelMetProfiel, schatKost, regelUitProfiel } from '../productie/printprofiel.js';
 import { berekenMetDb } from '../domein/berekening.js';
+import { leesWebshop, bewaarWebshop, pushWebshop, keuzes } from '../domein/webshoppush.js';
 
 const r = Router();
 function metFouten(fn) {
@@ -83,6 +84,11 @@ r.post('/webshop/overnemen', metFouten(async (req, res) => {
   const db = getDb();
   res.json(db.transaction(() => neemOver(db, rijen, req.body?.sleutels))());
 }));
+// 11-10: webshopvelden beheren in het ERP en naar Sanity pushen
+r.get('/webshop/keuzes', metFouten(async (req, res) => res.json(await keuzes())));
+r.get('/:id/webshop', metFouten(async (req, res) => res.json(await leesWebshop(getDb(), req.params.id))));
+r.put('/:id/webshop', metFouten((req, res) => { bewaarWebshop(getDb(), req.params.id, req.body); res.json({ ok: true }); }));
+r.post('/:id/webshop/push', metFouten(async (req, res) => res.json(await pushWebshop(getDb(), req.params.id, { forceer: !!req.body?.forceer }))));
 r.post('/:id/ontkoppel', metFouten((req, res) => { ontkoppel(getDb(), req.params.id); res.json({ ok: true }); }));
 
 // ── onderdelen per stuk + kost
