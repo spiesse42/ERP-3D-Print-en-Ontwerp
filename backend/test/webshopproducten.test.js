@@ -116,3 +116,12 @@ test('W5. webshopbestellingen: ophalen, koppelen aan artikel, verkoop maakt ze a
   const na = ok(await vraag('GET', '/webshopbestellingen')).bestellingen[0];
   assert.equal(na.afgehandeld, true); assert.equal(na.verkoop_id, v.id);
 });
+
+test('W6. webshopbestelling: filament bij de gekozen kleur (kleuren uit de webshop)', async () => {
+  const { leesBestellingen } = await import('../domein/webshopbestellingen.js');
+  const kleuren = new Map([['rood', { label: 'Rood', hex: '#d32f2f', filamentName: 'eSUN PLA Basic — Fire Engine Red' }]]);
+  const b = leesBestellingen(getDb(), { alles: true, kleuren });
+  const item = b.flatMap(x => x.items).find(i => i.kleuren.includes('Rood'));
+  assert.equal(item.kleur_info[0].filament, 'eSUN PLA Basic — Fire Engine Red');
+  assert.equal(leesBestellingen(getDb(), { alles: true }).flatMap(x => x.items).find(i => i.kleuren.includes('Rood')).kleur_info[0].filament, null);
+});

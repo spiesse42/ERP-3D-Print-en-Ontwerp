@@ -62,7 +62,8 @@ export default function WebshopBestellingen() {
                     return (
                       <tr key={k}>
                         <td className="num" style={{ width: 40 }}>{aantal(i.aantal)}×</td>
-                        <td>{i.naam}{i.kleuren.length > 0 && <b> — {i.kleuren.join(' / ')}</b>}</td>
+                        <td>{i.naam}{i.kleuren.length > 0 && <b> — {i.kleuren.join(' / ')}</b>}
+                          {(i.kleur_info || []).filter(k => k.filament).map(k => <div key={k.label} className="sub"><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 5, background: k.hex || 'transparent', border: '1px solid var(--line)', marginRight: 4 }} />{k.label}: <b>{k.filament}</b></div>)}</td>
                         <td className="sub">{i.artikel ? <Link naar={`/voorraad/artikelen/${i.artikel.id}`}>voorraad {aantal(i.artikel.voorraad)}</Link> : 'niet gekoppeld (Producten → Webshop ophalen)'}</td>
                         <td className="r">{tekort && !b.afgehandeld && <button type="button" className="btn klein" onClick={() => setPrinten({ id: i.artikel.id, weergave: i.artikel.naam, voorraad: i.artikel.voorraad, in_productie: 0, voorstel: i.aantal - i.artikel.voorraad })}>Bijprinten</button>}</td>
                       </tr>
