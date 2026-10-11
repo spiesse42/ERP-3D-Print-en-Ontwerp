@@ -14,7 +14,8 @@
 // - wattmeting bij elke tik; kWh = verschil van de kWh-meter, anders de
 //   trapeziumregel over de wattmetingen (gaten > 120 s tellen niet mee)
 import { getDb } from '../db/index.js';
-import { haStaten, haIngesteld, meterOp } from '../integraties/homeassistant.js';
+import { haStaten, haIngesteld, meterOp, haAfbeelding, haCameraBeeld } from '../integraties/homeassistant.js';
+import { bewaarRunFoto } from './runfoto.js';
 import { leesPrinter } from './adapters.js';
 
 export const INTERVAL_MS = () => Number(process.env.PRINTERWACHTER_MS) || 15000;
@@ -183,6 +184,7 @@ export async function tik() {
         db.transaction(() => verwerk(db, p, lezing))();
       }
       cache.set(p.id, { lezing, bijgewerkt_op: nu(), fout: null });
+      await runFoto(db, p, staten);
       for (const id of [...aanTeVullen]) {
         aanTeVullen.delete(id);
         try { await vulAan(db, id); } catch (e) { console.error('[printerwachter] aanvullen', e.message); }
@@ -191,6 +193,36 @@ export async function tik() {
       console.error('[printerwachter]', p.naam, e.message);
       cache.set(p.id, { ...(cache.get(p.id) || {}), bijgewerkt_op: nu(), fout: e.message });
     }
+  }
+}
+
+// ── foto per run (11-10): om achteraf te zien welk object geprint werd ────
+// 1) de voorbeeldafbeelding van de print (image-entiteit van de printer, bv.
+//    Bambu Lab "cover image"), zodra de run een paar minuten loopt
+// 2) anders een camerabeeld kort na het einde (camera van de printer)
+// Eén poging per run en bron; mislukt = geen foto, nooit een fout.
+const fotoGeprobeerd = new Set();
+function beeldEntiteit(p, staten) {
+  if (!p.ha_prefix) return null;
+  const pre = `image.${String(p.ha_prefix).replace(/^[a-z_]+\./, '')}`;
+  const ids = [...staten.keys()].filter(k => k.startsWith(pre));
+  return ids.find(k => /cover|omslag|voorbeeld|afbeelding|thumbnail/i.test(k)) || ids[0] || null;
+}
+async function runFoto(db, p, staten) {
+  const open = db.prepare(`SELECT id, gestart_op FROM printruns WHERE printer_id = ? AND uitkomst = 'bezig' ORDER BY id DESC LIMIT 1`).get(p.id);
+  const ent = beeldEntiteit(p, staten);
+  if (open && ent && !fotoGeprobeerd.has(`b${open.id}`) && Date.now() - Date.parse(open.gestart_op) > 3 * 60000) {
+    fotoGeprobeerd.add(`b${open.id}`);
+    try { if (!db.prepare('SELECT foto FROM printruns WHERE id = ?').get(open.id)?.foto) bewaarRunFoto(db, open.id, await haAfbeelding(ent)); }
+    catch (e) { console.error('[printerwachter] voorbeeldafbeelding', e.message); }
+  }
+  if (!p.camera_entity) return;
+  const klaar = db.prepare(`SELECT id FROM printruns WHERE printer_id = ? AND uitkomst <> 'bezig' AND foto IS NULL AND geeindigd_op >= ? ORDER BY id DESC LIMIT 1`)
+    .get(p.id, new Date(Date.now() - 15 * 60000).toISOString());
+  if (klaar && !fotoGeprobeerd.has(`c${klaar.id}`)) {
+    fotoGeprobeerd.add(`c${klaar.id}`);
+    try { bewaarRunFoto(db, klaar.id, await haCameraBeeld(p.camera_entity)); }
+    catch (e) { console.error('[printerwachter] camerabeeld', e.message); }
   }
 }
 
