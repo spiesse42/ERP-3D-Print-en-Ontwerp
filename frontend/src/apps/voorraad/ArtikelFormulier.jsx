@@ -13,6 +13,7 @@ import { naarFormulier, naarBody, voorstelVerkoopprijs, LEGE_REGEL, TYPE_LABEL, 
 import { StatusBadge, Kleurstaal } from './ArtikelenLijst.jsx';
 import BoekingDialoog from './BoekingDialoog.jsx';
 import Printprofiel from './Printprofiel.jsx';
+import WebshopFormulier from './WebshopFormulier.jsx';
 import Bijlagen from '../../schil/Bijlagen.jsx';
 import { BASE } from '../../lib/api.js';
 import Onderdelen from './Onderdelen.jsx';
@@ -84,28 +85,6 @@ function ArtikelBestanden({ id }) {
   );
 }
 
-// Webshop (06-10): gekoppeld product in de webshop (Sanity). Naam en prijs
-// komen uit de webshop (Producten → Webshop ophalen); hier enkel bekijken of
-// loskoppelen.
-function WebshopTab({ art, onKlaar }) {
-  const { melding, bevestig } = useOmgeving();
-  async function los() {
-    if (!await bevestig({ titel: 'Loskoppelen van de webshop', tekst: `${art.weergave} blijft in het ERP, maar wordt niet meer bijgewerkt uit de webshop.`, bevestigLabel: 'Loskoppelen', annuleerLabel: 'Terug' })) return;
-    try { await api.post(`/producten/${art.id}/ontkoppel`); melding('Losgekoppeld van de webshop.'); onKlaar(); } catch (e) { melding(e.message, 'fout'); }
-  }
-  return (
-    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-      {art.webshop_foto && <img src={`${art.webshop_foto}?w=240&h=240&fit=crop`} alt={art.weergave} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 8 }} />}
-      <div>
-        <p style={{ marginTop: 0 }}><a href={`https://www.3dprintenontwerp.be/producten/${art.webshop_slug}`} target="_blank" rel="noopener noreferrer">{art.webshop_slug}</a>{art.webshop_variant ? <> · variant <b>{art.webshop_variant}</b></> : null}</p>
-        {art.webshop_gewicht_g != null && <p className="sub">Gewicht in de webshop: {aantal(art.webshop_gewicht_g)} g</p>}
-        <p className="sub">Laatst bijgewerkt uit de webshop: {art.webshop_bijgewerkt_op ? datum(art.webshop_bijgewerkt_op.slice(0, 10)) : '—'}. Naam en prijs pas je aan in de webshop (Sanity Studio) en haal je op via Voorraad → Producten → Webshop ophalen.</p>
-        <button type="button" className="btn ghost" onClick={los}>Loskoppelen</button>
-      </div>
-    </div>
-  );
-}
-
 // Productiekost van een eigen product (stap 6c): gemeten bij het bevestigen
 // van de printopdrachten (echte kost + arbeid apart), naast de vaste
 // verkoopprijs, zodat je ziet of er genoeg winst op zit.
@@ -165,7 +144,7 @@ export default function ArtikelFormulier() {
     ...(heeftVoorraad && !nieuw ? [['voorraad', 'Voorraad']] : []),
     ...(t === 'artikel' && form.zelf_geprint && origineel.zelf_geprint && !nieuw ? [['printprofiel', 'Printprofiel']] : []),
     ...(t === 'artikel' && origineel.wordt_verkocht && !nieuw ? [['onderdelen', 'Onderdelen']] : []),
-    ...(!nieuw && art?.webshop_slug ? [['webshop', 'Webshop']] : []),
+    ...(!nieuw && (art?.webshop_slug || (t === 'artikel' && origineel.wordt_verkocht)) ? [['webshop', 'Webshop']] : []),
     ...(form.wordt_gekocht ? [['inkoop', `Inkoop${form.leveranciers.length ? ` (${form.leveranciers.length})` : ''}`]] : []),
     ...(!nieuw ? [['bestanden', "Foto's & bestanden"]] : []),
     ['notities', 'Notities'],
@@ -413,7 +392,7 @@ export default function ArtikelFormulier() {
             {actieveTab === 'printprofiel' && <Printprofiel id={id} naam={form.naam} gewicht={art?.webshop_gewicht_g} onBijprinten={() => setBijprinten(true)} />}
             {actieveTab === 'onderdelen' && <Onderdelen id={id} />}
             {actieveTab === 'bestanden' && <ArtikelBestanden id={id} />}
-            {actieveTab === 'webshop' && <WebshopTab art={art} onKlaar={herlaad} />}
+            {actieveTab === 'webshop' && <WebshopFormulier art={art} onKlaar={herlaad} />}
             {actieveTab === 'inkoop' && (
               <>
                 <p className="note" style={{ marginTop: 0 }}>Wat elke leverancier over dit artikel weet. De productcode (of omschrijving) van de leverancier gebruikt de factuurherkenning om een regel automatisch aan dit artikel te koppelen. De voorkeursleverancier verschijnt bij "te bestellen".</p>
