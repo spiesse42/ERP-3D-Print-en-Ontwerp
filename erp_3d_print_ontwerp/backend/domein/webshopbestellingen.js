@@ -35,7 +35,8 @@ const ART = `SELECT a.id, a.naam, a.verkoopprijs,
   (SELECT COALESCE(SUM(aantal_resterend), 0) FROM voorraad_partijen p WHERE p.artikel_id = a.id) AS voorraad
   FROM artikelen a WHERE a.webshop_slug = ? AND COALESCE(a.webshop_variant, '') = ?`;
 
-export function leesBestellingen(db, { alles = false } = {}) {
+export function leesBestellingen(db, { alles = false, kleuren = null } = {}) {
+  const kleur = k => kleuren?.get(String(k).trim().toLowerCase()) || null;   // 11-10: filament bij de gekozen kleur
   const art = db.prepare(ART);
   const rijen = db.prepare(`SELECT b.*, v.nummer AS verkoop_nummer, v.id AS verkoop_id FROM webshop_bestellingen b
     LEFT JOIN verkopen v ON v.webshop_bestelling = b.id AND v.geannuleerd_op IS NULL
@@ -44,8 +45,9 @@ export function leesBestellingen(db, { alles = false } = {}) {
   return rijen.map(b => {
     const items = JSON.parse(b.items || '[]').map(i => {
       const a = art.get(i.slug, i.variantLabel ?? '') || null;
-      return { slug: i.slug, naam: i.name, aantal: i.quantity, prijs: i.price, variant: i.variantLabel ?? null,
+      const uit = { slug: i.slug, naam: i.name, aantal: i.quantity, prijs: i.price, variant: i.variantLabel ?? null,
         kleuren: i.colors || (i.color ? [i.color] : []), artikel: a };
+      return { ...uit, kleur_info: uit.kleuren.map(k => ({ label: k, filament: kleur(k)?.filamentName || null, hex: kleur(k)?.hex || null })) };
     });
     const klant = b.email ? db.prepare('SELECT id FROM klanten WHERE lower(email) = lower(?) LIMIT 1').get(b.email) : null;
     return { ...b, items, klant_id: klant?.id ?? null, afgehandeld: !!b.afgehandeld_op };
