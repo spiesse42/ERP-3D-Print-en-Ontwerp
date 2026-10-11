@@ -5,6 +5,8 @@
 // De frontend leest ENKEL deze routes; de printerwachter (productie/wachter.js)
 // praat met Home Assistant. Het token komt nooit in de browser.
 import { Router } from 'express';
+import { runFotoPad } from '../productie/runfoto.js';
+import fs from 'fs';
 import { getDb } from '../db/index.js';
 import { DomeinFout } from '../domein/hulp.js';
 import { haStaten, haDienst, haCameraBeeld, haIngesteld, HaFout, meterOp } from '../integraties/homeassistant.js';
@@ -44,7 +46,7 @@ function runInfo(db, run, lezing) {
   const te_koppelen = !run.printopdracht_id && !run.intern;
   return { id: run.id, gestart_op: run.gestart_op, geeindigd_op: run.geeindigd_op, uitkomst: run.uitkomst, bestand: run.bestand,
     duur_min: Math.round((einde - Date.parse(run.gestart_op)) / 60000), bron: run.bron, onvolledig: !!run.onvolledig, aangevuld: !!run.aangevuld,
-    gewicht_g: run.gewicht_g, kwh: r4(run.kwh ?? kwhVanRun(db, run, lezing?.kwh_meter ?? null)),
+    gewicht_g: run.gewicht_g, foto: !!run.foto, kwh: r4(run.kwh ?? kwhVanRun(db, run, lezing?.kwh_meter ?? null)),
     opdracht, intern: run.intern, intern_label: run.intern ? INTERN[run.intern] : null, te_koppelen,
     voorstel: te_koppelen ? voorstelVoorRun(db, run) : null };
 }
@@ -89,6 +91,14 @@ r.get('/runs/:id', metFouten((req, res) => {
   const x = run(db, req.params.id);
   res.json({ ...runInfo(db, x, liveCache().get(x.printer_id)?.lezing), printer_id: x.printer_id,
     printer: db.prepare('SELECT naam FROM printers WHERE id = ?').get(x.printer_id)?.naam });
+}));
+
+// 11-10: foto van de run (voorbeeldafbeelding of camerabeeld)
+r.get('/runs/:id/foto', metFouten((req, res) => {
+  const x = run(getDb(), req.params.id);
+  if (!x.foto || !fs.existsSync(runFotoPad(x.foto))) return res.status(404).json({ error: 'Geen foto voor deze run' });
+  res.set('Cache-Control', 'private, max-age=86400');
+  res.sendFile(runFotoPad(x.foto));
 }));
 
 // Run koppelen: aan een printopdracht (voorstel, andere of nieuwe) of intern.

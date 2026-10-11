@@ -6,6 +6,7 @@ import Icoon from '../../schil/Icoon.jsx';
 import { datumTijd, naarInvoer } from '../../lib/formaat.js';
 import { StatusBadge } from './PrintersLive.jsx';
 import { KoppelDialoog, duur } from './opdracht.jsx';
+import RunFoto from '../../components/RunFoto.jsx';
 
 // Het venster van één run (stap 6b; 25-09: apart bestand zodat het ook vanuit
 // een printopdracht en vanuit het dossier opent). Koppelen, ontkoppelen,
@@ -45,6 +46,7 @@ export function RunDialoog({ run, onSluit, onKlaar }) {
         <button type="button" className="btn" onClick={onSluit}>Sluiten</button>
         <button type="button" className={`btn ${run.te_koppelen ? 'primary' : ''}`} onClick={() => setKoppelen(true)}>{run.te_koppelen ? 'Koppelen' : 'Anders koppelen'}</button>
       </>}>
+      {run.foto && <div style={{ marginBottom: 10 }}><RunFoto run={run} maat={160} /></div>}
       <dl className="pwaarden">
         <dt>Bestand</dt><dd className="mono">{run.bestand || '—'}</dd>
         <dt>Gestart</dt><dd className="num">{datumTijd(run.gestart_op)}</dd>

@@ -131,3 +131,14 @@ test('P7. adviesprijs per stuk uit het printprofiel; slicerbestand als bijlage b
   const p = ok(await vraag('PUT', `/productie/printprofiel/${medaillon}`, { profiel: { printer_id: mini, tijd_min: 30, slicer_bijlage_id: 999999, materialen: [] } }));
   assert.equal(p.profiel?.slicer_bijlage_id ?? p.slicer_bijlage_id ?? undefined, undefined, 'onbekende bijlage valt weg');
 });
+
+test('P8. foto per run: bewaren en ophalen', async () => {
+  const { bewaarRunFoto } = await import('../productie/runfoto.js');
+  const x = ok(await vraag('POST', '/productie/runs', { printer_id: mini, gestart_op: new Date(Date.now() - 2 * 3600e3).toISOString(), geeindigd_op: new Date(Date.now() - 3600e3).toISOString(), uitkomst: 'klaar' }), 201);
+  assert.equal(ok(await vraag('GET', `/productie/runs/${x.id}`)).foto, false);
+  bewaarRunFoto(getDb(), x.id, { type: 'image/png', data: Buffer.from([137, 80, 78, 71]) });
+  assert.equal(ok(await vraag('GET', `/productie/runs/${x.id}`)).foto, true);
+  const res = await fetch(`${basis}/productie/runs/${x.id}/foto`);
+  assert.equal(res.status, 200);
+  assert.equal((await res.arrayBuffer()).byteLength, 4);
+});

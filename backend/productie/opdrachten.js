@@ -426,7 +426,7 @@ export function teKoppelenVoorDossier(db, dossierId, ops) {
     const uitleg = kandidaat?.printer_id === r.printer_id ? 'opdracht van dit dossier op deze printer'
       : 'bestandsnaam komt overeen (de opdracht verhuist naar deze printer)';
     const einde = r.geeindigd_op ? Date.parse(r.geeindigd_op) : Date.now();
-    return { id: r.id, printer_id: r.printer_id, printer: r.printer, bestand: r.bestand, gestart_op: r.gestart_op, geeindigd_op: r.geeindigd_op,
+    return { id: r.id, printer_id: r.printer_id, printer: r.printer, bestand: r.bestand, foto: !!r.foto, gestart_op: r.gestart_op, geeindigd_op: r.geeindigd_op,
       uitkomst: r.uitkomst, duur_min: Math.round((einde - Date.parse(r.gestart_op)) / 60000),
       voorstel: kandidaat ? { id: kandidaat.id, naam: kandidaat.naam, uitleg } : null };
   });

@@ -9,6 +9,7 @@ import { datumTijd, naarInvoer, aantal } from '../../lib/formaat.js';
 import { StatusBadge } from './PrintersLive.jsx';
 import { Koppeling, RunDialoog, lokaal } from './RunDialoog.jsx';
 import { duur } from './opdracht.jsx';
+import RunFoto from '../../components/RunFoto.jsx';
 
 // Productie → Runs: elke print die de printerwachter zag (of die je manueel
 // startte of toevoegde), met duur en gemeten kWh (stap 6a). Stap 6b: runs
@@ -64,6 +65,7 @@ export default function RunsLijst() {
     && (!zoek.trim() || `${r.bestand || ''} ${r.opdracht?.naam || ''} ${r.opdracht?.dossier_nummer || ''}`.toLowerCase().includes(zoek.trim().toLowerCase()))), [data, printer, zoek, teKoppelen]);
   const aantalTeKoppelen = (data || []).filter(r => r.te_koppelen).length;
   const kolommen = [
+    { kop: <span className="sr-only">Foto</span>, cel: r => <RunFoto run={r} /> },
     { kop: 'Gestart', cel: r => <span className="num">{datumTijd(r.gestart_op)}</span> },
     { kop: 'Printer', cel: r => r.printer },
     { kop: 'Bestand', cel: r => <span className="mono">{r.bestand || '—'}</span> },

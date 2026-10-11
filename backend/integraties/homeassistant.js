@@ -89,6 +89,14 @@ export async function haCameraBeeld(entity) {
   return { type: res.headers?.get?.('content-type') || 'image/jpeg', data: Buffer.from(await res.arrayBuffer()) };
 }
 
+// Afbeelding van een image-entiteit (11-10), bv. de voorbeeldafbeelding van de
+// lopende print bij de Bambu Lab-integratie.
+export async function haAfbeelding(entity) {
+  if (process.env.HA_NEP && !nepFetch) return haCameraBeeld(entity);
+  const res = await haFetch(`image_proxy/${encodeURIComponent(entity)}`);
+  return { type: res.headers?.get?.('content-type') || 'image/png', data: Buffer.from(await res.arrayBuffer()) };
+}
+
 // Geschiedenis van één entiteit (bv. de kWh-meter) tussen twee tijdstippen.
 export async function haGeschiedenis(entity, van, tot) {
   if (process.env.HA_NEP && !nepFetch) {
