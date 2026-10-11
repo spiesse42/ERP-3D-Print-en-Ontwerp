@@ -8,6 +8,7 @@ import { RunVenster } from '../productie/RunDialoog.jsx';
 import { StatusBadge } from '../productie/PrintersLive.jsx';
 import { api, BASE } from '../../lib/api.js';
 import { datumTijd } from '../../lib/formaat.js';
+import RunFoto from '../../components/RunFoto.jsx';
 
 // Productie van een dossier (stap 6b): per printregel de printopdrachten,
 // hoeveel stuks er goed zijn en wat er nog gepland staat. Klaar = elke
@@ -52,6 +53,7 @@ export default function ProductieTab({ d, vuil, herlaad }) {
           <h4>{runs.length === 1 ? 'Er is een run die nog niet gekoppeld is' : `Er zijn ${runs.length} runs die nog niet gekoppeld zijn`}</h4>
           {runs.map(r => (
             <div key={r.id} className="run">
+              <RunFoto run={r} maat={48} />
               <div className="wat klikbaar" role="button" tabIndex={0} title="Run openen" onClick={() => setDialoog({ soort: 'run', id: r.id })}
                 onKeyDown={e => { if (e.key === 'Enter') setDialoog({ soort: 'run', id: r.id }); }}><b>{r.printer}</b> · <span className="num">{datumTijd(r.gestart_op)}</span> · {duur(r.duur_min)} <StatusBadge status={r.uitkomst} />
                 {r.bestand && <div className="sub mono">{r.bestand}</div>}</div>
@@ -165,10 +167,11 @@ function RunKiezen({ o, onSluit, onKlaar }) {
       ) : (
         <div className="tabelvak">
           <table className="mini">
-            <thead><tr><th>Printer</th><th>Start</th><th>Duur</th><th>Bestand</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th><span className="sr-only">Foto</span></th><th>Printer</th><th>Start</th><th>Duur</th><th>Bestand</th><th>Status</th><th /></tr></thead>
             <tbody>
               {runs.map(r => (
                 <tr key={r.id}>
+                  <td><RunFoto run={r} /></td>
                   <td>{r.printer}{r.printer_id !== o.printer_id && <div className="sub">andere printer</div>}</td>
                   <td className="num">{datumTijd(r.gestart_op)}</td>
                   <td className="num">{duur(r.duur_min)}</td>
