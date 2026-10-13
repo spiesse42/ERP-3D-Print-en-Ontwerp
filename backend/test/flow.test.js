@@ -59,7 +59,7 @@ test('X1. Starten: werkbon + printopdracht per printregel met printer; eenmalig'
   assert.ok(d.gestart_op);
   assert.equal(d.acties.starten, false);
   assert.equal(d.werkbon.nummer, `WB-${jaar}-0001`);
-  assert.equal(d.fase, 'productie');
+  assert.equal(d.fase, 'gepland');
   const [sh, doos] = d.productie.regels;
   assert.equal(sh.opdrachten.length, 1);
   assert.equal(sh.opdrachten[0].aantal, 4); assert.equal(sh.opdrachten[0].naam, 'Sleutelhanger'); assert.equal(sh.opdrachten[0].printer_id, mini);

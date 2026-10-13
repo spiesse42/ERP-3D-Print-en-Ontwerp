@@ -4,8 +4,10 @@ export const FASE = {
   nieuw: ['b-info', 'Nieuw'],
   offerte: ['b-neutral', 'Offerte verstuurd'],
   akkoord: ['b-info', 'Akkoord'],
+  gepland: ['b-neutral', 'Klaar voor productie'],
   productie: ['b-info', 'In productie'],
   klaar: ['b-pos', 'Klaar'],
+  afgerond: ['b-pos', 'Afgerond'],
   deels: ['b-warn', 'Deels geleverd'],
   geleverd: ['b-info', 'Geleverd'],
   afgerekend: ['b-warn', 'Afgerekend'],
@@ -14,7 +16,7 @@ export const FASE = {
   geannuleerd: ['b-crit', 'Geannuleerd'],
   samengevoegd: ['b-neutral', 'Samengevoegd'],
 };
-export const FASE_VOLGORDE = ['nieuw', 'offerte', 'akkoord', 'productie', 'klaar', 'deels', 'geleverd', 'afgerekend', 'betaald', 'gratis', 'geannuleerd', 'samengevoegd'];
+export const FASE_VOLGORDE = ['nieuw', 'offerte', 'akkoord', 'gepland', 'productie', 'klaar', 'deels', 'geleverd', 'afgerekend', 'betaald', 'gratis', 'afgerond', 'geannuleerd', 'samengevoegd'];
 export const OFFERTE_STATUS = {
   concept: ['b-neutral', 'Concept'], verstuurd: ['b-info', 'Verstuurd'], aanvaard: ['b-pos', 'Aanvaard'],
   geweigerd: ['b-crit', 'Geweigerd'], verlopen: ['b-warn', 'Verlopen'], vervangen: ['b-neutral', 'Vervangen'],
@@ -23,7 +25,7 @@ export function OfferteBadge({ status }) {
   const [k, l] = OFFERTE_STATUS[status] || OFFERTE_STATUS.concept;
   return <span className={`badge ${k}`}>{l}</span>;
 }
-export const VOOR_AFREKENING = ['nieuw', 'offerte', 'akkoord', 'productie', 'klaar', 'deels', 'geleverd'];
+export const VOOR_AFREKENING = ['nieuw', 'offerte', 'akkoord', 'gepland', 'productie', 'klaar', 'afgerond', 'deels', 'geleverd'];
 export const SOORT = { klant: 'Klantopdracht', eigen: 'Eigen product', intern: 'Intern' };
 
 export function FaseBadge({ fase }) {

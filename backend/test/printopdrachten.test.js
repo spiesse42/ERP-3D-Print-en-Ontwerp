@@ -57,7 +57,7 @@ test('P0. voorbereiding: printers koppelen, dossier met twee printregels', async
     { type: 'ontwerp', minuten: 30 }] })).data;
   assert.equal(dos.fase, 'nieuw');
   assert.equal(dos.productie.status, 'geen');
-  assert.deepEqual(dos.stappen, ['nieuw', 'offerte', 'akkoord', 'productie', 'klaar', 'geleverd', 'afgerekend', 'betaald']);
+  assert.deepEqual(dos.stappen, ['nieuw', 'offerte', 'akkoord', 'gepland', 'productie', 'klaar', 'geleverd', 'afgerekend', 'betaald']);
   regelId = dos.regels[0].id;
 });
 
@@ -81,9 +81,9 @@ test('P1. printopdracht maken: validatie, standaardwaarden uit de regel, wachtri
   await vraag('POST', `/productie/opdrachten/${los.id}/neer`);
   lijst = (await vraag('GET', `/productie/opdrachten?printer_id=${mini}&open=1`)).data.lijst;
   assert.deepEqual(lijst.map(o => o.naam), ['Sleutelhanger', 'Demo-vaas']);
-  // dossier = in productie; dossier niet verwijderen
+  // dossier = klaar voor productie (nog geen run); dossier niet verwijderen
   const d = (await vraag('GET', `/dossiers/${dos.id}`)).data;
-  assert.equal(d.fase, 'productie');
+  assert.equal(d.fase, 'gepland');
   assert.equal(d.acties.verwijderen, false);
   assert.equal(d.productie.regels[0].gepland, 4);
   // (regel weg met enkel geplande opdrachten: zie flow.test.js)

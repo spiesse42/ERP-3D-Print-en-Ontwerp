@@ -81,13 +81,13 @@ test('F2. nieuwe versie: zelfde nummer v2, vorige = vervangen; aanvaard → star
   assert.equal(d.werkbon.nummer, `WB-${jaar}-0001`);
   assert.equal(d.productie.aantal_opdrachten, 1);
   assert.equal(d.productie.regels[0].opdrachten[0].aantal, 2);
-  assert.equal(d.fase, 'productie', 'printopdracht gepland → in productie');
+  assert.equal(d.fase, 'gepland', 'printopdracht gepland, nog geen run → klaar voor productie');
   assert.equal(d.acties.offerte, false, 'geen nieuwe versie na akkoord');
   assert.equal(d.wijkt_af_van_offerte, false);
   const h = (await vraag('GET', `/historiek/dossier/${dos.id}`)).data.map(x => x.tekst);
   assert.ok(h.some(t => /Offerte OFF-\d+-001 v2 aanvaard door de klant/.test(t)));
   // lijst: fase akkoord
-  assert.equal((await vraag('GET', '/dossiers')).data.find(x => x.id === dos.id).fase, 'productie');
+  assert.equal((await vraag('GET', '/dossiers')).data.find(x => x.id === dos.id).fase, 'gepland');
   assert.equal((await vraag('GET', '/offertes')).data.length, 2);
 });
 

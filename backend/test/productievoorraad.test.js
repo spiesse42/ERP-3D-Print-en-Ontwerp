@@ -129,7 +129,7 @@ test('V4. Te bestellen → printopdracht: dossier "Eigen product" met de vorige 
   const rg = d.regels[0];
   assert.deepEqual([rg.aantal, rg.tijd_min, rg.materialen[0].gram, rg.artikel_id, rg.voorbereiding_min], [8, 240, 100, hond, 10]);
   assert.equal(d.productie.regels[0].opdrachten[0].status, 'gepland');
-  assert.equal(d.fase, 'productie');
+  assert.equal(d.fase, 'gepland');
   // de geplande stuks tellen mee: hond (min 10) had 2 in voorraad, + 8 in productie = op peil
   assert.ok(!ok(await vraag('GET', '/voorraad/te-bestellen')).some(x => x.id === hond));
   const art = ok(await vraag('GET', `/voorraad/artikelen/${hond}`));
