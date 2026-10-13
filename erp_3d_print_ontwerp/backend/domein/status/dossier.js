@@ -3,8 +3,9 @@
 // nieuw → offerte verstuurd → akkoord → in productie → klaar → deels
 // geleverd → geleverd → afgerekend → betaald (of geannuleerd).
 // `lever` = 'geen' | 'deels' | 'geleverd' | null (niets te leveren).
-// `prod` = 'geen' | 'productie' | 'klaar' | null (geen printregels) — stap 6b:
-// in productie zodra er een printopdracht is; klaar als elke printregel
+// `prod` = 'geen' | 'gepland' | 'productie' | 'klaar' | null (geen printregels) — stap 6b:
+// 'gepland' zodra er printopdrachten zijn maar nog geen run (13-10), in
+// productie zodra er een run gekoppeld is; klaar als elke printregel
 // genoeg goede stuks heeft uit voltooide printopdrachten.
 // `offerte` = de laatst verstuurde offerteversie (of null), `werkbon` = de
 // werkbon van het dossier (of null).
@@ -13,8 +14,10 @@ export const FASES = {
   nieuw:       'Nieuw',
   offerte:     'Offerte verstuurd',
   akkoord:     'Akkoord',
+  gepland:     'Klaar voor productie',   // 13-10: gestart, nog geen run gekoppeld
   productie:   'In productie',
   klaar:       'Klaar',
+  afgerond:    'Afgerond',               // 13-10: eigen product / intern, alles geprint
   deels:       'Deels geleverd',
   geleverd:    'Geleverd',
   afgerekend:  'Afgerekend',
@@ -23,7 +26,7 @@ export const FASES = {
   geannuleerd: 'Geannuleerd',
   samengevoegd: 'Samengevoegd',
 };
-const VOOR_AFREKENING = ['nieuw', 'offerte', 'akkoord', 'productie', 'klaar', 'deels', 'geleverd'];
+const VOOR_AFREKENING = ['nieuw', 'offerte', 'akkoord', 'gepland', 'productie', 'klaar', 'afgerond', 'deels', 'geleverd'];
 
 export function faseVan(d, { offerte = null, lever = null, prod = null } = {}) {
   // samengevoegd in een ander dossier (29-09): ligt vast, niets meer te doen
@@ -34,8 +37,11 @@ export function faseVan(d, { offerte = null, lever = null, prod = null } = {}) {
   if (d.afgerekend_op) return 'afgerekend';
   if (lever === 'geleverd') return 'geleverd';
   if (lever === 'deels') return 'deels';
-  if (prod === 'klaar') return 'klaar';
+  // 13-10: eigen product / intern is af als alles geprint is (geen levering of afrekening)
+  if (prod === 'klaar') return d.soort === 'klant' ? 'klaar' : 'afgerond';
   if (prod === 'productie') return 'productie';
+  // 13-10: gestart (werkbon/printopdrachten klaar), maar nog geen run gekoppeld
+  if (prod === 'gepland' || (d.gestart_op && prod === 'geen')) return 'gepland';
   if (offerte?.aanvaard_op) return 'akkoord';
   if (offerte?.verstuurd_op && !offerte.geweigerd_op) return 'offerte';
   return 'nieuw';
@@ -44,9 +50,10 @@ export function faseVan(d, { offerte = null, lever = null, prod = null } = {}) {
 // De stappen in de statusbalk. Eigen producten en interne dossiers worden
 // niet afgerekend en krijgen geen offerte.
 export function stappenVan(d, { lever = null, prod = null } = {}) {
-  const print = prod ? ['productie', 'klaar'] : [];
+  const print = prod ? ['gepland', 'productie', 'klaar'] : [];
   const einde = d.gratis_op ? ['gratis'] : ['afgerekend', 'betaald'];
-  return d.soort === 'klant' ? ['nieuw', 'offerte', 'akkoord', ...print, lever === 'deels' ? 'deels' : 'geleverd', ...einde] : ['nieuw', ...print];
+  return d.soort === 'klant' ? ['nieuw', 'offerte', 'akkoord', ...print, lever === 'deels' ? 'deels' : 'geleverd', ...einde]
+    : ['nieuw', ...(prod ? ['gepland', 'productie', 'afgerond'] : [])];
 }
 
 // Welke acties nu toegelaten zijn; de backend controleert ze, de frontend
@@ -58,7 +65,7 @@ export function actiesVan(d, { aantalRegels = 0, offerte = null, werkbon = null,
   return {
     bewerken: open,                                           // kop + regels
     // nieuwe offerte(versie); ook als er al geprint wordt zonder akkoord
-    offerte: klant && (fase === 'nieuw' || fase === 'offerte' || ((fase === 'productie' || fase === 'klaar') && !offerte?.aanvaard_op)),
+    offerte: klant && (fase === 'nieuw' || fase === 'offerte' || ((fase === 'gepland' || fase === 'productie' || fase === 'klaar') && !offerte?.aanvaard_op)),
     werkbon: open && !werkbon,
     // Starten (25-09): werkbon (klant) + printopdrachten; eenmalig
     starten: open && !d.gestart_op && aantalRegels > 0 && (klant || prod != null),
