@@ -270,6 +270,36 @@ export function verwijder(db, o) {
   db.prepare('DELETE FROM printopdrachten WHERE id = ?').run(o.id);
 }
 
+// 13-10: een GEPLANDE opdracht van een gestart dossier weghalen = de regel
+// heeft zoveel stuks minder nodig: het aantal op de regel zakt met het aantal
+// van de opdracht (bij "per stuk" ook tijd, gram en nabewerking naar rato),
+// daarna volgt de rest van de productie. Niet bij een afgerekend dossier.
+export function verwijderMetRegel(db, o) {
+  if (!o.dossier_regel_id) return verwijder(db, o);
+  if (o.runs.length || o.voltooid_op || o.geannuleerd_op) throw new DomeinFout('Enkel een geplande printopdracht (nog niets geprint) kan weg.');
+  const r = db.prepare('SELECT * FROM dossier_regels WHERE id = ?').get(o.dossier_regel_id);
+  const d = db.prepare('SELECT id, nummer, afgerekend_op, gratis_op FROM dossiers WHERE id = ?').get(r.dossier_id);
+  if (d.afgerekend_op || d.gratis_op) throw new DomeinFout('Dit dossier is al afgerekend: maak eerst de afrekening ongedaan.');
+  const oud = Number(r.aantal ?? 1), nieuw = Math.round((oud - Number(o.aantal)) * 1000) / 1000;
+  if (nieuw <= EPS) throw new DomeinFout('Dan blijft er niets over op de regel: verwijder de regel zelf (tab Regels).');
+  const f = nieuw / oud;
+  const sc = v => (v == null ? null : Math.round(v * f * 100) / 100);
+  db.prepare('DELETE FROM printopdrachten WHERE id = ?').run(o.id);
+  if (r.per_stuk) {
+    const platen = n => (r.per_plaat > 0 ? Math.max(1, Math.ceil(n / r.per_plaat - 1e-9)) : 1);
+    const voorb = r.voorbereiding_min == null ? null : Math.round(r.voorbereiding_min * platen(nieuw) / platen(oud) * 100) / 100;
+    db.prepare('UPDATE dossier_regels SET aantal = ?, tijd_min = ?, nabewerking_min = ?, voorbereiding_min = ? WHERE id = ?')
+      .run(nieuw, sc(r.tijd_min), sc(r.nabewerking_min), voorb, r.id);
+    db.prepare('UPDATE dossier_regel_materialen SET gram = ROUND(gram * ?, 2) WHERE regel_id = ?').run(f, r.id);
+  } else {
+    db.prepare('UPDATE dossier_regels SET aantal = ? WHERE id = ?').run(nieuw, r.id);
+  }
+  logGebeurtenis(db, 'dossier', d.id, 'gewijzigd', `Printopdracht "${o.naam}" verwijderd: regel "${r.omschrijving || 'Printwerk'}" van ${nlAantal(oud)} naar ${nlAantal(nieuw)} stuks`);
+  synchroniseer(db, d.id);
+  return { regel_aantal: nieuw };
+}
+const nlAantal = v => String(Math.round(v * 1000) / 1000).replace('.', ',');
+
 // ── runs koppelen ───────────────────────────────────────────────────────
 // Een opdracht die op "te bevestigen" staat (laatste run geslaagd) is klaar
 // om te bevestigen, niet om opnieuw te printen: geen voorstel en geen
