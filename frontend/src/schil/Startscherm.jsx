@@ -15,7 +15,7 @@ export default function Startscherm() {
     // Tellers per app komen erbij zodra die app gebouwd is (stap 3, 5, 6, 7).
     api.get('/klanten').then(k => setTellers(t => ({ ...t, klanten: `${k.length} klant${k.length === 1 ? '' : 'en'}` }))).catch(() => {});
     api.get('/inkoop/aankopen').then(l => { const n = l.filter(a => a.status === 'besteld' || a.status === 'deels').length; setTellers(t => ({ ...t, inkoop: n ? `${n} onderweg` : 'niets onderweg' })); }).catch(() => {});
-    api.get('/dossiers').then(l => { const n = l.filter(d => ['nieuw', 'offerte', 'akkoord', 'productie', 'klaar', 'deels', 'geleverd', 'afgerekend'].includes(d.fase)).length; setTellers(t => ({ ...t, dossiers: `${n} lopend` })); }).catch(() => {});
+    api.get('/dossiers').then(l => { const n = l.filter(d => ['nieuw', 'offerte', 'akkoord', 'gepland', 'productie', 'klaar', 'deels', 'geleverd', 'afgerekend'].includes(d.fase)).length; setTellers(t => ({ ...t, dossiers: `${n} lopend` })); }).catch(() => {});
     // compact (vaste afspraak): enkel een teller, de volledige kaarten staan onder Productie
     api.get('/productie/live').then(l => {
       const n = l.printers.filter(p => p.run).length;

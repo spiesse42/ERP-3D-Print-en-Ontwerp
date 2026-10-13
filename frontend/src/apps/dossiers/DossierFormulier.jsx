@@ -61,7 +61,7 @@ export default function DossierFormulier() {
   // In productie (28-09): elke 15 s de nieuwe stand ophalen, zodat een run die
   // de printerwachter net zag meteen te koppelen is. Niet tijdens wijzigen of
   // in een venster, en niet als het tabblad verborgen is.
-  const volgt = !nieuw && !vuil && !dialoog && (d?.productie?.status === 'productie' || d?.productie?.te_koppelen_runs?.length > 0);
+  const volgt = !nieuw && !vuil && !dialoog && (['gepland', 'productie'].includes(d?.productie?.status) || d?.productie?.te_koppelen_runs?.length > 0);
   useEffect(() => {
     if (!volgt) return undefined;
     const k = setInterval(() => { if (document.visibilityState === 'visible') herlaad(); }, 15000);

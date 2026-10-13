@@ -386,12 +386,16 @@ function statusUit(printregels, ops) {
   if (!printregels.length) return null;
   if (!ops.some(o => !o.geannuleerd_op)) return 'geen';
   const goed = goedPerRegel(ops);
-  return printregels.every(r => (goed.get(r.id) || 0) >= Number(r.aantal ?? 1) - 1e-9) ? 'klaar' : 'productie';
+  if (printregels.every(r => (goed.get(r.id) || 0) >= Number(r.aantal ?? 1) - 1e-9)) return 'klaar';
+  // 13-10: pas "in productie" als er effectief geprint wordt (een run gekoppeld of iets voltooid)
+  const begonnen = ops.some(o => !o.geannuleerd_op && (o.voltooid_op || (o.aantal_runs ?? o.runs?.length ?? 0) > 0));
+  return begonnen ? 'productie' : 'gepland';
 }
 export function productieVan(db, dossierId) {
   const printregels = db.prepare(`SELECT id, aantal FROM dossier_regels WHERE dossier_id = ? AND type = 'printen'`).all(dossierId);
   if (!printregels.length) return null;
-  const ops = db.prepare(`SELECT o.dossier_regel_id, o.aantal_goed, o.voltooid_op, o.geannuleerd_op FROM printopdrachten o
+  const ops = db.prepare(`SELECT o.dossier_regel_id, o.aantal_goed, o.voltooid_op, o.geannuleerd_op,
+    (SELECT COUNT(*) FROM printruns x WHERE x.printopdracht_id = o.id) AS aantal_runs FROM printopdrachten o
     JOIN dossier_regels r ON r.id = o.dossier_regel_id WHERE r.dossier_id = ?`).all(dossierId);
   return statusUit(printregels, ops);
 }
