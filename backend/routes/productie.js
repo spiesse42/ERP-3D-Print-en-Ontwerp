@@ -12,7 +12,7 @@ import { DomeinFout } from '../domein/hulp.js';
 import { haStaten, haDienst, haCameraBeeld, haIngesteld, HaFout, meterOp } from '../integraties/homeassistant.js';
 import { leesPrinter, entiteitenVan, KOPPELINGEN } from '../productie/adapters.js';
 import { liveCache, openRun, kwhVanRun, kwhUitMetingen, startRun, sluitRun, tik, INTERVAL_MS, vulAan } from '../productie/wachter.js';
-import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wijzigOpdracht, verschuif, bevestig, heropen, annuleer, verwijder,
+import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wijzigOpdracht, verschuif, bevestig, heropen, annuleer, verwijder, verwijderMetRegel,
   voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer, herbereken, leesMaterialen, zetMaterialen } from '../productie/opdrachten.js';
 import { productiekost } from '../productie/kost.js';
 import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct } from '../productie/materiaal.js';
@@ -301,8 +301,9 @@ r.post('/opdrachten/:id/annuleer', metFouten((req, res) => {
 r.delete('/opdrachten/:id', metFouten((req, res) => {
   const db = getDb();
   const o = opdracht(db, req.params.id);
-  db.transaction(() => verwijder(db, o))();
-  res.json({ ok: true });
+  // 13-10: ?regel=1 → geplande opdracht van een dossier weg én de regel verlagen
+  const uit = db.transaction(() => (req.query.regel === '1' ? verwijderMetRegel(db, o) : verwijder(db, o)))();
+  res.json({ ok: true, ...(uit || {}) });
 }));
 
 // Bediening via de knoppen van de printer in Home Assistant.

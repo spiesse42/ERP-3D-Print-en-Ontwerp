@@ -142,3 +142,18 @@ test('P8. foto per run: bewaren en ophalen', async () => {
   assert.equal(res.status, 200);
   assert.equal((await res.arrayBuffer()).byteLength, 4);
 });
+
+test('P9. geplande printopdracht verwijderen verlaagt de regel (per stuk: tijd en gram mee), en komt niet terug', async () => {
+  const d = ok(await vraag('POST', '/dossiers', { soort: 'eigen', titel: 'Kerstballen', regels: [
+    { type: 'printen', omschrijving: 'Kerstbal', printer_id: mini, aantal: 4, per_stuk: true, per_plaat: 1, tijd_min: 4 * 60, materialen: [{ artikel_id: zwart, gram: 4 * 20 }] }] }), 201);
+  const s = ok(await vraag('POST', `/dossiers/${d.id}/starten`));
+  const ops = s.productie.regels[0].opdrachten;
+  assert.equal(ops.length, 4);
+  ok(await vraag('DELETE', `/productie/opdrachten/${ops[3].id}?regel=1`));
+  const na = ok(await vraag('GET', `/dossiers/${d.id}`));
+  const r = na.regels[0];
+  assert.equal(r.aantal, 3); assert.equal(r.tijd_min, 180); assert.equal(r.materialen[0].gram, 60);
+  assert.equal(na.productie.regels[0].opdrachten.filter(o => !o.geannuleerd_op).length, 3, 'niet opnieuw aangemaakt');
+  // zonder ?regel=1 blijft de oude regel gelden (fout)
+  assert.equal((await vraag('DELETE', `/productie/opdrachten/${ops[2].id}`)).status, 400);
+});

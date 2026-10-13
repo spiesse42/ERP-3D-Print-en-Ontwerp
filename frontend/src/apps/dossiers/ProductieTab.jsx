@@ -17,7 +17,7 @@ import RunFoto from '../../components/RunFoto.jsx';
 const uren = u => (u == null ? '—' : `${naarInvoer(Math.round(u * 100) / 100)} u`);
 
 export default function ProductieTab({ d, vuil, herlaad }) {
-  const { melding } = useOmgeving();
+  const { melding, bevestig } = useOmgeving();
   const [dialoog, setDialoog] = useState(null);   // { soort: 'nieuw', regel } | { soort: 'open' | 'bevestig', o } | { soort: 'koppel', run }
   const [bezig, setBezig] = useState(false);
   // Te koppelen runs op de printers van dit dossier (25-09): in één klik aan het voorstel
@@ -28,6 +28,16 @@ export default function ProductieTab({ d, vuil, herlaad }) {
     setBezig(false);
   }
   const runs = d.productie.te_koppelen_runs || [];
+  // 13-10: geplande opdracht weg → de regel verlaagt mee (anders komt ze terug)
+  async function verwijderOpdracht(o, r) {
+    const nieuw = Math.round((r.besteld - o.aantal) * 1000) / 1000;
+    if (nieuw <= 0) { melding('Dan blijft er niets over op de regel: verwijder de regel zelf (tab Regels).', 'fout'); return; }
+    if (!await bevestig({ titel: 'Printopdracht verwijderen', tekst: `"${o.naam}" (${String(o.aantal).replace('.', ',')} stuks) verdwijnt, en de regel gaat van ${String(r.besteld).replace('.', ',')} naar ${String(nieuw).replace('.', ',')} stuks. De prijs van het dossier wordt herberekend (een verstuurde offerte blijft zoals ze is).`, bevestigLabel: 'Verwijderen', annuleerLabel: 'Terug', gevaarlijk: true })) return;
+    setBezig(true);
+    try { await api.delete(`/productie/opdrachten/${o.id}?regel=1`); melding('Printopdracht verwijderd; de regel is aangepast.'); await herlaad(); }
+    catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
   async function herbereken(o) {
     setBezig(true);
     try {
@@ -103,6 +113,7 @@ export default function ProductieTab({ d, vuil, herlaad }) {
                         <td className="r">
                           {o.status === 'te_bevestigen' && <button type="button" className="btn klein primary" onClick={e => { e.stopPropagation(); setDialoog({ soort: 'bevestig', o }); }}>Bevestigen</button>}
                           {(o.status === 'gepland' || o.status === 'mislukt') && <button type="button" className="btn klein" title="Een run (ook van een andere printer) aan deze opdracht koppelen" onClick={e => { e.stopPropagation(); setDialoog({ soort: 'run_kiezen', o }); }}>Run koppelen…</button>}
+                          {o.status === 'gepland' && !o.runs.length && !d.afgerekend_op && !d.gratis_op && <button type="button" className="btn klein ghost" title="Deze geplande opdracht weghalen (de regel krijgt evenveel stuks minder)" aria-label={`Printopdracht ${o.naam} verwijderen`} onClick={e => { e.stopPropagation(); verwijderOpdracht(o, x); }}><Icoon naam="vuilbak" maat={14} /></button>}
                         </td>
                       </tr>
                     ))}
