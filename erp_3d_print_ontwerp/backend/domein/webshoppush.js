@@ -179,7 +179,7 @@ export async function pushWebshop(db, artikelId, { forceer = false, fetchFn = fe
 
 // Keuzelijsten voor het formulier (publiek leesbaar)
 export async function keuzes({ fetchFn = fetch } = {}) {
-  const r = await sanityQuery(`{ "categorieen": *[_type == "category" && !(_id in path("drafts.**"))] | order(sortOrder asc, name asc){ _id, name },
+  const r = await sanityQuery(`{ "categorieen": *[_type == "category" && !(_id in path("drafts.**"))] | order(coalesce(parent->sortOrder, sortOrder) asc, defined(parent) asc, sortOrder asc, name asc){ _id, "name": select(defined(parent) => parent->name + " › " + name, name) },
     "kleuren": *[_type == "color" && !(_id in path("drafts.**"))] | order(label asc){ _id, label, hex } }`, {}, { fetchFn, metToken: false });
   return { categorieen: r?.categorieen || [], kleuren: r?.kleuren || [], token: !!process.env.SANITY_TOKEN };
 }
