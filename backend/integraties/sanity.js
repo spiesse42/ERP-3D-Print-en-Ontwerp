@@ -12,7 +12,7 @@ const project = () => process.env.SANITY_PROJECT || 'o0bi0oux';
 const dataset = () => process.env.SANITY_DATASET || 'production';
 
 export const PRODUCTEN_QUERY = `*[_type == "product" && !(_id in path("drafts.**"))] | order(name asc) {
-  _id, name, "slug": slug.current, price, priceFrom, "categorie": coalesce(category->name, category),
+  _id, name, "slug": slug.current, price, priceFrom, "categorie": coalesce(category->name, category), "hoofdcategorie": category->parent->name,
   "foto": image.asset->url, weightGrams, sizeVariants[]{ label, price, weightGrams },
   customOrder, hasLetterOrderForm, orderHref, hidden, comingSoon
 }`;
