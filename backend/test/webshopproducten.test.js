@@ -125,3 +125,15 @@ test('W6. webshopbestelling: filament bij de gekozen kleur (kleuren uit de websh
   assert.equal(item.kleur_info[0].filament, 'eSUN PLA Basic — Fire Engine Red');
   assert.equal(leesBestellingen(getDb(), { alles: true }).flatMap(x => x.items).find(i => i.kleuren.includes('Rood')).kleur_info[0].filament, null);
 });
+
+test('W7. subcategorie uit de webshop → Webshop / Seizoensartikelen / Halloween; gekoppeld artikel verhuist mee', async () => {
+  const { webshopRijen, neemOver } = await import('../domein/webshop.js');
+  const db = getDb();
+  const pad = id => { const n = []; for (let c = db.prepare('SELECT * FROM categorieen WHERE id = ?').get(id); c; c = c.ouder_id ? db.prepare('SELECT * FROM categorieen WHERE id = ?').get(c.ouder_id) : null) n.unshift(c.naam); return n.join(' / '); };
+  const p = { _id: 'pk', name: 'Pompoen koppel', slug: 'pompoen-koppel', price: 12, categorie: 'Seizoensartikelen' };
+  neemOver(db, webshopRijen([p]), ['pompoen-koppel|']);
+  const a = db.prepare(`SELECT * FROM artikelen WHERE webshop_slug = 'pompoen-koppel'`).get();
+  assert.equal(pad(a.categorie_id), 'Webshop / Seizoensartikelen');
+  neemOver(db, webshopRijen([{ ...p, categorie: 'Halloween', hoofdcategorie: 'Seizoensartikelen' }]), ['pompoen-koppel|']);
+  assert.equal(pad(db.prepare('SELECT categorie_id FROM artikelen WHERE id = ?').get(a.id).categorie_id), 'Webshop / Seizoensartikelen / Halloween');
+});
