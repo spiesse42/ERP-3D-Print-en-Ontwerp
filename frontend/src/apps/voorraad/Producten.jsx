@@ -25,7 +25,7 @@ function WebshopDialoog({ onSluit, onKlaar }) {
     try {
       const uit = await api.post('/producten/webshop/overnemen', { sleutels: [...keuze] });
       const tel = a => uit.filter(u => u.actie === a).length;
-      melding(`Webshop: ${tel('aangemaakt')} nieuw, ${tel('gekoppeld')} gekoppeld, ${tel('bijgewerkt')} bijgewerkt${tel('overgeslagen') ? `, ${tel('overgeslagen')} overgeslagen` : ''}.`);
+      melding(`Webshop: ${tel('aangemaakt')} nieuw, ${tel('gekoppeld')} gekoppeld, ${tel('bijgewerkt')} bijgewerkt${tel('overgeslagen') ? `, ${tel('overgeslagen')} overgeslagen` : ''}.${uit.filter(u => u.reden).map(u => ` ${u.sleutel.split('|')[0]}: ${u.reden}.`).join('')}`);
       onKlaar();
     } catch (e) { melding(e.message, 'fout'); setBezig(false); }
   }
