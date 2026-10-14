@@ -137,3 +137,14 @@ test('W7. subcategorie uit de webshop → Webshop / Seizoensartikelen / Hallowee
   neemOver(db, webshopRijen([{ ...p, categorie: 'Halloween', hoofdcategorie: 'Seizoensartikelen' }]), ['pompoen-koppel|']);
   assert.equal(pad(db.prepare('SELECT categorie_id FROM artikelen WHERE id = ?').get(a.id).categorie_id), 'Webshop / Seizoensartikelen / Halloween');
 });
+
+test('W8. twee webshopproducten met dezelfde naam → tweede krijgt naam + categorie i.p.v. een fout', async () => {
+  const { webshopRijen, neemOver } = await import('../domein/webshop.js');
+  const db = getDb();
+  const rijen = webshopRijen([
+    { name: 'Litofaan kubus', slug: 'litofaan-kubus', price: 25, categorie: 'Geboorte' },
+    { name: 'Litofaan kubus', slug: 'litofaan-kubus-licht', price: 25, categorie: 'Verlichting' }]);
+  const uit = db.transaction(() => neemOver(db, rijen, ['litofaan-kubus|', 'litofaan-kubus-licht|']))();
+  assert.deepEqual(uit.map(u => u.actie), ['aangemaakt', 'aangemaakt']);
+  assert.ok(db.prepare(`SELECT 1 FROM artikelen WHERE naam = 'Litofaan kubus (Verlichting)'`).get());
+});

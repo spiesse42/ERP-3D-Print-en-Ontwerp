@@ -88,11 +88,18 @@ export function neemOver(db, rijen, keuzes) {
     const zetWebshop = id => db.prepare(`UPDATE artikelen SET webshop_slug = ?, webshop_variant = ?, webshop_foto = ?, webshop_gewicht_g = ?, webshop_bijgewerkt_op = datetime('now') WHERE id = ?`)
       .run(velden.webshop_slug, velden.webshop_variant, velden.webshop_foto, velden.webshop_gewicht_g, id);
     if (r.status === 'nieuw') {
-      const id = maakArtikel(db, { type: 'artikel', wordt_gekocht: 0, wordt_verkocht: 1, zelf_geprint: 1, categorie_id: categorieVoor(db, r.categorie, r.hoofdcategorie), naam: r.naam,
+      // 14-10: naam al in gebruik (bv. twee webshopproducten met dezelfde naam,
+      // of een artikel dat aan een ander product gekoppeld is) → naam + categorie
+      const bezet = n => db.prepare(`SELECT 1 FROM artikelen WHERE type <> 'filament' AND naam = ? COLLATE NOCASE`).get(n);
+      let naam = r.naam;
+      if (bezet(naam)) naam = r.categorie ? `${r.naam} (${r.categorie})` : `${r.naam} (${r.slug})`;
+      if (bezet(naam)) naam = `${r.naam} (${r.slug}${r.variant ? ` ${r.variant}` : ''})`;
+      if (bezet(naam)) { uit.push({ sleutel: r.sleutel, actie: 'overgeslagen', reden: `er bestaat al een artikel "${r.naam}"` }); continue; }
+      const id = maakArtikel(db, { type: 'artikel', wordt_gekocht: 0, wordt_verkocht: 1, zelf_geprint: 1, categorie_id: categorieVoor(db, r.categorie, r.hoofdcategorie), naam,
         filament_type_id: null, kleur_id: null, eenheid: 'stuks', verkoopprijs: r.prijs ?? 0, inkoopprijs: null, marge_pct: null, productieprijs: null, vaste_prijs: 0,
         min_voorraad: null, max_voorraad: null, locatie: null, notities: null }, `Overgenomen uit de webshop (${r.slug}${r.variant ? `, ${r.variant}` : ''})`);
       zetWebshop(id);
-      uit.push({ sleutel: r.sleutel, artikel_id: id, actie: 'aangemaakt' });
+      uit.push({ sleutel: r.sleutel, artikel_id: id, actie: 'aangemaakt', ...(naam !== r.naam ? { reden: `als "${naam}" (naam bestond al)` } : {}) });
       continue;
     }
     const a = db.prepare('SELECT * FROM artikelen WHERE id = ?').get(r.artikel.id);
