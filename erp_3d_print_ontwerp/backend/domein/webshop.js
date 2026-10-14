@@ -22,7 +22,7 @@ export function webshopRijen(producten) {
   const uit = [];
   for (const p of producten || []) {
     if (!p?.slug || !p?.name) continue;
-    const basis = { slug: p.slug, product: p.name, categorie: p.categorie || null, foto: p.foto || null,
+    const basis = { slug: p.slug, product: p.name, categorie: p.categorie || null, hoofdcategorie: p.hoofdcategorie || null, foto: p.foto || null,
       maatwerk: !!(p.customOrder || p.hasLetterOrderForm || p.orderHref), verborgen: !!p.hidden, binnenkort: !!p.comingSoon, vanaf: !!p.priceFrom };
     const varianten = (p.sizeVariants || []).filter(v => v?.label);
     if (varianten.length) {
@@ -58,12 +58,23 @@ export function vergelijk(db, rijen) {
   return { producten: lijst, weg };
 }
 
-function categorieVoor(db, naam) {
+// Ligt een categorie onder de automatische hoofdcategorie "Webshop"?
+function onderWebshop(db, id) {
+  for (let c = db.prepare('SELECT naam, ouder_id FROM categorieen WHERE id = ?').get(id), n = 0; c && n < 10; n++) {
+    if (c.ouder_id == null) return c.naam.toLowerCase() === 'webshop';
+    c = db.prepare('SELECT naam, ouder_id FROM categorieen WHERE id = ?').get(c.ouder_id);
+  }
+  return false;
+}
+
+// Webshop / <categorie>, of (14-10) Webshop / <hoofdcategorie> / <subcategorie>
+function categorieVoor(db, naam, hoofd = null) {
   if (!naam) return null;
   const vind = (n, ouder) => db.prepare('SELECT id FROM categorieen WHERE naam = ? COLLATE NOCASE AND COALESCE(ouder_id, 0) = ?').get(n, ouder ?? 0)?.id;
-  let top = vind('Webshop', null);
-  if (!top) top = Number(db.prepare('INSERT INTO categorieen (naam, ouder_id) VALUES (?, NULL)').run('Webshop').lastInsertRowid);
-  return vind(naam, top) ?? Number(db.prepare('INSERT INTO categorieen (naam, ouder_id) VALUES (?, ?)').run(naam, top).lastInsertRowid);
+  const zorg = (n, ouder) => vind(n, ouder) ?? Number(db.prepare('INSERT INTO categorieen (naam, ouder_id) VALUES (?, ?)').run(n, ouder).lastInsertRowid);
+  let ouder = zorg('Webshop', null);
+  if (hoofd) ouder = zorg(hoofd, ouder);
+  return zorg(naam, ouder);
 }
 
 // Overnemen: keuzes = lijst van sleutels (slug|variant). Geeft per rij wat er gebeurde.
@@ -77,7 +88,7 @@ export function neemOver(db, rijen, keuzes) {
     const zetWebshop = id => db.prepare(`UPDATE artikelen SET webshop_slug = ?, webshop_variant = ?, webshop_foto = ?, webshop_gewicht_g = ?, webshop_bijgewerkt_op = datetime('now') WHERE id = ?`)
       .run(velden.webshop_slug, velden.webshop_variant, velden.webshop_foto, velden.webshop_gewicht_g, id);
     if (r.status === 'nieuw') {
-      const id = maakArtikel(db, { type: 'artikel', wordt_gekocht: 0, wordt_verkocht: 1, zelf_geprint: 1, categorie_id: categorieVoor(db, r.categorie), naam: r.naam,
+      const id = maakArtikel(db, { type: 'artikel', wordt_gekocht: 0, wordt_verkocht: 1, zelf_geprint: 1, categorie_id: categorieVoor(db, r.categorie, r.hoofdcategorie), naam: r.naam,
         filament_type_id: null, kleur_id: null, eenheid: 'stuks', verkoopprijs: r.prijs ?? 0, inkoopprijs: null, marge_pct: null, productieprijs: null, vaste_prijs: 0,
         min_voorraad: null, max_voorraad: null, locatie: null, notities: null }, `Overgenomen uit de webshop (${r.slug}${r.variant ? `, ${r.variant}` : ''})`);
       zetWebshop(id);
@@ -94,7 +105,11 @@ export function neemOver(db, rijen, keuzes) {
     }
     if (r.prijs != null && r2(a.verkoopprijs) !== r.prijs) { db.prepare('UPDATE artikelen SET verkoopprijs = ? WHERE id = ?').run(r.prijs, a.id); wijz.push(`verkoopprijs → € ${String(r.prijs.toFixed(2)).replace('.', ',')}`); }
     if (!a.zelf_geprint || !a.wordt_verkocht) { db.prepare('UPDATE artikelen SET zelf_geprint = 1, wordt_verkocht = 1 WHERE id = ?').run(a.id); wijz.push('printen we zelf + verkocht'); }
-    if (!a.categorie_id && r.categorie) db.prepare('UPDATE artikelen SET categorie_id = ? WHERE id = ?').run(categorieVoor(db, r.categorie), a.id);
+    // 14-10: geen categorie, of een automatische "Webshop / …"-categorie → volgt de webshop (ook subcategorie)
+    if (r.categorie && (!a.categorie_id || onderWebshop(db, a.categorie_id))) {
+      const nieuw = categorieVoor(db, r.categorie, r.hoofdcategorie);
+      if (nieuw !== a.categorie_id) db.prepare('UPDATE artikelen SET categorie_id = ? WHERE id = ?').run(nieuw, a.id);
+    }
     zetWebshop(a.id);
     const tekst = r.status === 'zelfde_naam' ? `Gekoppeld aan de webshop (${r.slug}${r.variant ? `, ${r.variant}` : ''})${wijz.length ? `: ${wijz.join(', ')}` : ''}`
       : `Bijgewerkt uit de webshop${wijz.length ? `: ${wijz.join(', ')}` : ''}`;
