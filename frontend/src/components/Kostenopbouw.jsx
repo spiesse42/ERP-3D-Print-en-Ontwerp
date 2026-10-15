@@ -93,6 +93,10 @@ export function Prijsopbouw({ p, k, totaal, open = true }) {
     rij('Artikelen / diensten', '', p.artikelen, null, Math.abs(p.artikelen) >= 0.005),
     rij('Extra kosten', '', p.extra, 0, Math.abs(p.extra) >= 0.005),
     rij('Handmatig aangepast', '', p.handmatig, 0, Math.abs(p.handmatig) >= 0.005),
+    rij('Korting filament', '', p.korting_materiaal, 0, Math.abs(p.korting_materiaal || 0) >= 0.005),
+    rij('Korting printuren', '', p.korting_printuren, 0, Math.abs(p.korting_printuren || 0) >= 0.005),
+    rij('Korting op regels', '', p.korting_regels, 0, Math.abs(p.korting_regels || 0) >= 0.005),
+    rij('Korting op het totaal', '', p.korting_totaal, 0, Math.abs(p.korting_totaal || 0) >= 0.005),
     rij('Afronding', '', p.afronding, 0, Math.abs(p.afronding) >= 0.005),
   ].filter(Boolean);
   const kost = rijen.reduce((s, r) => s + (r.kost || 0), 0);

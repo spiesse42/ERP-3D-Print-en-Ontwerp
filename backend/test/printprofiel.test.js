@@ -221,3 +221,31 @@ test('P12. prijsopbouw-overzicht: stroom en kost per uur per printer, filament p
   const g = x.groepen.find(y => y.verkoopprijs_per_kg === 25);
   assert.ok(Math.abs(g.prijs_per_kg - 25 * (1 + t.faalfactor_pct / 100)) < 1e-4, 'oud model: verkoopprijs × faalfactor');
 });
+
+test('P13. kortingen: filament, printuren en regel in % of €; korting op het totaal als regel; prijsopbouw sluit', async () => {
+  const regel = { type: 'printen', printer_id: mini, aantal: 1, tijd_min: 600, materialen: [{ artikel_id: zwart, gram: 1000 }] };
+  const zonder = ok(await vraag('POST', '/bereken', { regels: [regel] }));
+  const d0 = zonder.regels[0]._berekend.detail;
+  // 35 % op het filament
+  const a = ok(await vraag('POST', '/bereken', { regels: [{ ...regel, korting: { materiaal: { waarde: 35, soort: 'pct' } } }] }));
+  assert.ok(Math.abs((zonder.totaal - a.totaal) - d0.materiaal * 0.35) < 0.011, 'totaal daalt met 35 % van het filament');
+  assert.ok(Math.abs(a.prijsopbouw.korting_materiaal + d0.materiaal * 0.35) < 0.001);
+  // € 1 op de printuren + 10 % op de regel
+  const b = ok(await vraag('POST', '/bereken', { regels: [{ ...regel, korting: { printuren: { waarde: 1, soort: 'eur' }, regel: { waarde: 10, soort: 'pct' } } }] }));
+  assert.ok(Math.abs(b.totaal - (zonder.totaal - 1) * 0.9) < 0.011);
+  // korting op het totaal: € 5 als aparte regel, niet op een vaste prijs
+  const c = ok(await vraag('POST', '/bereken', { regels: [regel, { type: 'korting', korting: { totaal: { waarde: 5, soort: 'eur' } } }] }));
+  assert.equal(c.regels[1]._berekend.eindbedrag, -5);
+  assert.ok(Math.abs(c.totaal - (zonder.totaal - 5)) < 0.011);
+  const som = ['materiaal', 'energie', 'machine', 'arbeid', 'bmcu', 'winst', 'marge', 'ontwerp', 'aanpassing', 'artikelen', 'extra', 'handmatig',
+    'korting_materiaal', 'korting_printuren', 'korting_regels', 'korting_totaal', 'afronding'].reduce((x, k) => x + c.prijsopbouw[k], 0);
+  assert.ok(Math.abs(som - c.totaal) < 0.001, 'posten = totaal');
+  // bewaren in een dossier en terug lezen; > 100 % geweigerd
+  const d = ok(await vraag('POST', '/dossiers', { soort: 'klant', klant_id: klant, titel: 'Korting', regels: [
+    { ...regel, korting: { materiaal: { waarde: '35,06', soort: 'pct' } } }, { type: 'korting', korting: { totaal: { waarde: 10, soort: 'pct' } } }] }), 201);
+  const l = ok(await vraag('GET', `/dossiers/${d.id}`));
+  assert.deepEqual(l.regels[0].korting, { materiaal: { waarde: 35.06, soort: 'pct' } });
+  assert.equal(l.regels[1].type, 'korting');
+  assert.ok(l.berekening.regels[1]._berekend.eindbedrag < 0);
+  assert.equal((await vraag('POST', '/dossiers', { soort: 'klant', klant_id: klant, titel: 'Fout', regels: [{ ...regel, korting: { regel: { waarde: 120, soort: 'pct' } } }] })).status, 400);
+});

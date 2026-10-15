@@ -37,7 +37,7 @@ export function FaseBadge({ fase }) {
 export function regelLabel(r, b) {
   if (r.omschrijving) return r.omschrijving;
   if (r.type === 'artikel') return b?.naam || r.naam || 'Artikel';
-  return { printen: 'Printwerk', ontwerp: 'Ontwerp', aanpassing: 'Aanpassing', extra: 'Extra kost' }[r.type] || r.type;
+  return { printen: 'Printwerk', ontwerp: 'Ontwerp', aanpassing: 'Aanpassing', extra: 'Extra kost', korting: 'Korting' }[r.type] || r.type;
 }
 export function regelAantal(r) {
   if (r.type === 'printen' || r.type === 'artikel') return Number(r.aantal ?? 1);

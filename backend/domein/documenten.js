@@ -56,13 +56,15 @@ export function werkbonVan(db, dossierId) {
 
 // Wat er op het document komt: bedrijf, klant, dossier en de regels zoals
 // de klant ze ziet (omschrijving, aantal, prijs per stuk, bedrag).
-const STANDAARD_LABEL = { printen: 'Printwerk', ontwerp: 'Ontwerp', aanpassing: 'Aanpassing', extra: 'Extra kost' };
+const STANDAARD_LABEL = { printen: 'Printwerk', ontwerp: 'Ontwerp', aanpassing: 'Aanpassing', extra: 'Extra kost', korting: 'Korting' };
+// 15-10: "Korting 10 %" als er geen omschrijving is
+const kortingLabel = r => (r.type === 'korting' && r.korting?.totaal?.soort === 'pct' ? `Korting ${String(r.korting.totaal.waarde).replace('.', ',')} %` : null);
 export function documentInhoud(db, dossier, berekening) {
   const regels = berekening.regels.map(r => {
     const b = r._berekend || {};
     const aantal = r.type === 'printen' || r.type === 'artikel' || (r.type === 'extra' && r.per_stuk) ? Number(r.aantal ?? 1) : 1;
     return {
-      omschrijving: r.omschrijving || (r.type === 'artikel' ? r.naam : null) || STANDAARD_LABEL[r.type] || r.type,
+      omschrijving: r.omschrijving || (r.type === 'artikel' ? r.naam : null) || kortingLabel(r) || STANDAARD_LABEL[r.type] || r.type,
       aantal, per_stuk: b.per_stuk ?? null, bedrag: b.eindbedrag ?? null,
       // printwerk: ter info op de werkbon (werkelijke of geschatte printtijd)
       uren: r.type === 'printen' ? Math.round((b.tijd_u ?? 0) * 100) / 100 : null,

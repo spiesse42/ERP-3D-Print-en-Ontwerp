@@ -11,7 +11,7 @@ import { leverbaar, leverStatus, leverStatusVan, leveringenVan, controleerGeleve
 import { productieVan, productieOverzicht, metingenPerRegel, controleerPrintopdrachten, wisOpdrachtenVanRegels } from '../productie/opdrachten.js';
 
 export const SOORTEN = { klant: 'Klantopdracht', eigen: 'Eigen product', intern: 'Intern' };
-export const REGELTYPES = ['printen', 'ontwerp', 'aanpassing', 'artikel', 'extra'];
+export const REGELTYPES = ['printen', 'ontwerp', 'aanpassing', 'artikel', 'extra', 'korting'];
 
 const tekst = v => { const t = String(v ?? '').trim(); return t || null; };
 const id = (v, wat) => {
@@ -56,6 +56,24 @@ export function leesKop(body) {
     filament_inkoop: fi === undefined || fi === null || fi === '' ? undefined : (fi === true || fi === 1 || fi === '1' || fi === 'true') ? 1 : 0 };
 }
 
+// Kortingen (15-10): { waarde, soort: 'pct' | 'eur' } per post; leeg = geen.
+// Per regel: materiaal en printuren (printregel), regel (elke regel); een
+// regel van het soort 'korting': totaal. Bewaard als JSON.
+const KORTING_POSTEN = { printen: ['materiaal', 'printuren', 'regel'], korting: ['totaal'] };
+function leesKorting(k, type, nr) {
+  if (!k || typeof k !== 'object') return null;
+  const uit = {};
+  for (const post of KORTING_POSTEN[type] || ['regel']) {
+    const x = k[post];
+    if (!x || x.waarde === null || x.waarde === undefined || x.waarde === '') continue;
+    const soort = x.soort === 'eur' ? 'eur' : 'pct';
+    const waarde = nietNegatief(x.waarde, `${nr}: korting`);
+    if (soort === 'pct' && waarde > 100) throw new DomeinFout(`${nr}: korting kan niet meer dan 100 % zijn`);
+    if (waarde > 0) uit[post] = { waarde, soort };
+  }
+  return Object.keys(uit).length ? uit : null;
+}
+
 // Regels in de vorm van de regeleditor/rekenmotor (naarApi in de frontend).
 // Enkel de velden die bij het soort regel horen worden bewaard.
 export function leesRegels(lijst) {
@@ -67,8 +85,14 @@ export function leesRegels(lijst) {
     const leeg = { aantal: null, printer_id: null, tijd_min: null, voorbereiding_min: null, nabewerking_min: null,
       minuten: null, tarief: null, artikel_id: null, bedrag: null, per_stuk: 0, materialen: [], afbeelding: null,
       slicer_bijlage_id: null, slicer_plaat: null, per_plaat: null };
+    const korting = leesKorting(r.korting, r.type, nr);
     const basis = { ...leeg, id: Number.isInteger(r.id) ? r.id : null, type: r.type, omschrijving: tekst(r.omschrijving),
-      handmatig_bedrag: nietNegatief(r.handmatig_bedrag, `${nr}: eindbedrag`) };
+      handmatig_bedrag: r.type === 'korting' ? null : nietNegatief(r.handmatig_bedrag, `${nr}: eindbedrag`),
+      korting: korting ? JSON.stringify(korting) : null };
+    if (r.type === 'korting') {
+      if (!korting) throw new DomeinFout(`${nr}: vul de korting in (% of €)`);
+      return basis;
+    }
     if (r.type === 'printen') {
       // artikel_id bij een printregel = eindproduct (enkel bij een dossier
       // "Eigen product": de goede stuks gaan naar de voorraad, stap 6c)
@@ -99,7 +123,7 @@ export function leesRegels(lijst) {
 // ── regels bewaren: bestaande id's behouden (leveringen/printopdrachten
 // verwijzen er later naar), nieuwe toevoegen, weggelaten regels schrappen.
 const KOL = ['type', 'omschrijving', 'aantal', 'printer_id', 'tijd_min', 'voorbereiding_min', 'nabewerking_min',
-  'minuten', 'tarief', 'artikel_id', 'bedrag', 'per_stuk', 'handmatig_bedrag', 'afbeelding', 'slicer_bijlage_id', 'slicer_plaat', 'per_plaat'];
+  'minuten', 'tarief', 'artikel_id', 'bedrag', 'per_stuk', 'handmatig_bedrag', 'afbeelding', 'slicer_bijlage_id', 'slicer_plaat', 'per_plaat', 'korting'];
 export function bewaarRegels(db, dossierId, regels) {
   const soort = db.prepare('SELECT soort FROM dossiers WHERE id = ?').get(dossierId)?.soort;
   for (const [i, r] of regels.entries()) {
@@ -140,12 +164,13 @@ export function bewaarRegels(db, dossierId, regels) {
 }
 
 // ── lezen ───────────────────────────────────────────────────────────────
+const leesJson = t => { if (!t) return null; try { return JSON.parse(t); } catch { return null; } };
 export function leesRegelsVan(db, dossierId) {
   const regels = db.prepare(`SELECT id, ${KOL.join(', ')}, werkelijk_uren, werkelijk_kwh,
     (SELECT b.bestandsnaam FROM bijlagen b WHERE b.id = dossier_regels.slicer_bijlage_id) AS slicer_bestandsnaam
     FROM dossier_regels WHERE dossier_id = ? ORDER BY volgorde, id`).all(dossierId);
   const mat = db.prepare('SELECT artikel_id, filament_type_id, gram FROM dossier_regel_materialen WHERE regel_id = ? ORDER BY volgorde, id');
-  return regels.map(({ werkelijk_uren, werkelijk_kwh, ...r }) => ({ ...r, per_stuk: !!r.per_stuk,
+  return regels.map(({ werkelijk_uren, werkelijk_kwh, ...r }) => ({ ...r, per_stuk: !!r.per_stuk, korting: leesJson(r.korting),
     ...(r.type === 'printen' ? { werkelijk: { uren: werkelijk_uren, kwh: werkelijk_kwh } } : {}),
     materialen: r.type === 'printen' ? mat.all(r.id).map(m => ({
       ...(m.artikel_id ? { artikel_id: m.artikel_id } : { filament_type_id: m.filament_type_id }), gram: m.gram })) : [] }));

@@ -10,14 +10,23 @@ import { euro, naarInvoer, aantal as fmtAantal } from '../lib/formaat.js';
 import { verklein } from '../lib/afbeelding.js';
 import { useOmgeving } from '../schil/Omgeving.jsx';
 
-export const TYPES = [['printen', 'Printen'], ['ontwerp', 'Ontwerp'], ['aanpassing', 'Aanpassing'], ['artikel', 'Artikel / dienst'], ['extra', 'Extra kost']];
+export const TYPES = [['printen', 'Printen'], ['ontwerp', 'Ontwerp'], ['aanpassing', 'Aanpassing'], ['artikel', 'Artikel / dienst'], ['extra', 'Extra kost'], ['korting', 'Korting']];
 let teller = 0;
 export const nieuweRegel = (type = 'printen') => ({
   sleutel: `r${++teller}`, type, omschrijving: '',
   printer_id: '', tijd_u: '', tijd_m: '', aantal: '1', voorbereiding_min: '', nabewerking_min: '', materialen: [{ keuze: '', gram: '' }],
   minuten: '', tarief: '', artikel_id: '', bedrag: '', per_stuk: false, handmatig_bedrag: '', afbeelding: '',
-  slicer_bijlage_id: null, slicer_plaat: null, slicer_bestandsnaam: '', per_plaat: '',
+  slicer_bijlage_id: null, slicer_plaat: null, slicer_bestandsnaam: '', per_plaat: '', korting: {},
 });
+
+// 15-10: kortingen — per post { waarde, soort: 'pct' | 'eur' }; in het formulier
+// als tekst, naar de API als getal (lege posten vallen weg).
+const kortingNaarApi = k => {
+  const uit = {};
+  for (const [post, x] of Object.entries(k || {})) { const w = nr(x?.waarde); if (w !== null && Number(w) > 0) uit[post] = { waarde: w, soort: x.soort === 'eur' ? 'eur' : 'pct' }; }
+  return Object.keys(uit).length ? uit : null;
+};
+const kortingVanApi = k => Object.fromEntries(Object.entries(k || {}).map(([post, x]) => [post, { waarde: alsInvoer(x.waarde), soort: x.soort }]));
 
 // 06-10: printregel "per stuk" — tijd en gram per stuk, voorbereiding per
 // plaat, nabewerking per stuk. De API/rekenmotor krijgt altijd TOTALEN.
@@ -28,7 +37,7 @@ const r4 = v => Math.round(v * 10000) / 10000;
 const nr = v => (String(v ?? '').trim() === '' ? null : String(v).replace(',', '.'));
 // Formulier → regel voor de API (id's; de backend zoekt prijzen op).
 export function naarApi(r) {
-  const basis = { ...(r.id ? { id: r.id } : {}), type: r.type, omschrijving: r.omschrijving, handmatig_bedrag: nr(r.handmatig_bedrag) };
+  const basis = { ...(r.id ? { id: r.id } : {}), type: r.type, omschrijving: r.omschrijving, handmatig_bedrag: r.type === 'korting' ? null : nr(r.handmatig_bedrag), korting: kortingNaarApi(r.korting) };
   if (r.type === 'printen') {
     const u = Number(nr(r.tijd_u) ?? 0), m = Number(nr(r.tijd_m) ?? 0);
     // per stuk: × aantal (nabewerking ook), voorbereiding × platen
@@ -72,7 +81,7 @@ function uitProfiel(r, a, eindproducten) {
     materialen: (p.materialen || []).length ? p.materialen.map(m => ({ keuze: m.artikel_id ? `a:${m.artikel_id}` : `p:${m.filament_type_id}`, gram: alsInvoer(m.gram) })) : [{ keuze: '', gram: '' }] };
 }
 export function vanApi(r) {
-  const f = { ...nieuweRegel(r.type), id: r.id ?? undefined, omschrijving: r.omschrijving || '', handmatig_bedrag: alsInvoer(r.handmatig_bedrag) };
+  const f = { ...nieuweRegel(r.type), id: r.id ?? undefined, omschrijving: r.omschrijving || '', handmatig_bedrag: alsInvoer(r.handmatig_bedrag), korting: kortingVanApi(r.korting) };
   if (r.id) f.sleutel = `r${r.id}`;
   if (r.type === 'printen') {
     // per stuk bewaard als totalen: terugdelen door aantal (en platen)
@@ -118,6 +127,21 @@ export function useBerekening(regels, stand = 'schatting', filamentInkoop = fals
 
 // 08-10: productiekost (intern, schatting): wat de print JOU kost + winst
 const pctVan = (w, t) => (t > 0 ? ` (${fmtAantal(Math.round(w / t * 1000) / 10)} %)` : '');
+// 15-10: korting in % of € (één veld + keuze)
+function KortingVeld({ label, titel, k, onZet }) {
+  const w = k?.waarde ?? '', soort = k?.soort || 'pct';
+  return (
+    <label title={titel}>{label}
+      <span className="samen">
+        <input className="inp num" inputMode="decimal" placeholder="0" value={w} onChange={e => onZet({ waarde: e.target.value, soort })} />
+        <select className="inp" aria-label={`${label}: % of €`} value={soort} onChange={e => onZet({ waarde: w, soort: e.target.value })} style={{ width: 'auto', minWidth: 58, flex: '0 0 auto' }}>
+          <option value="pct">%</option><option value="eur">€</option>
+        </select>
+      </span>
+    </label>
+  );
+}
+
 function KostRegel({ k, bedrag }) {
   const r = v => euro(Math.round(v * 100) / 100);
   return (
@@ -130,6 +154,7 @@ function KostRegel({ k, bedrag }) {
   );
 }
 
+const e2 = v => euro(Math.round(v * 100) / 100);
 function Detail({ b, type }) {
   if (!b) return null;
   if (b.fout) return <div className="regelfout"><Icoon naam="let" maat={14} /> {b.fout}</div>;
@@ -141,8 +166,9 @@ function Detail({ b, type }) {
     <div className="regeldetail sub">
       {delen.map(([l, w]) => <span key={l}>{l} {euro(Math.round(w * 100) / 100)}</span>)}
       {type === 'printen' && <span>{fmtAantal(Math.round(d.uren * 100) / 100)} u{d.energie_bron === 'gemeten' ? ' · energie gemeten' : ''}</span>}
+      {b.korting?.totaal > 0 && <span className="badge b-info" title="Korting op deze regel">korting {e2(b.korting.totaal)}{b.korting.materiaal > 0 ? ` · filament ${e2(b.korting.materiaal)}` : ''}{b.korting.printuren > 0 ? ` · printuren ${e2(b.korting.printuren)}` : ''}{b.korting.regel > 0 ? ` · regel ${e2(b.korting.regel)}` : ''}</span>}
       {b.handmatig && <span className="badge b-info">handmatig (berekend {euro(Math.round(b.natuurlijk_eindbedrag * 100) / 100)})</span>}
-      {b.per_stuk != null && <span>per stuk {euro(b.per_stuk)}</span>}
+      {b.per_stuk != null && type !== 'korting' && <span>per stuk {euro(b.per_stuk)}</span>}
       {b.oud != null && Math.abs(b.oud - b.eindbedrag) >= 0.01 && <span className="oudprijs" title="Wat de oude berekening (getrapte marge) voor deze regel vroeg">oude berekening {euro(b.oud)} ({b.eindbedrag > b.oud ? '+' : ''}{euro(Math.round((b.eindbedrag - b.oud) * 100) / 100)})</span>}
       {b.kost && <KostRegel k={b.kost} bedrag={b.eindbedrag} />}
     </div>
@@ -170,6 +196,7 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
   actueel.current = regels;
   const { melding } = useOmgeving();
   const [nieuwVoor, setNieuwVoor] = useState(null);   // sleutel van de regel die een nieuw artikel krijgt
+  const [open, setOpen] = useState({});   // 15-10: regels waar de kortingvelden open staan
   const zet = (i, w) => onWijzig(regels.map((r, j) => (j === i ? { ...r, ...w } : r)));
   async function artikelGemaakt(id) {
     if (onArtikelGemaakt) await onArtikelGemaakt(id);
@@ -274,7 +301,16 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                 <label className="vinkje"><input type="checkbox" checked={r.per_stuk} onChange={e => zet(i, { per_stuk: e.target.checked })} /> per stuk</label>
                 {r.per_stuk && <label>Aantal<input className="inp num" inputMode="numeric" value={r.aantal} onChange={e => zet(i, { aantal: e.target.value })} /></label>}
               </>}
-              <label>Eindbedrag aanpassen<input className="inp num" inputMode="decimal" placeholder="berekend" value={r.handmatig_bedrag} onChange={e => zet(i, { handmatig_bedrag: e.target.value })} /></label>
+              {r.type === 'korting' && <>
+                <KortingVeld label="Korting op het totaal" k={r.korting?.totaal} onZet={x => zet(i, { korting: { totaal: x } })} />
+                <span className="sub" style={{ alignSelf: 'center', flex: '1 1 320px' }}>op alle andere regels samen (niet op vaste prijzen zoals verzending); komt als aparte regel op offerte, werkbon en factuur</span>
+              </>}
+              {r.type !== 'korting' && <label>Eindbedrag aanpassen<input className="inp num" inputMode="decimal" placeholder="berekend" value={r.handmatig_bedrag} onChange={e => zet(i, { handmatig_bedrag: e.target.value })} /></label>}
+              {r.type !== 'korting' && (open[r.sleutel] || Object.values(r.korting || {}).some(x => x?.waarde)) ? <>
+                {r.type === 'printen' && <KortingVeld label="Korting filament" k={r.korting?.materiaal} onZet={x => zet(i, { korting: { ...r.korting, materiaal: x } })} />}
+                {r.type === 'printen' && <KortingVeld label="Korting printuren" titel="Op stroom, machine en winst per printuur" k={r.korting?.printuren} onZet={x => zet(i, { korting: { ...r.korting, printuren: x } })} />}
+                <KortingVeld label="Korting hele regel" k={r.korting?.regel} onZet={x => zet(i, { korting: { ...r.korting, regel: x } })} />
+              </> : r.type !== 'korting' && !alleenLezen && <button type="button" className="linkish" style={{ alignSelf: 'end' }} onClick={() => setOpen(o => ({ ...o, [r.sleutel]: true }))}>+ korting</button>}
             </div>
             <Detail b={b} type={r.type} />
           </div>
