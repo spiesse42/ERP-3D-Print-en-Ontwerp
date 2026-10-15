@@ -211,3 +211,13 @@ test('P11. prijsopbouw: de posten samen geven exact het totaal (ook met handmati
   }
   ok(await vraag('PUT', '/tarieven', { winst_per_printuur: 0 }));
 });
+
+test('P12. prijsopbouw-overzicht: stroom en kost per uur per printer, filament per kg met faalfactor', async () => {
+  const x = ok(await vraag('GET', '/tarieven/prijsopbouw'));
+  const t = Object.fromEntries(x.tarieven.map(r => [r.sleutel, r.waarde]));
+  const p = x.printers.find(y => y.id === mini);
+  assert.ok(Math.abs(p.stroom_per_uur - 95 / 1000 * t.kwh_prijs) < 1e-4);
+  assert.ok(Math.abs(p.kost_per_uur - (p.stroom_per_uur + 0.2)) < 1e-4);
+  const g = x.groepen.find(y => y.verkoopprijs_per_kg === 25);
+  assert.ok(Math.abs(g.prijs_per_kg - 25 * (1 + t.faalfactor_pct / 100)) < 1e-4, 'oud model: verkoopprijs × faalfactor');
+});

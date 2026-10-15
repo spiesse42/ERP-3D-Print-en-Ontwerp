@@ -8,6 +8,7 @@ import { Link } from '../../schil/Schil.jsx';
 import KeuzeMetToevoegen from '../../components/KeuzeMetToevoegen.jsx';
 import Printers from './Printers.jsx';
 import Proefberekening from './Proefberekening.jsx';
+import Prijsopbouw from './Prijsopbouw.jsx';
 import OntbrekendeGegevens from './OntbrekendeGegevens.jsx';
 import Nummering from './Nummering.jsx';
 
@@ -16,6 +17,7 @@ const SECTIES = [
   ['printers', 'Printers'],
   ['materiaal', 'Materiaalprijzen'],
   ['proef', 'Proefberekening'],
+  ['prijsopbouw', 'Prijsopbouw (afdrukken)'],
   ['bedrijf', 'Bedrijfsgegevens'],
   ['nummering', 'Nummering'],
   ['integraties', 'Integraties'],
@@ -39,6 +41,7 @@ export default function Instellingen() {
           {sectie === 'printers' && <Printers />}
           {sectie === 'materiaal' && <Materiaalprijzen />}
           {sectie === 'proef' && <Proefberekening />}
+          {sectie === 'prijsopbouw' && <Prijsopbouw />}
           {sectie === 'bedrijf' && <Bedrijf />}
           {sectie === 'integraties' && <Integraties />}
           {sectie === 'nummering' && <Nummering />}
