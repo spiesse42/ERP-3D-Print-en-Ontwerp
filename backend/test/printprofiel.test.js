@@ -190,3 +190,24 @@ test('P10. kostenopbouw over het dossier: som van de regels, schatting per opdra
   assert.ok(Math.abs(g.opbouw.kost - g.kost) < 0.01, 'opbouw = gemeten kost');
   assert.ok(Math.abs(g.schatting_voltooid.uren - 1.5) < 1e-3, 'schatting van dezelfde opdracht: 1,5 u');
 });
+
+test('P11. prijsopbouw: de posten samen geven exact het totaal (ook met handmatig bedrag, ontwerp en artikel)', async () => {
+  const regels = [
+    { type: 'printen', printer_id: mini, aantal: 3, tijd_min: 200, materialen: [{ artikel_id: zwart, gram: 75 }] },
+    { type: 'printen', printer_id: mini, aantal: 1, tijd_min: 60, materialen: [{ artikel_id: zwart, gram: 20 }], handmatig_bedrag: 9.99 },
+    { type: 'ontwerp', minuten: 45 },
+    { type: 'artikel', artikel_id: medaillon, aantal: 2 },
+    { type: 'extra', omschrijving: 'Doos', bedrag: 1.5 },
+  ];
+  for (const winst of [0, 1]) {
+    ok(await vraag('PUT', '/tarieven', { winst_per_printuur: winst }));
+    const b = ok(await vraag('POST', '/bereken', { regels }));
+    const p = b.prijsopbouw;
+    const som = ['materiaal', 'energie', 'machine', 'arbeid', 'bmcu', 'winst', 'marge', 'ontwerp', 'aanpassing', 'artikelen', 'extra', 'handmatig', 'afronding'].reduce((x, k) => x + p[k], 0);
+    assert.ok(Math.abs(som - b.totaal) < 0.001, `${som} ≠ ${b.totaal}`);
+    assert.ok(Math.abs(p.afronding) < 0.01, 'enkel afronding');
+    assert.equal(p.artikelen, 12); assert.equal(p.ontwerp_min, 45); assert.equal(p.gram, 95);
+    if (winst) assert.equal(p.marge, 0); else assert.ok(p.marge > 0);
+  }
+  ok(await vraag('PUT', '/tarieven', { winst_per_printuur: 0 }));
+});
