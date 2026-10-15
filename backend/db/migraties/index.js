@@ -34,5 +34,6 @@ import * as m031 from './031_layer_leaf_verkocht.js';
 import * as m032 from './032_webshop_beheer.js';
 import * as m033 from './033_run_foto.js';
 import * as m034 from './034_kost_detail.js';
+import * as m035 from './035_korting.js';
 
-export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021, m022, m023, m024, m025, m026, m027, m028, m029, m030, m031, m032, m033, m034];
+export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021, m022, m023, m024, m025, m026, m027, m028, m029, m030, m031, m032, m033, m034, m035];
