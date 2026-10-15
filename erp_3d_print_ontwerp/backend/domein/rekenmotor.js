@@ -112,7 +112,18 @@ function berekenRegel(regel, t, stand) {
     return { met_marge: bedrag * aantal, zonder_marge: 0, vaste_prijs: false, tijd_u: 0, detail: { bedrag, aantal, per_stuk: !!regel.per_stuk } };
   }
 
+  // 15-10: korting op het totaal van de andere regels (bedrag in doorgang 2)
+  if (type === 'korting') return { met_marge: 0, zonder_marge: 0, vaste_prijs: false, tijd_u: 0, detail: { korting: regel.korting?.totaal || null } };
+
   return { fout: `Onbekend soort regel: ${type}`, tijd_u: 0 };
+}
+
+// Korting (15-10): { waarde, soort: 'pct' | 'eur' } op een basisbedrag; in €
+// nooit meer dan de basis.
+function kortingOp(k, basis) {
+  const w = getal(k?.waarde);
+  if (!w || basis <= 0) return 0;
+  return k.soort === 'eur' ? Math.min(w, basis) : basis * Math.min(w, 100) / 100;
 }
 
 // Eén regel optellen in de prijsopbouw: de natuurlijke berekening per post;
@@ -156,6 +167,7 @@ export function bereken(regels, tarieven, { stand = 'schatting', model = 'nieuw'
   const fouten = [];
   // 15-10: prijsopbouw over alle regels (wat de klant betaalt, per post)
   const po = { materiaal: 0, energie: 0, machine: 0, arbeid: 0, bmcu: 0, winst: 0, marge: 0, ontwerp: 0, aanpassing: 0, artikelen: 0, extra: 0, handmatig: 0,
+    korting_materiaal: 0, korting_printuren: 0, korting_regels: 0, korting_totaal: 0,
     gram: 0, uren: 0, kwh: 0, platen: 0, arbeid_min: 0, ontwerp_min: 0, aanpassing_min: 0 };
   const uit = (regels || []).map((regel, i) => {
     let r = natuurlijk[i];
@@ -164,9 +176,29 @@ export function bereken(regels, tarieven, { stand = 'schatting', model = 'nieuw'
     const hand = getal(regel.handmatig_bedrag);
     if (hand !== null) po.handmatig += hand - (r.met_marge * factor + r.zonder_marge);
     if (hand !== null) r = { ...r, natuurlijk_eindbedrag: r.met_marge * factor + r.zonder_marge, met_marge: 0, zonder_marge: hand, handmatig: true };
+    // 15-10: kortingen per regel (een handmatig eindbedrag gaat voor)
+    else if (regel.korting && regel.type !== 'korting') {
+      const K = regel.korting, d = r.detail || {};
+      const mat = regel.type === 'printen' ? kortingOp(K.materiaal, d.materiaal) : 0;
+      const pu = regel.type === 'printen' ? kortingOp(K.printuren, (d.energie + d.machine + (d.winst || 0)) * factor) : 0;
+      const reg = kortingOp(K.regel, r.met_marge * factor + r.zonder_marge - mat - pu);
+      if (mat + pu + reg > 0) {
+        r = { ...r, zonder_marge: r.zonder_marge - mat - pu - reg, korting: { materiaal: r4(mat), printuren: r4(pu), regel: r4(reg), totaal: r4(mat + pu + reg) } };
+        po.korting_materiaal -= mat; po.korting_printuren -= pu; po.korting_regels -= reg;
+      }
+    }
     const eind = r.met_marge * factor + r.zonder_marge;
     if (r.vaste_prijs) vast += eind; else { met += r.met_marge; zonder += r.zonder_marge; }
     return { ...regel, _berekend: { ...r, eindbedrag_exact: eind } };
+  });
+
+  // 15-10: korting op het totaal: op wat de andere regels samen geven (zonder
+  // vaste prijzen zoals verzending), als negatieve regel
+  uit.forEach(x => {
+    if (x.type !== 'korting' || x._berekend.fout) return;
+    const k = kortingOp(x.korting?.totaal, met * factor + zonder);
+    zonder -= k; po.korting_totaal -= k;
+    x._berekend = { ...x._berekend, zonder_marge: -k, eindbedrag_exact: -k };
   });
 
   const btw_grondslag = r2(met * factor + zonder);
