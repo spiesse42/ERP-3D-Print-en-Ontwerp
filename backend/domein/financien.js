@@ -20,6 +20,8 @@ import { kostVan } from './verkopen.js';
 import { leverbaar, nogTeLeveren } from './leveringen.js';
 import { leesRegelsVan } from './dossiers.js';
 import { berekenMetDb } from './berekening.js';
+import { kostDetail } from '../productie/opdrachten.js';
+import { telOpbouw } from '../productie/kost.js';
 
 const r2 = v => Math.round((v || 0) * 100) / 100;
 
@@ -151,8 +153,8 @@ export function marges(db, jaar) {
     WHERE (d.afgerekend_op IS NOT NULL OR d.gratis_op IS NOT NULL) AND substr(COALESCE(d.afgerekend_op, d.gratis_op), 1, 4) = ?
     ORDER BY COALESCE(d.afgerekend_op, d.gratis_op) DESC, d.id DESC`).all(String(jaar));
   const printregels = db.prepare(`SELECT id, aantal FROM dossier_regels WHERE dossier_id = ? AND type = 'printen'`);
-  const opdrachten = db.prepare(`SELECT productiekost_stuk, arbeid_stuk, aantal_goed, kost_onvolledig, kost_ontbreekt FROM printopdrachten
-    WHERE dossier_regel_id = ? AND voltooid_op IS NOT NULL`);
+  const opdrachten = db.prepare(`SELECT * FROM printopdrachten WHERE dossier_regel_id = ? AND voltooid_op IS NOT NULL`);
+  const details = [];   // 15-10: kostenopbouw over het jaar
   const artikelKost = db.prepare(`SELECT SUM(-m.aantal * p.prijs_per_eenheid) kost, SUM(CASE WHEN p.prijs_per_eenheid IS NULL THEN 1 ELSE 0 END) zonder_prijs
     FROM voorraad_mutaties m JOIN levering_regels lr ON lr.id = m.bron_id JOIN leveringen l ON l.id = lr.levering_id
     LEFT JOIN voorraad_partijen p ON p.id = m.partij_id
@@ -165,6 +167,7 @@ export function marges(db, jaar) {
       if (!ops.length) { onvolledig = true; redenen.add('printwerk zonder metingen'); continue; }
       for (const o of ops) {
         print += o.productiekost_stuk * o.aantal_goed; arbeid += (o.arbeid_stuk || 0) * o.aantal_goed;
+        details.push(kostDetail(db, o));
         if (o.kost_onvolledig) { onvolledig = true; redenen.add(o.kost_ontbreekt ? `ontbreekt: ${o.kost_ontbreekt}` : 'productiekost onvolledig'); }
       }
     }
@@ -206,5 +209,5 @@ export function marges(db, jaar) {
   const vgl = rijen.filter(x => x.nieuw_model != null);
   const vergelijking = vgl.length ? { dossiers: vgl.length, afgerekend: r2(vgl.reduce((t, x) => t + x.afgerekend_bedrag, 0)),
     nieuw: r2(vgl.reduce((t, x) => t + x.nieuw_model, 0)) } : null;
-  return { jaar: Number(jaar), rijen, vergelijking, totaal: { bedrag: som('afgerekend_bedrag'), kost: som('kost'), arbeid: som('arbeid'), marge: som('marge'), marge_met_arbeid: som('marge_met_arbeid') } };
+  return { jaar: Number(jaar), rijen, vergelijking, opbouw: details.length ? telOpbouw(details) : null, totaal: { bedrag: som('afgerekend_bedrag'), kost: som('kost'), arbeid: som('arbeid'), marge: som('marge'), marge_met_arbeid: som('marge_met_arbeid') } };
 }
