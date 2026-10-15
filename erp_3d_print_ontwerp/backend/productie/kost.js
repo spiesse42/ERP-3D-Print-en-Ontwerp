@@ -57,6 +57,24 @@ function filamentNaam(db, m) {
 
 const duurU = r => ((r.geeindigd_op ? Date.parse(r.geeindigd_op) : Date.now()) - Date.parse(r.gestart_op)) / 3600e3;
 
+// Arbeid (voorbereiding + nabewerking) van de regel, naar rato van de stuks.
+// Leeg = standaard; de standaardvoorbereiding geldt per plaat, net als in de
+// rekenmotor (15-10: vroeger maar 1× per regel, wat minder gaf dan de regel).
+function arbeidVan(regel, t, deel) {
+  const pp = Number(regel?.per_plaat) || 0;
+  const platen = pp > 0 ? Math.max(1, Math.ceil((Number(regel.aantal) || 1) / pp - 1e-9)) : 1;
+  const voorb = regel?.voorbereiding_min ?? (t.voorbereiding_min ?? 0) * platen;
+  const nabew = regel?.nabewerking_min ?? t.nabewerking_min ?? 0;
+  return { minuten: (voorb + nabew) * deel, euro: (voorb + nabew) / 60 * (t.arbeid_per_uur ?? 0) * deel };
+}
+
+// 15-10: filament per soort (naam), voor de kostenopbouw over een dossier.
+function voegFilamentToe(lijst, naam, gram, kost) {
+  const f = lijst.find(x => x.naam === naam);
+  if (f) { f.gram += gram; f.kost += kost; } else lijst.push({ naam, gram, kost });
+}
+export const rondFilamenten = l => l.map(f => ({ naam: f.naam, gram: rond(f.gram, 1), kost: rond(f.kost) }));
+
 // opdracht: { id, dossier_regel_id, aantal, aantal_goed? }; goed = aantal goede stuks
 // materialen (optioneel, enkel losse opdracht): nog niet bewaard filament om
 // vooraf te rekenen (bevestigvenster), in plaats van wat in de databank staat.
@@ -65,15 +83,19 @@ export function productiekost(db, opdracht, goed = opdracht.aantal_goed, { mater
   const regel = opdracht.dossier_regel_id ? db.prepare('SELECT * FROM dossier_regels WHERE id = ?').get(opdracht.dossier_regel_id) : null;
   const deel = regel ? opdracht.aantal / (Number(regel.aantal) || 1) : 1;
   const ontbreekt = [];
-  let filament = 0;
+  let filament = 0, gram = 0;
+  const filamenten = [];
   const mat = regel
     ? db.prepare('SELECT artikel_id, filament_type_id, gram FROM dossier_regel_materialen WHERE regel_id = ?').all(regel.id)
     : (materialen ?? db.prepare('SELECT artikel_id, filament_type_id, gram FROM printopdracht_materialen WHERE printopdracht_id = ?').all(opdracht.id));
   for (const m of mat) {
     if (!m.gram) continue;
     const kg = kostPerKg(db, m);
-    if (kg == null) { ontbreekt.push(`inkoopprijs filament ${filamentNaam(db, m)} (Voorraad → artikel → inkoopprijs)`); continue; }
+    const naam = filamentNaam(db, m);
+    gram += m.gram * deel;
+    if (kg == null) { ontbreekt.push(`inkoopprijs filament ${naam} (Voorraad → artikel → inkoopprijs)`); voegFilamentToe(filamenten, naam, m.gram * deel, 0); continue; }
     filament += m.gram * deel / 1000 * kg;
+    voegFilamentToe(filamenten, naam, m.gram * deel, m.gram * deel / 1000 * kg);
   }
   if (!mat.some(m => m.gram > 0)) {
     ontbreekt.push(regel ? 'gewicht filament (op de printregel van het dossier)'
@@ -81,20 +103,21 @@ export function productiekost(db, opdracht, goed = opdracht.aantal_goed, { mater
   }
   const runs = db.prepare(`SELECT r.*, p.machine_per_uur FROM printruns r JOIN printers p ON p.id = r.printer_id
     WHERE r.printopdracht_id = ? AND r.uitkomst <> 'bezig'`).all(opdracht.id);
-  let energie = 0, machine = 0;
+  let energie = 0, machine = 0, kwh = 0, uren = 0;
   for (const r of runs) {
+    kwh += r.kwh ?? 0; uren += duurU(r);
     if (r.kwh == null) ontbreekt.push('kWh van een run (open de run → Verbruik aanvullen)'); else if (t.kwh_prijs == null) ontbreekt.push('kWh-prijs (Instellingen → Tarieven)'); else energie += r.kwh * t.kwh_prijs;
     if (r.machine_per_uur == null) ontbreekt.push(`machinetarief ${db.prepare('SELECT naam FROM printers WHERE id = ?').get(r.printer_id)?.naam || ''}`.trim()); else machine += duurU(r) * r.machine_per_uur;
   }
   const bmcu = runs.length * (t.bmcu_per_job ?? 0);
-  const voorb = regel?.voorbereiding_min ?? t.voorbereiding_min ?? 0;
-  const nabew = regel?.nabewerking_min ?? t.nabewerking_min ?? 0;
-  const arbeid = (voorb + nabew) / 60 * (t.arbeid_per_uur ?? 0) * deel;
+  const arb = arbeidVan(regel, t, deel);
+  const arbeid = arb.euro;
   const kost = filament + energie + machine + bmcu;
   const n = Number(goed) || 0;
   return {
     filament: rond(filament), energie: rond(energie), machine: rond(machine), bmcu: rond(bmcu), arbeid: rond(arbeid),
-    kost: rond(kost), runs: runs.length, goed: n,
+    kost: rond(kost), runs: runs.length, mislukt: runs.filter(r => r.uitkomst !== 'klaar').length, goed: n,
+    gram: rond(gram, 1), kwh: rond(kwh), uren: rond(uren), arbeid_min: rond(arb.minuten, 1), filamenten: rondFilamenten(filamenten),
     per_stuk: n > 0 ? rond(kost / n) : null,
     arbeid_stuk: n > 0 ? rond(arbeid / n) : null,
     onvolledig: ontbreekt.length > 0, ontbreekt: [...new Set(ontbreekt)],
@@ -110,27 +133,32 @@ export function schatOpdracht(db, o) {
   const regel = o.dossier_regel_id ? db.prepare('SELECT * FROM dossier_regels WHERE id = ?').get(o.dossier_regel_id) : null;
   const deel = regel ? Number(o.aantal) / (Number(regel.aantal) || 1) : 1;
   const ontbreekt = [];
-  let filament = 0;
+  let filament = 0, gram = 0;
+  const filamenten = [];
   for (const m of o.materialen || []) {
     if (!m.gram) continue;
     const kg = kostPerKg(db, m);
-    if (kg == null) ontbreekt.push(`inkoopprijs filament ${m.naam || ''}`.trim()); else filament += m.gram * deel / 1000 * kg;
+    gram += m.gram * deel;
+    const f = kg == null ? 0 : m.gram * deel / 1000 * kg;
+    if (kg == null) ontbreekt.push(`inkoopprijs filament ${m.naam || ''}`.trim()); else filament += f;
+    voegFilamentToe(filamenten, m.naam || '(onbekend)', m.gram * deel, f);
   }
   const p = db.prepare('SELECT naam, machine_per_uur, verbruik_watt FROM printers WHERE id = ?').get(o.printer_id);
   const uren = regel?.tijd_min != null ? Number(regel.tijd_min) * deel / 60 : null;
-  let energie = 0, machine = 0;
+  let energie = 0, machine = 0, kwh = 0;
   if (uren == null) ontbreekt.push('printtijd');
   else {
-    if (p?.verbruik_watt == null || t.kwh_prijs == null) ontbreekt.push('verbruik (watt) of kWh-prijs'); else energie = p.verbruik_watt / 1000 * uren * t.kwh_prijs;
+    if (p?.verbruik_watt != null) kwh = p.verbruik_watt / 1000 * uren;
+    if (p?.verbruik_watt == null || t.kwh_prijs == null) ontbreekt.push('verbruik (watt) of kWh-prijs'); else energie = kwh * t.kwh_prijs;
     if (p?.machine_per_uur == null) ontbreekt.push(`machinetarief ${p?.naam || ''}`.trim()); else machine = uren * p.machine_per_uur;
   }
   const bmcu = t.bmcu_per_job ?? 0;
-  const voorb = regel?.voorbereiding_min ?? t.voorbereiding_min ?? 0;
-  const nabew = regel?.nabewerking_min ?? t.nabewerking_min ?? 0;
-  const arbeid = (voorb + nabew) / 60 * (t.arbeid_per_uur ?? 0) * deel;
+  const arb = arbeidVan(regel, t, deel);
+  const arbeid = arb.euro;
   const kost = filament + energie + machine + bmcu;
   const n = Number(o.aantal) || 0;
   return { filament: rond(filament), energie: rond(energie), machine: rond(machine), bmcu: rond(bmcu), arbeid: rond(arbeid), kost: rond(kost),
+    gram: rond(gram, 1), kwh: rond(kwh), uren: rond(uren ?? 0), runs: 1, arbeid_min: rond(arb.minuten, 1), filamenten: rondFilamenten(filamenten),
     per_stuk: n > 0 ? rond(kost / n) : null, arbeid_stuk: n > 0 ? rond(arbeid / n) : null, onvolledig: ontbreekt.length > 0, ontbreekt: [...new Set(ontbreekt)] };
 }
 
@@ -144,4 +172,20 @@ export function runKost(db, r, t = getTarieven(db)) {
   const bmcu = t.bmcu_per_job ?? 0;
   return { energie: energie == null ? null : rond(energie), machine: machine == null ? null : rond(machine), bmcu: rond(bmcu),
     kost: rond((energie ?? 0) + (machine ?? 0) + bmcu), onvolledig: energie == null || machine == null };
+}
+
+// Optellen: bedragen, hoeveelheden en filament per soort.
+export function telOpbouw(lijst) {
+  const som = { filament: 0, energie: 0, machine: 0, bmcu: 0, arbeid: 0, kost: 0, gram: 0, kwh: 0, uren: 0, runs: 0, mislukt: 0, arbeid_min: 0, filamenten: [] };
+  for (const d of lijst) {
+    for (const k of Object.keys(som)) if (k !== 'filamenten') som[k] += Number(d[k]) || 0;
+    for (const f of d.filamenten || []) {
+      const x = som.filamenten.find(y => y.naam === f.naam);
+      if (x) { x.gram += f.gram; x.kost += f.kost; } else som.filamenten.push({ ...f });
+    }
+  }
+  const r = (v, n = 2) => Math.round(v * 10 ** n) / 10 ** n;
+  for (const k of Object.keys(som)) if (k !== 'filamenten') som[k] = r(som[k], k === 'gram' || k === 'arbeid_min' ? 1 : k === 'kwh' || k === 'uren' ? 3 : 2);
+  som.filamenten = som.filamenten.map(f => ({ naam: f.naam, gram: r(f.gram, 1), kost: r(f.kost) })).sort((a, b) => b.gram - a.gram);
+  return som;
 }
