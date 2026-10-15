@@ -661,3 +661,14 @@ label.keuze input { margin-top:3px; }
   .mb-terug { display: inline-flex; }
   .mb-opstel { grid-template-columns: 1fr; }
 }
+
+/* Afdrukken (15-10, Prijsopbouw): enkel de inhoud, zonder balken en menu's */
+@media print {
+  .zijbalk, .topbar, .snav, .cp, .geen-afdruk { display:none !important; }
+  .app { display:block; }
+  .settings { display:block; padding:0; max-width:none; }
+  html, body, .app, .app-kolom, .app-body, .settings, .panel { background:#fff !important; }
+  .prijsopbouw-blad { border:0; box-shadow:none; padding:0 !important; }
+  .prijsopbouw-blad table { width:100%; page-break-inside:avoid; }
+  .prijsopbouw-blad h4 { page-break-after:avoid; }
+}
