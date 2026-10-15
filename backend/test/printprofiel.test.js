@@ -157,3 +157,36 @@ test('P9. geplande printopdracht verwijderen verlaagt de regel (per stuk: tijd e
   // zonder ?regel=1 blijft de oude regel gelden (fout)
   assert.equal((await vraag('DELETE', `/productie/opdrachten/${ops[2].id}`)).status, 400);
 });
+
+test('P10. kostenopbouw over het dossier: som van de regels, schatting per opdracht klopt, gemeten naast de schatting', async () => {
+  const db = getDb();
+  db.prepare('UPDATE artikelen SET inkoopprijs = 20 WHERE id = ?').run(zwart);
+  const regels = [
+    { type: 'printen', omschrijving: 'A', printer_id: mini, aantal: 6, per_stuk: true, per_plaat: 3, tijd_min: 6 * 30, materialen: [{ artikel_id: zwart, gram: 6 * 10 }] },
+    { type: 'printen', omschrijving: 'B', printer_id: mini, aantal: 1, tijd_min: 90, materialen: [{ artikel_id: zwart, gram: 50 }] },
+  ];
+  const b = ok(await vraag('POST', '/bereken', { regels }));
+  const k = b.regels.map(r => r._berekend.kost), o = b.productiekost.opbouw;
+  for (const veld of ['filament', 'energie', 'machine', 'bmcu', 'arbeid', 'kost']) assert.ok(Math.abs(o[veld] - (k[0][veld] + k[1][veld])) < 0.01, veld);
+  assert.equal(o.gram, 110); assert.equal(o.runs, 3); assert.equal(o.uren, 4.5);
+  assert.ok(Math.abs(o.kwh - 4.5 * 0.095) < 1e-3, 'kWh = watt × uren');
+  assert.equal(o.filamenten.length, 1); assert.equal(o.filamenten[0].gram, 110);
+  const d = ok(await vraag('POST', '/dossiers', { soort: 'klant', klant_id: klant, titel: 'Opbouw', regels }), 201);
+  const s = ok(await vraag('POST', `/dossiers/${d.id}/starten`));
+  const ops = s.productie.regels.flatMap(r => r.opdrachten);
+  assert.equal(ops.length, 3);
+  for (const veld of ['filament', 'machine', 'bmcu', 'arbeid']) {
+    assert.ok(Math.abs(ops.reduce((t, x) => t + x.kost_schatting[veld], 0) - o[veld]) < 0.01, `schatting opdrachten = regels (${veld})`);
+  }
+  // één opdracht voltooien met een gemeten run van 2 u en 0,3 kWh
+  const x = ops.find(y => y.aantal === 1);
+  db.prepare(`INSERT INTO printruns (printer_id, printopdracht_id, gestart_op, geeindigd_op, uitkomst, kwh) VALUES (?, ?, ?, ?, 'klaar', 0.3)`)
+    .run(mini, x.id, new Date(Date.now() - 3 * 3600e3).toISOString(), new Date(Date.now() - 3600e3).toISOString());
+  ok(await vraag('POST', `/productie/opdrachten/${x.id}/bevestig`, { aantal_goed: 1 }));
+  assert.ok(db.prepare('SELECT kost_detail FROM printopdrachten WHERE id = ?').get(x.id).kost_detail, 'opbouw bewaard');
+  const g = ok(await vraag('GET', `/dossiers/${d.id}`)).productie.gemeten;
+  assert.equal(g.voltooid, 1);
+  assert.equal(g.opbouw.kwh, 0.3); assert.ok(Math.abs(g.opbouw.uren - 2) < 0.01);
+  assert.ok(Math.abs(g.opbouw.kost - g.kost) < 0.01, 'opbouw = gemeten kost');
+  assert.ok(Math.abs(g.schatting_voltooid.uren - 1.5) < 1e-3, 'schatting van dezelfde opdracht: 1,5 u');
+});

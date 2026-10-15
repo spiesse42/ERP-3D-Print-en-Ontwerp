@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, BASE } from '../lib/api.js';
 import Icoon from '../schil/Icoon.jsx';
 import NieuwArtikelDialoog from './NieuwArtikelDialoog.jsx';
+import Kostenopbouw from './Kostenopbouw.jsx';
 import { euro, naarInvoer, aantal as fmtAantal } from '../lib/formaat.js';
 import { verklein } from '../lib/afbeelding.js';
 import { useOmgeving } from '../schil/Omgeving.jsx';
@@ -289,7 +290,7 @@ export function Totalen({ uitkomst, gemeten = null }) {
   const u = uitkomst;
   const k = u.productiekost;
   const r = v => euro(Math.round(v * 100) / 100);
-  return (
+  return (<>
     <div className="totalen">
       <div><span>Totale printtijd</span><span className="num">{fmtAantal(Math.round(u.totale_tijd_u * 100) / 100)} u</span></div>
       {u.model === 'printuur'
@@ -310,5 +311,10 @@ export function Totalen({ uitkomst, gemeten = null }) {
       </>}
       {!u.volledig && <div className="regelfout">Niet volledig: {u.fouten.length} regel(s) kunnen niet berekend worden (zie hierboven).</div>}
     </div>
-  );
+      {k?.opbouw && <Kostenopbouw verschil={!!gemeten?.opbouw} kolommen={[
+        { titel: 'Schatting (alle regels)', o: k.opbouw },
+        ...(gemeten?.opbouw ? [{ titel: `Schatting voltooide (${gemeten.voltooid}/${gemeten.totaal})`, o: gemeten.schatting_voltooid }, { titel: 'Gemeten voltooide', o: gemeten.opbouw }] : []),
+      ]} />}
+      {gemeten?.opbouw && <p className="note" style={{ fontSize: 12 }}>Gemeten = de bevestigde printopdrachten: echte printtijd en kWh van alle runs (ook mislukte), filament volgens de regel. Rood = duurder dan geschat. De schatting van de nog open opdrachten zit enkel in de eerste kolom.</p>}
+  </>);
 }

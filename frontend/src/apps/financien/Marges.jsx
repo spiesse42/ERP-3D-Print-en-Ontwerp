@@ -5,6 +5,7 @@ import { useOmgeving } from '../../schil/Omgeving.jsx';
 import { ControlePaneel, Lijst, Laden, Fout } from '../../schil/Weergaven.jsx';
 import { euro, datum, aantal } from '../../lib/formaat.js';
 import { Jaarkeuze, useJaar, csvUrl } from './Overzicht.jsx';
+import Kostenopbouw from '../../components/Kostenopbouw.jsx';
 
 // Financiën → Marges (stap 7): per afgerekende klantopdracht het bedrag
 // tegenover de ECHTE kost die het ERP gemeten heeft (printwerk aan
@@ -63,6 +64,9 @@ export default function Marges() {
               kaart={d => ({ titel: d.titel, rechts: <b className="num">{euro(d.marge)}</b>, regel: `${d.nummer} · ${d.klant || ''}`, onder: `${euro(d.afgerekend_bedrag)} − kost ${euro(d.kost)}`, badge: d.afgerekend_soort === 'gratis' ? <span className="badge b-info">gratis</span> : d.onvolledig ? <span className="badge b-warn">onvolledig</span> : null })}
               leeg={<><b>Nog niets afgerekend in {jaar}.</b>Afgerekende klantopdrachten verschijnen hier met hun marge.</>} />
           </div>
+          {m.opbouw && <div className="panel" style={{ padding: '4px 12px 10px', marginBottom: 12 }}>
+            <Kostenopbouw titel={`Kostenopbouw printwerk ${jaar} (gemeten, afgerekende dossiers)`} kolommen={[{ titel: 'Gemeten', o: m.opbouw }]} />
+          </div>}
           <p className="note" style={{ margin: 0 }}>Kost = printwerk aan productiekost (filament aan inkoopprijs, gemeten elektriciteit, machinetarief, BMCU, mislukte pogingen; vastgelegd bij het bevestigen van de printopdracht) + geleverde artikelen uit voorraad aan hun inkoopprijs. Diensten (ontwerp, verzending) hebben geen kost. "Onvolledig": printwerk zonder bevestigde printopdracht, een ontbrekende inkoopprijs (filament of artikel), tarief of verbruik — de reden staat onder het dossier. Vul het aan (bv. Voorraad → artikel → inkoopprijs) en klik "Kosten herberekenen".</p>
         </div>
       )}

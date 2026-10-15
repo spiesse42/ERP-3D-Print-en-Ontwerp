@@ -14,7 +14,7 @@
 import { DomeinFout, getTarieven } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { boekIn } from '../domein/voorraad.js';
-import { productiekost, schatOpdracht, runKost } from './kost.js';
+import { productiekost, schatOpdracht, runKost, telOpbouw } from './kost.js';
 
 export const OPDRACHT_STATUS = {
   gepland: 'Gepland', bezig: 'Bezig', te_bevestigen: 'Te bevestigen', voltooid: 'Voltooid', mislukt: 'Mislukt', geannuleerd: 'Geannuleerd',
@@ -179,14 +179,18 @@ export function verschuif(db, o, richting) {
   upd.run(b.volgorde, a.id); upd.run(a.volgorde === b.volgorde ? a.volgorde + (richting === 'op' ? 1 : -1) : a.volgorde, b.id);
 }
 
+// 15-10: de opbouw van de gemeten kost (zie kostenopbouw), als JSON bewaard
+const DETAIL = ['filament', 'energie', 'machine', 'bmcu', 'arbeid', 'kost', 'gram', 'kwh', 'uren', 'runs', 'mislukt', 'arbeid_min', 'filamenten'];
+const detailJson = pk => JSON.stringify(Object.fromEntries(DETAIL.map(k => [k, pk[k]])));
+
 export function bevestig(db, o, aantalGoed) {
   if (!['te_bevestigen', 'mislukt'].includes(o.status)) throw new DomeinFout(o.status === 'bezig' ? 'De print loopt nog.' : 'Er is nog geen geslaagde run om te bevestigen.');
   if (!o.runs.some(r => r.uitkomst === 'klaar')) throw new DomeinFout('Er is geen geslaagde run. Koppel eerst een herprint of annuleer de opdracht.');
   const n = getal(aantalGoed, 'Aantal goede stuks');
   // productiekost per goed stuk vastleggen (stap 6c): echte kost + arbeid apart
   const pk = productiekost(db, o, n);
-  db.prepare(`UPDATE printopdrachten SET aantal_goed = ?, voltooid_op = datetime('now'), productiekost_stuk = ?, arbeid_stuk = ?, kost_onvolledig = ?, kost_ontbreekt = ? WHERE id = ?`)
-    .run(n, pk.per_stuk, pk.arbeid_stuk, pk.onvolledig ? 1 : 0, pk.ontbreekt.join('; ') || null, o.id);
+  db.prepare(`UPDATE printopdrachten SET aantal_goed = ?, voltooid_op = datetime('now'), productiekost_stuk = ?, arbeid_stuk = ?, kost_onvolledig = ?, kost_ontbreekt = ?, kost_detail = ? WHERE id = ?`)
+    .run(n, pk.per_stuk, pk.arbeid_stuk, pk.onvolledig ? 1 : 0, pk.ontbreekt.join('; ') || null, detailJson(pk), o.id);
   const nl = v => String(v).replace('.', ',');
   let extra = '';
   // eigen product → goede stuks in voorraad (reden productie), aan de productiekost
@@ -225,8 +229,8 @@ function draaiBoekingTerug(db, o) {
 export function herbereken(db, o) {
   if (!o.voltooid_op) throw new DomeinFout('Enkel een bevestigde printopdracht heeft een productiekost.');
   const pk = productiekost(db, o, o.aantal_goed);
-  db.prepare('UPDATE printopdrachten SET productiekost_stuk = ?, arbeid_stuk = ?, kost_onvolledig = ?, kost_ontbreekt = ? WHERE id = ?')
-    .run(pk.per_stuk, pk.arbeid_stuk, pk.onvolledig ? 1 : 0, pk.ontbreekt.join('; ') || null, o.id);
+  db.prepare('UPDATE printopdrachten SET productiekost_stuk = ?, arbeid_stuk = ?, kost_onvolledig = ?, kost_ontbreekt = ?, kost_detail = ? WHERE id = ?')
+    .run(pk.per_stuk, pk.arbeid_stuk, pk.onvolledig ? 1 : 0, pk.ontbreekt.join('; ') || null, detailJson(pk), o.id);
   if (pk.per_stuk != null) {
     db.prepare(`UPDATE voorraad_partijen SET prijs_per_eenheid = ? WHERE id IN (SELECT partij_id FROM voorraad_mutaties
       WHERE bron_type = 'printopdracht' AND bron_id = ? AND reden = 'productie' AND aantal > 0)`).run(Math.round(pk.per_stuk * 10000) / 10000, o.id);
@@ -245,7 +249,7 @@ export function heropen(db, o) {
   if (o.status !== 'voltooid' && o.status !== 'geannuleerd') throw new DomeinFout('Deze printopdracht is niet afgesloten');
   if (o.verkocht_nummer) throw new DomeinFout(`Deze printopdracht is verkocht via ${o.verkocht_nummer}. Maak eerst die verkoop ongedaan.`);
   draaiBoekingTerug(db, o);
-  db.prepare('UPDATE printopdrachten SET aantal_goed = NULL, voltooid_op = NULL, geannuleerd_op = NULL, productiekost_stuk = NULL, arbeid_stuk = NULL, kost_onvolledig = 0, kost_ontbreekt = NULL, volgorde = ? WHERE id = ?')
+  db.prepare('UPDATE printopdrachten SET aantal_goed = NULL, voltooid_op = NULL, geannuleerd_op = NULL, productiekost_stuk = NULL, arbeid_stuk = NULL, kost_onvolledig = 0, kost_ontbreekt = NULL, kost_detail = NULL, volgorde = ? WHERE id = ?')
     .run(volgendeVolgorde(db, o.printer_id), o.id);
 }
 // Een geplande opdracht (nog niets geprint) van een gestart dossier volgt de
@@ -403,14 +407,22 @@ export function productieVan(db, dossierId) {
 // Voor het Productie-tabblad van een dossier: per printregel besteld, gepland,
 // goed en de opdrachten zelf.
 // 08-10: gemeten productiekost van de voltooide opdrachten (kost per goed stuk × goede stuks)
-function gemetenKost(ops) {
+// 15-10: + de opbouw (kostenopbouw) en, om te vergelijken, de SCHATTING van
+// precies die voltooide opdrachten: zo zie je waar meting en schatting verschillen.
+function gemetenKost(db, ops) {
   const actief = ops.filter(o => !o.geannuleerd_op);
   const klaar = actief.filter(o => o.voltooid_op && o.productiekost_stuk != null);
   if (!klaar.length) return null;
   const r2 = v => Math.round(v * 100) / 100;
   return { kost: r2(klaar.reduce((t, o) => t + o.productiekost_stuk * (o.aantal_goed || 0), 0)),
     arbeid: r2(klaar.reduce((t, o) => t + (o.arbeid_stuk || 0) * (o.aantal_goed || 0), 0)),
-    voltooid: klaar.length, totaal: actief.length, onvolledig: klaar.some(o => o.kost_onvolledig) };
+    voltooid: klaar.length, totaal: actief.length, onvolledig: klaar.some(o => o.kost_onvolledig),
+    opbouw: telOpbouw(klaar.map(o => kostDetail(db, o))), schatting_voltooid: telOpbouw(klaar.map(o => o.kost_schatting).filter(Boolean)) };
+}
+// Bewaarde opbouw van een voltooide opdracht; oudere (vóór 15-10): live.
+export function kostDetail(db, o) {
+  if (o.kost_detail) { try { return JSON.parse(o.kost_detail); } catch { /* opnieuw berekenen */ } }
+  return productiekost(db, o, o.aantal_goed);
 }
 export function productieOverzicht(db, dossierId, regels) {
   const printregels = regels.filter(r => r.type === 'printen');
@@ -419,7 +431,7 @@ export function productieOverzicht(db, dossierId, regels) {
   return {
     status: statusUit(printregels, ops),
     aantal_opdrachten: ops.length,
-    gemeten: gemetenKost(ops),
+    gemeten: gemetenKost(db, ops),
     te_koppelen_runs: teKoppelenVoorDossier(db, dossierId, ops),
     regels: printregels.map(r => {
       const eigen = ops.filter(o => o.dossier_regel_id === r.id);
