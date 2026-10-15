@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, BASE } from '../lib/api.js';
 import Icoon from '../schil/Icoon.jsx';
 import NieuwArtikelDialoog from './NieuwArtikelDialoog.jsx';
-import Kostenopbouw from './Kostenopbouw.jsx';
+import Kostenopbouw, { Prijsopbouw } from './Kostenopbouw.jsx';
 import { euro, naarInvoer, aantal as fmtAantal } from '../lib/formaat.js';
 import { verklein } from '../lib/afbeelding.js';
 import { useOmgeving } from '../schil/Omgeving.jsx';
@@ -311,7 +311,8 @@ export function Totalen({ uitkomst, gemeten = null }) {
       </>}
       {!u.volledig && <div className="regelfout">Niet volledig: {u.fouten.length} regel(s) kunnen niet berekend worden (zie hierboven).</div>}
     </div>
-      {k?.opbouw && <Kostenopbouw verschil={!!gemeten?.opbouw} kolommen={[
+      {u.prijsopbouw && u.regels.length > 0 && <Prijsopbouw p={u.prijsopbouw} k={k} totaal={u.totaal} />}
+      {k?.opbouw && <Kostenopbouw titel="Productiekost: schatting en meting" open={!!gemeten?.opbouw} verschil={!!gemeten?.opbouw} kolommen={[
         { titel: 'Schatting (alle regels)', o: k.opbouw },
         ...(gemeten?.opbouw ? [{ titel: `Schatting voltooide (${gemeten.voltooid}/${gemeten.totaal})`, o: gemeten.schatting_voltooid }, { titel: 'Gemeten voltooide', o: gemeten.opbouw }] : []),
       ]} />}

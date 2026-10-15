@@ -115,6 +115,21 @@ function berekenRegel(regel, t, stand) {
   return { fout: `Onbekend soort regel: ${type}`, tijd_u: 0 };
 }
 
+// Eén regel optellen in de prijsopbouw: de natuurlijke berekening per post;
+// de (oude) marge apart. Een handmatig bedrag komt als correctie erbij.
+function telPrijs(po, regel, r, factor, t) {
+  const d = r.detail || {};
+  po.marge += r.met_marge * (factor - 1);
+  if (regel.type === 'printen') {
+    po.materiaal += d.materiaal; po.energie += d.energie; po.machine += d.machine; po.arbeid += d.arbeid; po.bmcu += d.bmcu; po.winst += d.winst || 0;
+    po.gram += (d.materialen || []).reduce((x, m) => x + m.gram, 0); po.uren += d.uren; po.platen += d.platen || 1;
+    po.kwh += t.kwh_prijs > 0 ? d.energie / t.kwh_prijs : 0; po.arbeid_min += d.voorbereiding_min + d.nabewerking_min;
+  } else if (regel.type === 'ontwerp' || regel.type === 'aanpassing') {
+    po[regel.type] += r.met_marge; po[`${regel.type}_min`] += d.minuten || 0;
+  } else if (regel.type === 'artikel') po.artikelen += r.zonder_marge;
+  else if (regel.type === 'extra') po.extra += r.met_marge;
+}
+
 // model: 'nieuw' (standaard: printuurmodel zodra winst_per_printuur > 0) of
 // 'oud' (08-10: de vroegere berekening met getrapte marge, ter vergelijking)
 export function bereken(regels, tarieven, { stand = 'schatting', model = 'nieuw' } = {}) {
@@ -139,10 +154,15 @@ export function bereken(regels, tarieven, { stand = 'schatting', model = 'nieuw'
   // Doorgang 2: handmatige eindbedragen, eindbedrag per regel, totalen.
   let met = 0, zonder = 0, vast = 0;
   const fouten = [];
+  // 15-10: prijsopbouw over alle regels (wat de klant betaalt, per post)
+  const po = { materiaal: 0, energie: 0, machine: 0, arbeid: 0, bmcu: 0, winst: 0, marge: 0, ontwerp: 0, aanpassing: 0, artikelen: 0, extra: 0, handmatig: 0,
+    gram: 0, uren: 0, kwh: 0, platen: 0, arbeid_min: 0, ontwerp_min: 0, aanpassing_min: 0 };
   const uit = (regels || []).map((regel, i) => {
     let r = natuurlijk[i];
     if (r.fout) { fouten.push({ regel: i, fout: r.fout }); return { ...regel, _berekend: { fout: r.fout } }; }
+    telPrijs(po, regel, r, factor, t);
     const hand = getal(regel.handmatig_bedrag);
+    if (hand !== null) po.handmatig += hand - (r.met_marge * factor + r.zonder_marge);
     if (hand !== null) r = { ...r, natuurlijk_eindbedrag: r.met_marge * factor + r.zonder_marge, met_marge: 0, zonder_marge: hand, handmatig: true };
     const eind = r.met_marge * factor + r.zonder_marge;
     if (r.vaste_prijs) vast += eind; else { met += r.met_marge; zonder += r.zonder_marge; }
@@ -167,8 +187,13 @@ export function bereken(regels, tarieven, { stand = 'schatting', model = 'nieuw'
     r._berekend.per_stuk = a > 0 ? r4(r._berekend.eindbedrag / a) : null;
   });
 
+  const som = Object.entries(po).filter(([k]) => !['gram', 'uren', 'kwh', 'platen', 'arbeid_min', 'ontwerp_min', 'aanpassing_min'].includes(k)).reduce((x, [, v]) => x + v, 0);
+  po.afronding = totaal - som;
+  const prijsopbouw = Object.fromEntries(Object.entries(po).map(([k, v]) => [k, r4(v)]));
+
   return {
     regels: uit,
+    prijsopbouw,
     stand,
     model: t.nieuw ? 'printuur' : 'marge',
     totale_tijd_u: r4(totale_tijd_u),
