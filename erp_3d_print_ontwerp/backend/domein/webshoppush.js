@@ -34,8 +34,30 @@ const getalOfNull = (v, wat) => {
   return n;
 };
 
+// 16-10: Layer & Leaf — standaard in de beschrijving (staat er al
+// "Standaardkleur" in, dan niet nog eens)
+export const LAYER_LEAF_SJABLOON = 'Standaardkleur: \nAfmetingen:\n• Breedte: \n• Hoogte: \n\nDesign by Layer & Leaf';
+export function isLayerLeaf(db, categorieId) {
+  for (let c = categorieId ? db.prepare('SELECT naam, ouder_id FROM categorieen WHERE id = ?').get(categorieId) : null, n = 0; c && n < 10; n++) {
+    if (/layer\s*(&|and|en)\s*leaf/i.test(c.naam)) return true;
+    c = c.ouder_id ? db.prepare('SELECT naam, ouder_id FROM categorieen WHERE id = ?').get(c.ouder_id) : null;
+  }
+  return false;
+}
+export function metSjabloon(beschrijving) {
+  const t = String(beschrijving || '').trim();
+  if (/standaardkleur/i.test(t)) return t;
+  return t ? `${t}\n\n${LAYER_LEAF_SJABLOON}` : LAYER_LEAF_SJABLOON;
+}
+
+// Nog niet ingevuld in het sjabloon (bv. "Breedte:" zonder maat) → melding
+export function leegInSjabloon(t) {
+  const leeg = ['Standaardkleur', 'Breedte', 'Hoogte'].filter(w => new RegExp(`${w}:[ \\t]*(\\n|$)`, 'i').test(String(t || '')));
+  return leeg.length ? `Nog in te vullen in de beschrijving: ${leeg.join(', ').toLowerCase()}.` : null;
+}
+
 function artikel(db, id) {
-  const a = db.prepare(`SELECT id, naam, type, verkoopprijs, wordt_verkocht, printprofiel, webshop_slug, webshop_variant, webshop_data,
+  const a = db.prepare(`SELECT id, naam, type, verkoopprijs, categorie_id, wordt_verkocht, printprofiel, webshop_slug, webshop_variant, webshop_data,
     webshop_sanity_id, webshop_sanity_rev, webshop_gepusht_op FROM artikelen WHERE id = ?`).get(Number(id));
   if (!a) throw Object.assign(new DomeinFout('Artikel niet gevonden'), { status: 404 });
   return a;
@@ -89,6 +111,7 @@ export async function leesWebshop(db, artikelId, { fetchFn = fetch } = {}) {
     } catch { /* niet bereikbaar: leeg formulier */ }
   }
   if (!data) data = { ...STANDAARD, createdAt: vandaag(), weightGrams: gewichtUitProfiel(a) };
+  if (isLayerLeaf(db, a.categorie_id)) data = { ...data, description: metSjabloon(data.description) };
   return { data, bron, sanity_foto: sanityFoto, fotos: fotosVan(db, a.id), slug: a.webshop_slug, variant: a.webshop_variant,
     gepusht_op: a.webshop_gepusht_op, naam: a.naam, prijs: a.verkoopprijs, gewicht_profiel: gewichtUitProfiel(a) };
 }
@@ -174,7 +197,8 @@ export async function pushWebshop(db, artikelId, { forceer = false, fetchFn = fe
     logGebeurtenis(db, 'artikel', a.id, 'gewijzigd', `${nieuw ? 'Aangemaakt in' : 'Bijgewerkt in'} de webshop (${slug})${d.hidden ? ', verborgen' : ''}`);
   })();
   return { ok: true, nieuw, slug, verborgen: !!d.hidden,
-    waarschuwing: concept > 0 ? 'In Sanity staat nog een niet-gepubliceerd concept van dit product: open het in Sanity en kies "Discard changes", anders zie je daar de oude versie.' : null };
+    waarschuwing: [concept > 0 ? 'In Sanity staat nog een niet-gepubliceerd concept van dit product: open het in Sanity en kies "Discard changes", anders zie je daar de oude versie.' : null,
+      leegInSjabloon(d.description)].filter(Boolean).join(' ') || null };
 }
 
 // Keuzelijsten voor het formulier (publiek leesbaar)
