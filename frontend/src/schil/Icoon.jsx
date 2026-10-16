@@ -21,6 +21,7 @@ const PADEN = {
   archief: <><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></>,
   herstel: <><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></>,
   vuilbak: <><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></>,
+  kopie: <><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></>,
   vink: <path d="m5 12 5 5 9-10"/>,
   let: <><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16"/>,

@@ -188,6 +188,14 @@ export default function ArtikelFormulier() {
     if (nieuw) { zetVuil(false); navigeer('/voorraad/artikelen'); return; }
     setForm(origineel);
   }
+  async function kopieer() {
+    setBezig(true);
+    try {
+      const k = await api.post(`/voorraad/artikelen/${id}/kopie`);
+      melding(`Kopie gemaakt: "${k.naam}". Pas de naam en de gegevens aan.`);
+      navigeer(`/voorraad/artikelen/${k.id}`);
+    } catch (e) { melding(e.message, 'fout'); } finally { setBezig(false); }
+  }
   async function archiveer(aan) {
     if (vuil) { melding('Sla eerst je wijzigingen op of verwerp ze.', 'fout'); return; }
     if (aan && !await bevestig({
@@ -249,7 +257,7 @@ export default function ArtikelFormulier() {
       <div className="sheet-wrap">
         <div className="sheet">
           <FormKnoppen vuil={vuil} nieuw={nieuw} bezig={bezig} onOpslaan={opslaan} onVerwerp={verwerp}
-            gearchiveerd={archief} onArchiveer={nieuw ? null : archiveer} onVerwijder={nieuw ? null : verwijder}
+            gearchiveerd={archief} onKopieer={nieuw || t === 'filament' ? null : kopieer} onArchiveer={nieuw ? null : archiveer} onVerwijder={nieuw ? null : verwijder}
             terug={{ label: 'Artikelen', naar: '/voorraad/artikelen' }}
             links={!nieuw && heeftVoorraad ? <StatusBadge status={art.status} /> : null} />
           <div className="sheet-head">
