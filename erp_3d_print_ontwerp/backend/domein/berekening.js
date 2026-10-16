@@ -18,7 +18,7 @@ function sql(db) {
         JOIN filament_kleuren k ON k.id = a.kleur_id WHERE a.id = ? AND a.type = 'filament'`),
       groep: db.prepare(`SELECT ft.id, m.naam || ' ' || mat.naam AS naam, ft.verkoopprijs_per_kg FROM filament_types ft
         JOIN filament_merken m ON m.id = ft.merk_id JOIN filament_materialen mat ON mat.id = ft.materiaal_id WHERE ft.id = ?`),
-      printer: db.prepare('SELECT id, naam, machine_per_uur, verbruik_watt, actief FROM printers WHERE id = ?'),
+      printer: db.prepare('SELECT id, naam, machine_per_uur, verbruik_watt, slijtage_per_print, actief FROM printers WHERE id = ?'),
       artikel: db.prepare('SELECT id, type, naam, verkoopprijs, wordt_verkocht, vaste_prijs FROM artikelen WHERE id = ?'),
     };
     cache.set(db, s);
