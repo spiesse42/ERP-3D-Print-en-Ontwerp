@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { initDb, sluitDb, getDb, bijlagenMap } from '../db/index.js';
-import { leesWebshop, bewaarWebshop, pushWebshop, slugVan } from '../domein/webshoppush.js';
+import { leesWebshop, bewaarWebshop, pushWebshop, slugVan, LAYER_LEAF_SJABLOON } from '../domein/webshoppush.js';
 
 // nagebootste Sanity: documenten in een Map, GROQ enkel voor de paar vragen die de push stelt
 const docs = new Map();
@@ -73,4 +73,18 @@ test('W3. bijwerken; in Sanity gewijzigd → 409, forceren overschrijft; foto ni
   await assert.rejects(pushWebshop(db, art, { fetchFn: nep }), e => e.status === 409);
   const r = await pushWebshop(db, art, { fetchFn: nep, forceer: true });
   assert.equal(r.nieuw, false);
+});
+
+test('W9. Layer & Leaf: standaard in de beschrijving (ook in een subcategorie), niet dubbel, melding zolang leeg', async () => {
+  const db = getDb();
+  const ll = Number(db.prepare(`INSERT INTO categorieen (naam) VALUES ('Layer & Leaf')`).run().lastInsertRowid);
+  const sub = Number(db.prepare(`INSERT INTO categorieen (naam, ouder_id) VALUES ('Katten', ?)`).run(ll).lastInsertRowid);
+  const id = Number(db.prepare(`INSERT INTO artikelen (type, naam, zelf_geprint, wordt_verkocht, verkoopprijs, categorie_id) VALUES ('artikel', 'Japandi kat', 1, 1, 12, ?)`).run(sub).lastInsertRowid);
+  const w = await leesWebshop(db, id, { fetchFn: nep });
+  assert.equal(w.data.description, LAYER_LEAF_SJABLOON);
+  bewaarWebshop(db, id, { ...w.data, description: `Zittende kat.\n\n${LAYER_LEAF_SJABLOON}` });
+  assert.equal((await leesWebshop(db, id, { fetchFn: nep })).data.description.match(/Standaardkleur/g).length, 1, 'niet dubbel');
+  bewaarWebshop(db, id, { ...w.data, description: 'Zittende kat.' });
+  assert.match((await leesWebshop(db, id, { fetchFn: nep })).data.description, /^Zittende kat\.\n\nStandaardkleur:/, 'achter een bestaande tekst');
+  assert.equal((await leesWebshop(db, art, { fetchFn: nep })).data.description.includes('Standaardkleur'), false, 'andere categorie: niets');
 });

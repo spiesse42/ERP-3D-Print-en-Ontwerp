@@ -28,7 +28,7 @@ export default function WebshopBulk({ artikelen, onSluit, onKlaar }) {
           await api.put(`/producten/${a.id}/webshop`, { ...w.data, category_id: w.data.category_id || cat, description: w.data.description || tekst });
         }
         const r = await api.post(`/producten/${a.id}/webshop/push`, {});
-        setUitslag(u => ({ ...u, [a.id]: `${r.nieuw ? 'aangemaakt' : 'bijgewerkt'}${r.verborgen ? ' (verborgen)' : ''}` }));
+        setUitslag(u => ({ ...u, [a.id]: `${r.nieuw ? 'aangemaakt' : 'bijgewerkt'}${r.verborgen ? ' (verborgen)' : ''}${r.waarschuwing ? ` · ${r.waarschuwing}` : ''}` }));
       } catch (e) { setUitslag(u => ({ ...u, [a.id]: `fout: ${e.message}` })); }
     }
     setBezig(false);
@@ -51,7 +51,7 @@ export default function WebshopBulk({ artikelen, onSluit, onKlaar }) {
           </select></div>
       </div>
       <label htmlFor="wb-tekst" style={{ display: 'block', marginTop: 8 }}>Standaardbeschrijving, voor wie er nog geen heeft</label>
-      <textarea id="wb-tekst" className="inp" rows={3} value={tekst} onChange={e => setTekst(e.target.value)} placeholder="bv. 3D-geprint in PLA, met een led-theelichtje. Ontwerp: Layer And Leaf." />
+      <textarea id="wb-tekst" className="inp" rows={3} value={tekst} onChange={e => setTekst(e.target.value)} placeholder="bv. 3D-geprint in PLA, met een led-theelichtje. (Layer & Leaf: standaardkleur, afmetingen en 'Design by Layer & Leaf' komen er vanzelf bij.)" />
       <div className="tabelvak" style={{ maxHeight: 340, overflow: 'auto', marginTop: 10 }}>
         <table className="mini">
           <thead><tr><th /><th>Artikel</th><th className="r">Prijs</th><th>Webshop</th><th>Resultaat</th></tr></thead>
