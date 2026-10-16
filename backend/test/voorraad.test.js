@@ -269,3 +269,18 @@ test('artikel kopiëren: eigenschappen, printprofiel, onderdelen en leveranciers
   assert.equal(ok(await vraag('GET', `/voorraad/artikelen/${bron}`)).naam, 'Kopieerbare beer');
   assert.equal((await vraag('POST', '/voorraad/artikelen/99999/kopie')).status, 404);
 });
+
+test('slijtage per printer: leeg = tarief uit Instellingen, 0 = geen slijtage; kost per run en per plaat volgen', async () => {
+  const { runKost } = await import('../productie/kost.js');
+  const a = ok(await vraag('POST', '/printers', { naam: 'Wisselaar-test AMS', machine_per_uur: 0.3, verbruik_watt: 100 }), 201).id;
+  const b = ok(await vraag('POST', '/printers', { naam: 'Wisselaar-test U1', machine_per_uur: 0.3, verbruik_watt: 100, slijtage_per_print: '0' }), 201).id;
+  const c = ok(await vraag('POST', '/printers', { naam: 'Wisselaar-test 5ct', machine_per_uur: 0.3, verbruik_watt: 100, slijtage_per_print: '0,05' }), 201).id;
+  assert.equal((await vraag('POST', '/printers', { naam: 'Wisselaar-test fout', slijtage_per_print: '-1' })).status, 400);
+  const db = getDb();
+  const run = id => ({ printer_id: id, uitkomst: 'klaar', gestart_op: '2026-10-16T10:00:00Z', geeindigd_op: '2026-10-16T11:00:00Z', kwh: 0.1 });
+  const tarief = db.prepare("SELECT waarde FROM tarieven WHERE sleutel = 'bmcu_per_job'").get().waarde;
+  assert.equal(runKost(db, run(a)).bmcu, tarief);
+  assert.equal(runKost(db, run(b)).bmcu, 0);
+  assert.equal(runKost(db, run(c)).bmcu, 0.05);
+  assert.equal(db.prepare('SELECT slijtage_per_print s FROM printers WHERE id = ?').get(a).s, null);
+});

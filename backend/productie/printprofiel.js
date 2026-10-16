@@ -107,13 +107,13 @@ export function schatKost(db, profiel, onderdelen = []) {
       if (kg == null) ontbreekt.push('inkoopprijs filament'); else filament += m.gram / 1000 * kg;
     }
     const uren = (profiel.tijd_min || 0) / 60;
-    const p = profiel.printer_id ? db.prepare('SELECT naam, machine_per_uur, verbruik_watt FROM printers WHERE id = ?').get(profiel.printer_id) : null;
+    const p = profiel.printer_id ? db.prepare('SELECT naam, machine_per_uur, verbruik_watt, slijtage_per_print FROM printers WHERE id = ?').get(profiel.printer_id) : null;
     if (!p) ontbreekt.push('printer in het printprofiel');
     else {
       if (p.verbruik_watt == null || t.kwh_prijs == null) ontbreekt.push('verbruik (watt) of kWh-prijs'); else energie = p.verbruik_watt / 1000 * uren * t.kwh_prijs;
       if (p.machine_per_uur == null) ontbreekt.push(`machinetarief ${p.naam}`); else machine = uren * p.machine_per_uur;
     }
-    bmcu = (t.bmcu_per_job ?? 0) / pp;
+    bmcu = (p?.slijtage_per_print ?? t.bmcu_per_job ?? 0) / pp;
     const voorb = profiel.voorbereiding_min ?? t.voorbereiding_min ?? 0;
     const nabew = profiel.nabewerking_min ?? 0;
     arbeid = (voorb / pp + nabew) / 60 * (t.arbeid_per_uur ?? 0);

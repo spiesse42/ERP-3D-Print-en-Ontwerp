@@ -101,7 +101,7 @@ export function productiekost(db, opdracht, goed = opdracht.aantal_goed, { mater
     ontbreekt.push(regel ? 'gewicht filament (op de printregel van het dossier)'
       : mat.length ? 'gewicht filament (open de printopdracht → Filament)' : 'filament en gewicht (open de printopdracht → Filament)');
   }
-  const runs = db.prepare(`SELECT r.*, p.machine_per_uur FROM printruns r JOIN printers p ON p.id = r.printer_id
+  const runs = db.prepare(`SELECT r.*, p.machine_per_uur, p.slijtage_per_print FROM printruns r JOIN printers p ON p.id = r.printer_id
     WHERE r.printopdracht_id = ? AND r.uitkomst <> 'bezig'`).all(opdracht.id);
   let energie = 0, machine = 0, kwh = 0, uren = 0;
   for (const r of runs) {
@@ -109,7 +109,7 @@ export function productiekost(db, opdracht, goed = opdracht.aantal_goed, { mater
     if (r.kwh == null) ontbreekt.push('kWh van een run (open de run → Verbruik aanvullen)'); else if (t.kwh_prijs == null) ontbreekt.push('kWh-prijs (Instellingen → Tarieven)'); else energie += r.kwh * t.kwh_prijs;
     if (r.machine_per_uur == null) ontbreekt.push(`machinetarief ${db.prepare('SELECT naam FROM printers WHERE id = ?').get(r.printer_id)?.naam || ''}`.trim()); else machine += duurU(r) * r.machine_per_uur;
   }
-  const bmcu = runs.length * (t.bmcu_per_job ?? 0);
+  const bmcu = runs.reduce((s, r) => s + (r.slijtage_per_print ?? t.bmcu_per_job ?? 0), 0);
   const arb = arbeidVan(regel, t, deel);
   const arbeid = arb.euro;
   const kost = filament + energie + machine + bmcu;
@@ -143,7 +143,7 @@ export function schatOpdracht(db, o) {
     if (kg == null) ontbreekt.push(`inkoopprijs filament ${m.naam || ''}`.trim()); else filament += f;
     voegFilamentToe(filamenten, m.naam || '(onbekend)', m.gram * deel, f);
   }
-  const p = db.prepare('SELECT naam, machine_per_uur, verbruik_watt FROM printers WHERE id = ?').get(o.printer_id);
+  const p = db.prepare('SELECT naam, machine_per_uur, verbruik_watt, slijtage_per_print FROM printers WHERE id = ?').get(o.printer_id);
   const uren = regel?.tijd_min != null ? Number(regel.tijd_min) * deel / 60 : null;
   let energie = 0, machine = 0, kwh = 0;
   if (uren == null) ontbreekt.push('printtijd');
@@ -152,7 +152,7 @@ export function schatOpdracht(db, o) {
     if (p?.verbruik_watt == null || t.kwh_prijs == null) ontbreekt.push('verbruik (watt) of kWh-prijs'); else energie = kwh * t.kwh_prijs;
     if (p?.machine_per_uur == null) ontbreekt.push(`machinetarief ${p?.naam || ''}`.trim()); else machine = uren * p.machine_per_uur;
   }
-  const bmcu = t.bmcu_per_job ?? 0;
+  const bmcu = p?.slijtage_per_print ?? t.bmcu_per_job ?? 0;
   const arb = arbeidVan(regel, t, deel);
   const arbeid = arb.euro;
   const kost = filament + energie + machine + bmcu;
@@ -166,10 +166,10 @@ export function schatOpdracht(db, o) {
 // Filament telt niet mee: wat een mislukte poging verbruikte is niet gekend.
 export function runKost(db, r, t = getTarieven(db)) {
   if (r.uitkomst === 'bezig' || !r.gestart_op) return null;
-  const p = db.prepare('SELECT machine_per_uur FROM printers WHERE id = ?').get(r.printer_id);
+  const p = db.prepare('SELECT machine_per_uur, slijtage_per_print FROM printers WHERE id = ?').get(r.printer_id);
   const energie = r.kwh != null && t.kwh_prijs != null ? r.kwh * t.kwh_prijs : null;
   const machine = p?.machine_per_uur != null ? duurU(r) * p.machine_per_uur : null;
-  const bmcu = t.bmcu_per_job ?? 0;
+  const bmcu = p?.slijtage_per_print ?? t.bmcu_per_job ?? 0;
   return { energie: energie == null ? null : rond(energie), machine: machine == null ? null : rond(machine), bmcu: rond(bmcu),
     kost: rond((energie ?? 0) + (machine ?? 0) + bmcu), onvolledig: energie == null || machine == null };
 }
