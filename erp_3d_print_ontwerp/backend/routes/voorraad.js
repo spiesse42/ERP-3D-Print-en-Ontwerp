@@ -141,6 +141,37 @@ r.put('/artikelen/:id', metFouten((req, res) => {
   res.json({ ok: true });
 }));
 
+// 16-10: artikel kopiëren om een gelijkaardig product snel aan te maken.
+// Mee: eigenschappen, prijzen, printprofiel, onderdelen, leveranciers en de
+// webshopgegevens (tekst, kleuren, vinkjes; verborgen). Niet mee: voorraad,
+// bewegingen, foto's/bestanden, Sanity-koppeling, slug en historiek.
+r.post('/artikelen/:id/kopie', metFouten((req, res) => {
+  const db = getDb();
+  const id = idVan(req);
+  const oud = db.prepare('SELECT * FROM artikelen WHERE id = ?').get(id);
+  if (!oud) return res.status(404).json({ error: 'Artikel niet gevonden' });
+  if (oud.type === 'filament') throw new DomeinFout('Een filament kun je niet kopiëren: per prijsgroep en kleur bestaat er maar één artikel');
+  const bestaat = n => db.prepare('SELECT 1 FROM artikelen WHERE naam = ? COLLATE NOCASE').get(n);
+  let naam = `${oud.naam} (kopie)`;
+  for (let i = 2; bestaat(naam); i++) naam = `${oud.naam} (kopie ${i})`;
+  let webshop = null;
+  if (oud.webshop_data) {
+    // foto's en bijlagen horen bij het oorspronkelijke product; nieuw product blijft verborgen tot je het controleert
+    const { image_bijlage_id, photo_bijlage_ids, assets, createdAt, ...rest } = JSON.parse(oud.webshop_data);
+    webshop = JSON.stringify({ ...rest, image_bijlage_id: null, photo_bijlage_ids: [], createdAt: null, hidden: true });
+  }
+  const nieuwId = db.transaction(() => {
+    const nieuw = maakArtikel(db, { ...oud, naam }, `Gekopieerd van "${oud.naam}"`);
+    db.prepare('UPDATE artikelen SET printprofiel = ?, webshop_gewicht_g = ?, webshop_data = ? WHERE id = ?')
+      .run(oud.printprofiel, oud.webshop_gewicht_g, webshop, nieuw);
+    db.prepare(`INSERT INTO artikel_leveranciers (artikel_id, leverancier_id, productcode, omschrijving, laatste_prijs, levertijd_dagen, voorkeur)
+      SELECT ?, leverancier_id, NULL, omschrijving, laatste_prijs, levertijd_dagen, voorkeur FROM artikel_leveranciers WHERE artikel_id = ?`).run(nieuw, id);
+    db.prepare('INSERT INTO artikel_onderdelen (artikel_id, onderdeel_id, aantal, volgorde) SELECT ?, onderdeel_id, aantal, volgorde FROM artikel_onderdelen WHERE artikel_id = ?').run(nieuw, id);
+    return nieuw;
+  })();
+  res.status(201).json({ id: nieuwId, naam });
+}));
+
 // 10-10: enkel de verkoopprijs (snel invullen vanuit de lijst); leeg = geen prijs
 r.patch('/artikelen/:id/verkoopprijs', metFouten((req, res) => {
   const db = getDb();
