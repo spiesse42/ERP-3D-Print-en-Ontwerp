@@ -114,6 +114,19 @@ test('H5. Kobra (Anycubic S1 MQTT Bridge): printer_state is leidend', () => {
   assert.equal(l.laag, 120); assert.equal(l.lagen, 300); assert.equal(l.verstreken_min, 45);
 });
 
+test('H5c. Snapmaker U1 (Moonraker): status, voortgang en tijden in seconden', () => {
+  const p = { koppeling: 'moonraker_ha', ha_prefix: 'sensor.snappie_u1_' };
+  const s = o => new Map(Object.entries(o).map(([k, v]) => [`sensor.snappie_u1_${k}`, { state: v }]));
+  for (const [ruw, uit] of [['printing', 'bezig'], ['paused', 'pauze'], ['complete', 'klaar'], ['cancelled', 'geannuleerd'], ['error', 'mislukt'], ['standby', 'vrij']]) {
+    assert.equal(leesPrinter(p, s({ current_print_state: ruw })).status, uit, ruw);
+  }
+  const l = leesPrinter(p, s({ current_print_state: 'printing', progress: '42', filename: 'beer.gcode', print_time_left: '3600', print_duration: '1200', current_layer: '10', total_layer: '50', bed_temperature: '60', extruder_temperature: '220' }));
+  assert.equal(l.voortgang, 42); assert.equal(l.bestand, 'beer.gcode');
+  assert.equal(l.resterend_min, 60); assert.equal(l.verstreken_min, 20);
+  assert.equal(l.laag, 10); assert.equal(l.lagen, 50); assert.equal(l.bed, 60); assert.equal(l.nozzle, 220);
+  assert.equal(leesPrinter(p, new Map()).ontbrekend.length, 9, 'ontbrekende entiteiten worden gemeld');
+});
+
 test('H5b. Bambu: resterende tijd in uren (standaard), of volgens de eenheid van HA', () => {
   const p = { koppeling: 'bambu_ha', ha_prefix: 'sensor.a1_' };
   const m = (state, unit) => new Map([['sensor.a1_printstatus', { state: 'running' }], ['sensor.a1_resterende_tijd', { state, attributes: unit ? { unit_of_measurement: unit } : {} }]]);
