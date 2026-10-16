@@ -87,7 +87,7 @@ function berekenRegel(regel, t, stand) {
     const voorb = of(regel.voorbereiding_min, t.voorbereiding_min * platen);
     const nabew = of(regel.nabewerking_min, t.nabewerking_min);
     const arbeid = (voorb + nabew) / 60 * t.arbeid_per_uur;
-    const bmcu = t.bmcu_per_job * platen;
+    const bmcu = (getal(p.slijtage_per_print) ?? t.bmcu_per_job) * platen;
     // 08-10 printuurmodel: winst per printuur; boven de grens aan een lager pct
     const winst = t.nieuw ? t.winst_u * (Math.min(uren, t.winst_grens) + Math.max(0, uren - t.winst_grens) * t.winst_lang / 100) : 0;
     return {

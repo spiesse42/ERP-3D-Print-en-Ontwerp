@@ -8,12 +8,12 @@ import { logGebeurtenis, beschrijfWijzigingen, wisHistoriek } from '../domein/hi
 import { KOPPELINGEN, metDomein } from '../productie/adapters.js';
 
 const r = Router();
-const LABELS = { naam: 'Naam', machine_per_uur: 'Machinetarief (€/u)', verbruik_watt: 'Gemiddeld verbruik (W)', notities: 'Notities',
+const LABELS = { naam: 'Naam', machine_per_uur: 'Machinetarief (€/u)', verbruik_watt: 'Gemiddeld verbruik (W)', slijtage_per_print: 'Wisselaar-slijtage per print (€)', notities: 'Notities',
   koppeling: 'Koppeling', ha_prefix: 'Begin entiteitsnamen', watt_entity: 'Wattmeter', kwh_entity: 'kWh-meter', camera_entity: 'Camera',
   pauze_entity: 'Pauzeknop', hervat_entity: 'Hervatknop', annuleer_entity: 'Annuleerknop' };
 // Koppeling met Home Assistant (stap 6a). Knoppen en camera hebben een
 // eigen domein (button., camera.) en moeten dus volledig ingevuld worden.
-const VELDEN = ['naam', 'machine_per_uur', 'verbruik_watt', 'notities', 'koppeling', 'ha_prefix', 'watt_entity', 'kwh_entity', 'camera_entity', 'pauze_entity', 'hervat_entity', 'annuleer_entity'];
+const VELDEN = ['naam', 'machine_per_uur', 'verbruik_watt', 'slijtage_per_print', 'notities', 'koppeling', 'ha_prefix', 'watt_entity', 'kwh_entity', 'camera_entity', 'pauze_entity', 'hervat_entity', 'annuleer_entity'];
 const KOPPEL_VELDEN = ['ha_prefix', 'watt_entity', 'kwh_entity', 'camera_entity', 'pauze_entity', 'hervat_entity', 'annuleer_entity'];
 const VOLLEDIG = { camera_entity: 'camera.', pauze_entity: 'button.', hervat_entity: 'button.', annuleer_entity: 'button.' };
 
@@ -24,6 +24,8 @@ function lees(body) {
   const watt = optioneelGetal(body?.verbruik_watt);
   if (Number.isNaN(machine) || (machine !== null && machine < 0)) return { fout: 'Machinetarief moet een getal ≥ 0 zijn' };
   if (Number.isNaN(watt) || (watt !== null && watt < 0)) return { fout: 'Verbruik moet een getal ≥ 0 zijn (watt)' };
+  const slijtage = optioneelGetal(body?.slijtage_per_print);
+  if (Number.isNaN(slijtage) || (slijtage !== null && slijtage < 0)) return { fout: 'Wisselaar-slijtage moet een getal ≥ 0 zijn (leeg = tarief uit Instellingen)' };
   const notities = String(body?.notities || '').trim() || null;
   const koppeling = body?.koppeling || 'manueel';
   if (!KOPPELINGEN[koppeling]) return { fout: 'Onbekende koppeling' };
@@ -35,7 +37,7 @@ function lees(body) {
     k[v] = t ? (['watt_entity', 'kwh_entity', 'ha_prefix'].includes(v) ? metDomein(t) : t) : null;
   }
   if (koppeling !== 'manueel' && !k.ha_prefix) return { fout: 'Vul het begin van de entiteitsnamen in (bv. sensor.a1mini_0309_)' };
-  return { p: { naam, machine_per_uur: machine, verbruik_watt: watt, notities, koppeling, ...k } };
+  return { p: { naam, machine_per_uur: machine, verbruik_watt: watt, slijtage_per_print: slijtage, notities, koppeling, ...k } };
 }
 
 r.get('/', (req, res) => {

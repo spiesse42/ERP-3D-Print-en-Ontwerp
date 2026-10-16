@@ -9,7 +9,7 @@ import { euro, naarInvoer } from '../../lib/formaat.js';
 // rekenen: geen terugval op een globaal tarief), gemiddeld verbruik (voor de
 // schatting op offertes), actief. Home Assistant-koppeling volgt in stap 6.
 const KOPPEL = ['koppeling', 'ha_prefix', 'watt_entity', 'kwh_entity', 'camera_entity', 'pauze_entity', 'hervat_entity', 'annuleer_entity'];
-const LEEG = { naam: '', machine_per_uur: '', verbruik_watt: '', notities: '', koppeling: 'manueel', ha_prefix: '', watt_entity: '', kwh_entity: '', camera_entity: '', pauze_entity: '', hervat_entity: '', annuleer_entity: '' };
+const LEEG = { naam: '', machine_per_uur: '', verbruik_watt: '', slijtage_per_print: '', notities: '', koppeling: 'manueel', ha_prefix: '', watt_entity: '', kwh_entity: '', camera_entity: '', pauze_entity: '', hervat_entity: '', annuleer_entity: '' };
 const KOPPELINGEN = [['manueel', 'Manueel (starten/stoppen met een knop)'], ['bambu_ha', 'Bambu Lab via Home Assistant'], ['anycubic_ha', 'Anycubic S1 MQTT Bridge via Home Assistant']];
 const VOORBEELD = { bambu_ha: 'sensor.a1mini_0309…_', anycubic_ha: 'sensor.anycubic_s1_' };
 
@@ -25,7 +25,7 @@ export default function Printers() {
   function openen(p) {
     setOpen(p);
     setTest(null);
-    setForm(p === 'nieuw' ? LEEG : { naam: p.naam, machine_per_uur: naarInvoer(p.machine_per_uur), verbruik_watt: naarInvoer(p.verbruik_watt), notities: p.notities || '',
+    setForm(p === 'nieuw' ? LEEG : { naam: p.naam, machine_per_uur: naarInvoer(p.machine_per_uur), verbruik_watt: naarInvoer(p.verbruik_watt), slijtage_per_print: naarInvoer(p.slijtage_per_print), notities: p.notities || '',
       ...Object.fromEntries(KOPPEL.map(k => [k, p[k] || (k === 'koppeling' ? 'manueel' : '')])) });
   }
   async function opslaan() {
@@ -89,6 +89,8 @@ export default function Printers() {
             <div style={{ gridColumn: '1/-1' }}><label htmlFor="p-naam">Naam</label><input id="p-naam" className="inp" value={form.naam} onChange={zet('naam')} autoFocus /></div>
             <div><label htmlFor="p-tarief">Machinetarief</label><div className="unit"><input id="p-tarief" className="inp num" inputMode="decimal" value={form.machine_per_uur} onChange={zet('machine_per_uur')} placeholder="bv. 0,18" /><span>€/uur</span></div></div>
             <div><label htmlFor="p-watt">Gemiddeld verbruik</label><div className="unit"><input id="p-watt" className="inp num" inputMode="decimal" value={form.verbruik_watt} onChange={zet('verbruik_watt')} placeholder="bv. 95" /><span>watt</span></div></div>
+            <div style={{ gridColumn: '1/-1' }}><label htmlFor="p-slijtage">Wisselaar-slijtage per print (BMCU/AMS)</label><div className="unit"><input id="p-slijtage" className="inp num" inputMode="decimal" value={form.slijtage_per_print} onChange={zet('slijtage_per_print')} placeholder="leeg = tarief uit Instellingen" /><span>€/print</span></div>
+              <div className="sub">Leeg: het tarief uit Instellingen → Tarieven. Zet 0 voor een printer zonder wisselaar (bv. Snapmaker U1).</div></div>
             <div style={{ gridColumn: '1/-1' }}><label htmlFor="p-koppeling">Koppeling</label>
               <select id="p-koppeling" className="inp" value={form.koppeling} onChange={zet('koppeling')}>
                 {KOPPELINGEN.map(([w, l]) => <option key={w} value={w}>{l}</option>)}
