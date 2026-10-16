@@ -239,3 +239,33 @@ test('categorieën: boom met pad, geen lus, niet weg zolang in gebruik', async (
   assert.equal(r.status, 400); assert.match(r.data.error, /1 artikel/);
   assert.equal((await artikel(hond)).categorie, 'Componenten / Ringen');
 });
+
+test('artikel kopiëren: eigenschappen, printprofiel, onderdelen en leveranciers mee; voorraad en webshopkoppeling niet', async () => {
+  const lev = ok(await vraag('POST', '/leveranciers', { naam: 'Kopie-leverancier' }), 201).id;
+  const basis = { type: 'artikel', wordt_gekocht: false, wordt_verkocht: true, zelf_geprint: true, naam: 'Kopieerbare beer', verkoopprijs: 12, productieprijs: 3 };
+  const bron = ok(await vraag('POST', '/voorraad/artikelen', basis), 201).id;
+  const onderdeel = ok(await vraag('POST', '/voorraad/artikelen', { type: 'artikel', wordt_gekocht: true, naam: 'Kopie-sleutelring', inkoopprijs: 0.1 }), 201).id;
+  getDb().prepare('INSERT INTO artikel_onderdelen (artikel_id, onderdeel_id, aantal) VALUES (?,?,2)').run(bron, onderdeel);
+  getDb().prepare('UPDATE artikelen SET printprofiel = ?, webshop_slug = ?, webshop_sanity_id = ? WHERE id = ?').run('{"gewicht_g":10}', 'beer', 'sanity-1', bron);
+  ok(await vraag('PUT', `/voorraad/artikelen/${bron}`, { ...basis, leveranciers: [{ leverancier_id: lev, productcode: 'ABC', laatste_prijs: 1, voorkeur: true }] }));
+
+  const k1 = ok(await vraag('POST', `/voorraad/artikelen/${bron}/kopie`), 201);
+  assert.equal(k1.naam, 'Kopieerbare beer (kopie)');
+  const k2 = ok(await vraag('POST', `/voorraad/artikelen/${bron}/kopie`), 201);
+  assert.equal(k2.naam, 'Kopieerbare beer (kopie 2)');
+
+  const a = await artikel(k1.id);
+  assert.equal(a.verkoopprijs, 12);
+  assert.equal(a.zelf_geprint, 1);
+  const rij = getDb().prepare('SELECT printprofiel, webshop_slug, webshop_sanity_id FROM artikelen WHERE id = ?').get(k1.id);
+  assert.equal(rij.printprofiel, '{"gewicht_g":10}');
+  assert.equal(rij.webshop_slug, null);
+  assert.equal(rij.webshop_sanity_id, null);
+  assert.equal(getDb().prepare('SELECT aantal FROM artikel_onderdelen WHERE artikel_id = ? AND onderdeel_id = ?').get(k1.id, onderdeel).aantal, 2);
+  const l = getDb().prepare('SELECT productcode, voorkeur FROM artikel_leveranciers WHERE artikel_id = ?').all(k1.id);
+  assert.equal(l.length, 1);
+  assert.equal(l[0].productcode, null);
+  assert.equal(a.mutaties, 0);
+  assert.equal(ok(await vraag('GET', `/voorraad/artikelen/${bron}`)).naam, 'Kopieerbare beer');
+  assert.equal((await vraag('POST', '/voorraad/artikelen/99999/kopie')).status, 404);
+});

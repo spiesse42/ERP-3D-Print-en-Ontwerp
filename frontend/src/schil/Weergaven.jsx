@@ -177,7 +177,7 @@ export function FormActies({ links, rechts }) {
 // Links in dezelfde balk: de knop terug naar het overzicht (wens 24-09,
 // `terug = { label, naar }`), het label "Gearchiveerd" en eventueel `links`.
 // De balk blijft bovenaan staan tijdens het scrollen (lange formulieren, gsm).
-export function FormKnoppen({ vuil, nieuw, bezig, onOpslaan, onVerwerp, gearchiveerd, onArchiveer, onVerwijder, links, terug }) {
+export function FormKnoppen({ vuil, nieuw, bezig, onOpslaan, onVerwerp, gearchiveerd, onArchiveer, onVerwijder, onKopieer, links, terug }) {
   const { navigeer } = useOmgeving();
   return (
     <div className="sheet-bar">
@@ -195,6 +195,7 @@ export function FormKnoppen({ vuil, nieuw, bezig, onOpslaan, onVerwerp, gearchiv
           <button type="button" className="btn primary" disabled={bezig} onClick={onOpslaan}>{bezig ? 'Bezig…' : 'Opslaan'}</button>
           <button type="button" className="btn" disabled={bezig} onClick={onVerwerp}>Verwerpen</button>
         </> : <>
+          {onKopieer && <button type="button" className="btn" onClick={onKopieer} title="Maak een kopie om aan te passen"><Icoon naam="kopie" maat={16} /> Kopiëren</button>}
           {onArchiveer && (gearchiveerd
             ? <button type="button" className="btn" onClick={() => onArchiveer(false)}><Icoon naam="herstel" maat={16} /> Herstellen</button>
             : <button type="button" className="btn ghost" onClick={() => onArchiveer(true)}><Icoon naam="archief" maat={16} /> Archiveren</button>)}
