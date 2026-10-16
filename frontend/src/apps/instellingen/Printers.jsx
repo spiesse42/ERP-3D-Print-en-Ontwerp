@@ -10,8 +10,8 @@ import { euro, naarInvoer } from '../../lib/formaat.js';
 // schatting op offertes), actief. Home Assistant-koppeling volgt in stap 6.
 const KOPPEL = ['koppeling', 'ha_prefix', 'watt_entity', 'kwh_entity', 'camera_entity', 'pauze_entity', 'hervat_entity', 'annuleer_entity'];
 const LEEG = { naam: '', machine_per_uur: '', verbruik_watt: '', slijtage_per_print: '', notities: '', koppeling: 'manueel', ha_prefix: '', watt_entity: '', kwh_entity: '', camera_entity: '', pauze_entity: '', hervat_entity: '', annuleer_entity: '' };
-const KOPPELINGEN = [['manueel', 'Manueel (starten/stoppen met een knop)'], ['bambu_ha', 'Bambu Lab via Home Assistant'], ['anycubic_ha', 'Anycubic S1 MQTT Bridge via Home Assistant']];
-const VOORBEELD = { bambu_ha: 'sensor.a1mini_0309…_', anycubic_ha: 'sensor.anycubic_s1_' };
+const KOPPELINGEN = [['manueel', 'Manueel (starten/stoppen met een knop)'], ['bambu_ha', 'Bambu Lab via Home Assistant'], ['anycubic_ha', 'Anycubic S1 MQTT Bridge via Home Assistant'], ['moonraker_ha', 'Snapmaker U1 (Moonraker) via Home Assistant']];
+const VOORBEELD = { bambu_ha: 'sensor.a1mini_0309…_', anycubic_ha: 'sensor.anycubic_s1_', moonraker_ha: 'sensor.snappie_u1_' };
 
 export default function Printers() {
   const { data, fout, laden, herlaad } = useData('/printers');
@@ -69,7 +69,7 @@ export default function Printers() {
                   <td><b>{p.naam}</b></td>
                   <td className="r num">{p.machine_per_uur == null ? <span className="badge b-warn">ontbreekt</span> : `${euro(p.machine_per_uur)}/u`}</td>
                   <td className="r num">{p.verbruik_watt == null ? <span className="badge b-warn">ontbreekt</span> : `${naarInvoer(p.verbruik_watt)} W`}</td>
-                  <td className="sub">{{ manueel: 'manueel', bambu_ha: 'Bambu · HA', anycubic_ha: 'Anycubic · HA' }[p.koppeling] || 'manueel'}</td>
+                  <td className="sub">{{ manueel: 'manueel', bambu_ha: 'Bambu · HA', anycubic_ha: 'Anycubic · HA', moonraker_ha: 'Moonraker · HA' }[p.koppeling] || 'manueel'}</td>
                   <td>{p.actief ? <span className="badge b-pos">Actief</span> : <span className="badge b-neutral">Gedeactiveerd</span>}</td>
                 </tr>
               ))}
