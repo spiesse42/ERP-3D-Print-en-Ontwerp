@@ -22,10 +22,16 @@ import { DomeinFout } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
 import { sanityQuery, sanityMutate, sanityAfbeelding } from '../integraties/sanity.js';
 
-const BOOL = ['priceFrom', 'imageIsRender', 'customOrder', 'featured', 'hidden', 'comingSoon', 'colorChoice'];
+const BOOL = ['priceFrom', 'imageIsRender', 'customOrder', 'featured', 'hidden', 'comingSoon', 'colorChoice', 'textChoice', 'fontChoice'];
+// 18-10: lettertypes voor naam/tekst (zelfde lijst als de webshop: src/data/fonts.ts)
+export const LETTERTYPES = ['Archivo Black', 'Russo One', 'Bebas Neue', 'Pacifico', 'Titan One', 'Lilita One', 'Luckiest Guy', 'Lobster', 'Modak', 'Sniglet',
+  'Coiny', 'Chewy', 'Bangers', 'Rammetto One', 'Bowlby One', 'Poppins Black', 'Paytone One', 'Passion One', 'Changa One', 'Fugaz One', 'Anton', 'Bungee',
+  'Rubik Mono One', 'Righteous', 'Audiowide', 'Alfa Slab One', 'Ultra', 'Shrikhand', 'Black Ops One', 'Press Start 2P', 'Permanent Marker', 'Creepster',
+  'Kaushan Script', 'Leckerli One', 'Damion', 'Grand Hotel'];
 const STANDAARD = { description: '', priceFrom: false, emoji: '✨', category_id: null, createdAt: null, image_bijlage_id: null, photo_bijlage_ids: [],
   imageIsRender: false, customOrder: false, featured: false, featuredOrder: null, hidden: true, comingSoon: false,
-  colorChoice: false, colorChoiceCount: null, colorChoiceLabel: '', allowedColors: [], weightGrams: null };
+  colorChoice: false, colorChoiceCount: null, colorChoiceLabel: '', allowedColors: [], weightGrams: null,
+  textChoice: false, textLabel: '', textMaxLength: null, fontChoice: false, allowedFonts: [] };
 const vandaag = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });
 const getalOfNull = (v, wat) => {
   if (v === null || v === undefined || String(v).trim() === '') return null;
@@ -85,6 +91,9 @@ export function leesInvoer(db, artikelId, b) {
   d.colorChoiceLabel = String(b?.colorChoiceLabel ?? '').trim();
   d.allowedColors = (Array.isArray(b?.allowedColors) ? b.allowedColors : []).map(String).filter(Boolean);
   d.weightGrams = getalOfNull(b?.weightGrams, 'Gewicht');
+  d.textLabel = String(b?.textLabel ?? '').trim();
+  d.textMaxLength = getalOfNull(b?.textMaxLength, 'Maximum aantal tekens');
+  d.allowedFonts = (Array.isArray(b?.allowedFonts) ? b.allowedFonts : []).map(String).filter(f => LETTERTYPES.includes(f));
   return d;
 }
 
@@ -99,12 +108,14 @@ export async function leesWebshop(db, artikelId, { fetchFn = fetch } = {}) {
     try {
       const p = await sanityQuery(`*[_type == "product" && slug.current == $s && !(_id in path("drafts.**"))][0]{
         description, priceFrom, emoji, "category_id": category._ref, createdAt, imageIsRender, customOrder, featured, featuredOrder, hidden, comingSoon,
-        colorChoice, colorChoiceCount, colorChoiceLabel, "allowedColors": allowedColors[]._ref, weightGrams, "foto": defined(image) }`, { s: a.webshop_slug }, { fetchFn, metToken: false });
+        colorChoice, colorChoiceCount, colorChoiceLabel, "allowedColors": allowedColors[]._ref, weightGrams,
+        textChoice, textLabel, textMaxLength, fontChoice, allowedFonts, "foto": defined(image) }`, { s: a.webshop_slug }, { fetchFn, metToken: false });
       if (p) {
         data = { ...STANDAARD };
         for (const k of Object.keys(STANDAARD)) if (p[k] !== undefined && p[k] !== null) data[k] = p[k];
         for (const k of BOOL) data[k] = !!p[k];
         data.allowedColors = p.allowedColors || [];
+        data.allowedFonts = p.allowedFonts || [];
         sanityFoto = !!p.foto;
         bron = 'sanity';
       }
@@ -170,6 +181,9 @@ export async function pushWebshop(db, artikelId, { forceer = false, fetchFn = fe
   zetOfWeg('featuredOrder', d.featuredOrder);
   zetOfWeg('colorChoiceCount', d.colorChoiceCount);
   zetOfWeg('colorChoiceLabel', d.colorChoiceLabel);
+  zetOfWeg('textLabel', d.textLabel);
+  zetOfWeg('textMaxLength', d.textMaxLength);
+  velden.allowedFonts = d.allowedFonts || [];
   zetOfWeg('weightGrams', d.weightGrams ?? gewichtUitProfiel(a));
   if (d.image_bijlage_id) {
     velden.image = beeld(await asset(db, d, d.image_bijlage_id, fetchFn));
@@ -205,5 +219,5 @@ export async function pushWebshop(db, artikelId, { forceer = false, fetchFn = fe
 export async function keuzes({ fetchFn = fetch } = {}) {
   const r = await sanityQuery(`{ "categorieen": *[_type == "category" && !(_id in path("drafts.**"))] | order(coalesce(parent->sortOrder, sortOrder) asc, defined(parent) asc, sortOrder asc, name asc){ _id, "name": select(defined(parent) => parent->name + " › " + name, name) },
     "kleuren": *[_type == "color" && !(_id in path("drafts.**"))] | order(label asc){ _id, label, hex } }`, {}, { fetchFn, metToken: false });
-  return { categorieen: r?.categorieen || [], kleuren: r?.kleuren || [], token: !!process.env.SANITY_TOKEN };
+  return { categorieen: r?.categorieen || [], kleuren: r?.kleuren || [], lettertypes: LETTERTYPES, token: !!process.env.SANITY_TOKEN };
 }

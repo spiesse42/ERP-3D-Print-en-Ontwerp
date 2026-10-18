@@ -46,7 +46,7 @@ export function leesBestellingen(db, { alles = false, kleuren = null } = {}) {
     const items = JSON.parse(b.items || '[]').map(i => {
       const a = art.get(i.slug, i.variantLabel ?? '') || null;
       const uit = { slug: i.slug, naam: i.name, aantal: i.quantity, prijs: i.price, variant: i.variantLabel ?? null,
-        kleuren: i.colors || (i.color ? [i.color] : []), artikel: a };
+        kleuren: i.colors || (i.color ? [i.color] : []), tekst: i.text ?? null, lettertype: i.font ?? null, artikel: a };
       return { ...uit, kleur_info: uit.kleuren.map(k => ({ label: k, filament: kleur(k)?.filamentName || null, hex: kleur(k)?.hex || null })) };
     });
     const klant = b.email ? db.prepare('SELECT id FROM klanten WHERE lower(email) = lower(?) LIMIT 1').get(b.email) : null;

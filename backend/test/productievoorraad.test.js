@@ -154,3 +154,11 @@ test('V5. productiekost onvolledig zonder inkoopprijs filament', async () => {
   assert.equal(b.kost_onvolledig, 1);
   assert.equal(voorraad(kat), 1);
 });
+
+test('PV-pers. bijprinten met personalisatie: naam en lettertype in de titel, de printregel en de printopdracht', async () => {
+  const u = ok(await vraag('POST', '/productie/eigen-product', { artikel_id: hond, aantal: 1, printer_id: mini, personalisatie: 'Naam: "Lotte" · Lettertype: Lobster' }), 201);
+  const d = ok(await vraag('GET', `/dossiers/${u.dossier_id}`));
+  assert.match(d.titel, /Lotte/); assert.match(d.regels[0].omschrijving, /Naam: "Lotte" · Lettertype: Lobster/);
+  const o = getDb().prepare('SELECT naam FROM printopdrachten WHERE dossier_regel_id = ?').get(d.regels[0].id);
+  assert.match(o.naam, /Lotte/);
+});

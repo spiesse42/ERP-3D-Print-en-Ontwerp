@@ -23,10 +23,11 @@ export default function WebshopFormulier({ art, onKlaar }) {
   const { data: k } = useData('/producten/webshop/keuzes');
   const [f, setF] = useState(null);
   const [bezig, setBezig] = useState(false);
-  useEffect(() => { if (data) setF({ ...data.data, weightGrams: naarInvoer(data.data.weightGrams), featuredOrder: naarInvoer(data.data.featuredOrder), colorChoiceCount: naarInvoer(data.data.colorChoiceCount) }); }, [data]);
+  const alsFormulier = d => ({ ...d, weightGrams: naarInvoer(d.weightGrams), featuredOrder: naarInvoer(d.featuredOrder), colorChoiceCount: naarInvoer(d.colorChoiceCount), textMaxLength: naarInvoer(d.textMaxLength) });
+  useEffect(() => { if (data) setF(alsFormulier(data.data)); }, [data]);
   if (!data || !f) return null;
   const zet = (sl, w) => setF(x => ({ ...x, [sl]: w }));
-  const vuil = JSON.stringify(f) !== JSON.stringify({ ...data.data, weightGrams: naarInvoer(data.data.weightGrams), featuredOrder: naarInvoer(data.data.featuredOrder), colorChoiceCount: naarInvoer(data.data.colorChoiceCount) }) || data.bron !== 'erp';
+  const vuil = JSON.stringify(f) !== JSON.stringify(alsFormulier(data.data)) || data.bron !== 'erp';
   const extra = new Set(f.photo_bijlage_ids || []);
 
   async function bewaar() {
@@ -117,6 +118,23 @@ export default function WebshopFormulier({ art, onKlaar }) {
             {(k?.kleuren || []).map(c => (
               <label key={c._id} className="vinkje"><input type="checkbox" checked={f.allowedColors.includes(c._id)} onChange={e => zet('allowedColors', e.target.checked ? [...f.allowedColors, c._id] : f.allowedColors.filter(x => x !== c._id))} />
                 <span className="kleurstip" style={{ background: c.hex || 'transparent', display: 'inline-block', width: 12, height: 12, borderRadius: 6, border: '1px solid var(--line)' }} /> {c.label}</label>
+            ))}
+          </div>
+        </>}
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <label className="vinkje"><input type="checkbox" checked={!!f.textChoice} onChange={e => zet('textChoice', e.target.checked)} /> Klant geeft een naam/tekst mee</label>
+        {f.textChoice && <div className="fgrid">
+          <div><label htmlFor="ws-tl">Naam van het tekstveld</label><input id="ws-tl" className="inp" placeholder="Naam" value={f.textLabel} onChange={e => zet('textLabel', e.target.value)} /></div>
+          <div><label htmlFor="ws-tm">Maximum aantal tekens</label><input id="ws-tm" className="inp num" inputMode="numeric" placeholder="20" value={f.textMaxLength} onChange={e => zet('textMaxLength', e.target.value)} /></div>
+        </div>}
+        <label className="vinkje"><input type="checkbox" checked={!!f.fontChoice} onChange={e => zet('fontChoice', e.target.checked)} /> Klant kiest een lettertype</label>
+        {f.fontChoice && <>
+          <span className="lbl" style={{ marginTop: 6, display: 'block' }}>Enkel deze lettertypes <span className="sub">(niets aangevinkt = alle {(k?.lettertypes || []).length})</span></span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '2px 14px' }}>
+            {(k?.lettertypes || []).map(l => (
+              <label key={l} className="vinkje"><input type="checkbox" checked={(f.allowedFonts || []).includes(l)} onChange={e => zet('allowedFonts', e.target.checked ? [...(f.allowedFonts || []), l] : (f.allowedFonts || []).filter(x => x !== l))} /> {l}</label>
             ))}
           </div>
         </>}
