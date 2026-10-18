@@ -26,7 +26,7 @@ export function PrintopdrachtDialoog({ a, onSluit }) {
   async function ok() {
     setBezig(true);
     try {
-      const u = await api.post('/productie/eigen-product', { artikel_id: a.id, aantal: f.aantal, printer_id: Number(printerId) });
+      const u = await api.post('/productie/eigen-product', { artikel_id: a.id, aantal: f.aantal, printer_id: Number(printerId), personalisatie: a.personalisatie || null });
       melding(u.profiel ? `Dossier ${u.nummer} gemaakt volgens het printprofiel: ${u.opdrachten} printopdracht${u.opdrachten === 1 ? '' : 'en'}.`
         : u.sjabloon ? `Dossier ${u.nummer} en printopdracht gemaakt (printregel van de vorige keer).` : `Dossier ${u.nummer} en printopdracht gemaakt. Vul printtijd en filament nog aan.`);
       navigeer(`/dossiers/${u.dossier_id}?tab=${u.profiel || u.sjabloon ? 'productie' : 'regels'}`);
@@ -43,6 +43,7 @@ export function PrintopdrachtDialoog({ a, onSluit }) {
             {(printers || []).filter(p => p.actief).map(p => <option key={p.id} value={p.id}>{p.naam}</option>)}
           </select></div>
       </div>
+      {a.personalisatie && <p><span className="badge b-info">{a.personalisatie}</span> <span className="sub">komt in de printregel en de printopdracht</span></p>}
       <p className="sub"><Link naar={`/voorraad/artikelen/${a.id}`}>Artikel openen</Link> · voorraad {aantal(a.voorraad)}{a.in_productie ? ` · ${aantal(a.in_productie)} in productie` : ''}</p>
       <p className="note" style={{ marginBottom: 0 }}>Er komt een dossier "Eigen product" met een printregel voor dit artikel; {profiel
         ? <>printtijd en filament komen uit het <b>printprofiel</b> (× het aantal){profiel.per_plaat ? `, één printopdracht per plaat van ${profiel.per_plaat} stuks` : ''}.</>

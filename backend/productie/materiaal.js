@@ -90,9 +90,13 @@ export function rolLeegOngedaan(db, mutatieId) {
 // 06-10: met een printprofiel (tijd en gram per stuk, stuks per plaat) komt
 // de printregel uit het profiel en wordt het dossier meteen gestart: één
 // printopdracht per plaat. Zonder profiel: de printregel van de vorige keer.
-export function maakEigenProduct(db, { artikel_id, aantal, printer_id }) {
-  const a = db.prepare(`SELECT id, naam FROM artikelen WHERE id = ? AND type = 'artikel' AND zelf_geprint = 1`).get(Number(artikel_id));
-  if (!a) throw new DomeinFout('Enkel een artikel dat we zelf printen');
+// 18-10: personalisatie (bv. 'Naam: "Lotte" · Lettertype: Lobster' uit een
+// webshopbestelling) komt in de titel, de printregel en dus de printopdracht.
+export function maakEigenProduct(db, { artikel_id, aantal, printer_id, personalisatie = null }) {
+  const a0 = db.prepare(`SELECT id, naam FROM artikelen WHERE id = ? AND type = 'artikel' AND zelf_geprint = 1`).get(Number(artikel_id));
+  if (!a0) throw new DomeinFout('Enkel een artikel dat we zelf printen');
+  const extra = String(personalisatie ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const a = { ...a0, naam: extra ? `${a0.naam} — ${extra}` : a0.naam };
   const n = typeof aantal === 'number' ? aantal : parseFloat(String(aantal ?? '').replace(',', '.'));
   if (!Number.isFinite(n) || n <= 0) throw new DomeinFout('Aantal stuks moet groter dan 0 zijn');
   const profiel = artikelMetProfiel(db, a.id).profiel;

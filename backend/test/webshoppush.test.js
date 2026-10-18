@@ -88,3 +88,18 @@ test('W9. Layer & Leaf: standaard in de beschrijving (ook in een subcategorie), 
   assert.match((await leesWebshop(db, id, { fetchFn: nep })).data.description, /^Zittende kat\.\n\nStandaardkleur:/, 'achter een bestaande tekst');
   assert.equal((await leesWebshop(db, art, { fetchFn: nep })).data.description.includes('Standaardkleur'), false, 'andere categorie: niets');
 });
+
+test('W10. naam/tekst en lettertype: bewaard, onbekend lettertype valt weg, mee in de push; leeg label/max = weg uit Sanity', async () => {
+  const db = getDb();
+  const w = await leesWebshop(db, art, { fetchFn: nep });
+  bewaarWebshop(db, art, { ...w.data, textChoice: true, textLabel: 'Naam op de sleutelhanger', textMaxLength: '12', fontChoice: true, allowedFonts: ['Lobster', 'Comic Sans', 'Bebas Neue'] });
+  const l = await leesWebshop(db, art, { fetchFn: nep });
+  assert.equal(l.data.textMaxLength, 12); assert.deepEqual(l.data.allowedFonts, ['Lobster', 'Bebas Neue']);
+  await pushWebshop(db, art, { fetchFn: nep, forceer: true });
+  const d = docs.get(db.prepare('SELECT webshop_sanity_id i FROM artikelen WHERE id = ?').get(art).i);
+  assert.equal(d.textChoice, true); assert.equal(d.fontChoice, true); assert.equal(d.textLabel, 'Naam op de sleutelhanger');
+  assert.equal(d.textMaxLength, 12); assert.deepEqual(d.allowedFonts, ['Lobster', 'Bebas Neue']);
+  bewaarWebshop(db, art, { ...l.data, textLabel: '', textMaxLength: '' });
+  await pushWebshop(db, art, { fetchFn: nep, forceer: true });
+  assert.equal(d.textLabel, undefined); assert.equal(d.textMaxLength, undefined);
+});

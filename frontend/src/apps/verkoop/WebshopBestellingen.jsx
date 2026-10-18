@@ -58,14 +58,17 @@ export default function WebshopBestellingen() {
               <table className="mini" style={{ marginTop: 10, width: '100%' }}>
                 <tbody>
                   {b.items.map((i, k) => {
-                    const tekort = i.artikel && i.artikel.voorraad < i.aantal;
+                    // 18-10: gepersonaliseerd (naam/lettertype) = altijd apart printen
+                    const pers = [i.tekst ? `Naam: "${i.tekst}"` : null, i.lettertype ? `Lettertype: ${i.lettertype}` : null].filter(Boolean).join(' · ');
+                    const tekort = i.artikel && (pers || i.artikel.voorraad < i.aantal);
                     return (
                       <tr key={k}>
                         <td className="num" style={{ width: 40 }}>{aantal(i.aantal)}×</td>
                         <td>{i.naam}{i.kleuren.length > 0 && <b> — {i.kleuren.join(' / ')}</b>}
+                          {pers && <div><span className="badge b-info">{pers}</span></div>}
                           {(i.kleur_info || []).filter(k => k.filament).map(k => <div key={k.label} className="sub"><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 5, background: k.hex || 'transparent', border: '1px solid var(--line)', marginRight: 4 }} />{k.label}: <b>{k.filament}</b></div>)}</td>
                         <td className="sub">{i.artikel ? <Link naar={`/voorraad/artikelen/${i.artikel.id}`}>voorraad {aantal(i.artikel.voorraad)}</Link> : 'niet gekoppeld (Producten → Webshop ophalen)'}</td>
-                        <td className="r">{tekort && !b.afgehandeld && <button type="button" className="btn klein" onClick={() => setPrinten({ id: i.artikel.id, weergave: i.artikel.naam, voorraad: i.artikel.voorraad, in_productie: 0, voorstel: i.aantal - i.artikel.voorraad })}>Bijprinten</button>}</td>
+                        <td className="r">{tekort && !b.afgehandeld && <button type="button" className="btn klein" onClick={() => setPrinten({ id: i.artikel.id, weergave: i.artikel.naam, voorraad: i.artikel.voorraad, in_productie: 0, voorstel: pers ? i.aantal : i.aantal - i.artikel.voorraad, personalisatie: pers || null })}>{pers ? 'Printen' : 'Bijprinten'}</button>}</td>
                       </tr>
                     );
                   })}
