@@ -36,7 +36,7 @@ const ART = `SELECT a.id, a.naam, a.verkoopprijs,
   FROM artikelen a WHERE a.webshop_slug = ? AND COALESCE(a.webshop_variant, '') = ?`;
 
 // 19-10: symbool na de naam (ids van de webshop: src/data/symbols.ts)
-const SYMBOLEN = { geen: 'geen', hartje: 'hartje ♥', ster: 'ster ★', pootje: 'hondenpootje 🐾' };
+const SYMBOLEN = { geen: 'geen', hartje: 'hartje ♥', ster: 'ster ★', pootje: 'hondenpootje' };
 export function leesBestellingen(db, { alles = false, kleuren = null } = {}) {
   const kleur = k => kleuren?.get(String(k).trim().toLowerCase()) || null;   // 11-10: filament bij de gekozen kleur
   const art = db.prepare(ART);
