@@ -129,6 +129,7 @@ export default function WebshopFormulier({ art, onKlaar }) {
           <div><label htmlFor="ws-tl">Naam van het tekstveld</label><input id="ws-tl" className="inp" placeholder="Naam" value={f.textLabel} onChange={e => zet('textLabel', e.target.value)} /></div>
           <div><label htmlFor="ws-tm">Maximum aantal tekens</label><input id="ws-tm" className="inp num" inputMode="numeric" placeholder="20" value={f.textMaxLength} onChange={e => zet('textMaxLength', e.target.value)} /></div>
         </div>}
+        <label className="vinkje"><input type="checkbox" checked={!!f.symbolChoice} onChange={e => zet('symbolChoice', e.target.checked)} /> Klant kiest een symbool na de naam (geen, hartje, ster, hondenpootje)</label>
         <label className="vinkje"><input type="checkbox" checked={!!f.fontChoice} onChange={e => zet('fontChoice', e.target.checked)} /> Klant kiest een lettertype</label>
         {f.fontChoice && <>
           <span className="lbl" style={{ marginTop: 6, display: 'block' }}>Enkel deze lettertypes <span className="sub">(niets aangevinkt = alle {(k?.lettertypes || []).length})</span></span>
