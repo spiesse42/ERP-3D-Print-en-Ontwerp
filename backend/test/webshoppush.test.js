@@ -103,3 +103,15 @@ test('W10. naam/tekst en lettertype: bewaard, onbekend lettertype valt weg, mee 
   await pushWebshop(db, art, { fetchFn: nep, forceer: true });
   assert.equal(d.textLabel, undefined); assert.equal(d.textMaxLength, undefined);
 });
+
+test('W11. symbool na de naam: vinkje mee in de push; bestelling toont naam, lettertype en symbool', async () => {
+  const db = getDb();
+  const w = await leesWebshop(db, art, { fetchFn: nep });
+  bewaarWebshop(db, art, { ...w.data, symbolChoice: true });
+  await pushWebshop(db, art, { fetchFn: nep, forceer: true });
+  assert.equal(docs.get(db.prepare('SELECT webshop_sanity_id i FROM artikelen WHERE id = ?').get(art).i).symbolChoice, true);
+  const { bewaarBestellingen, leesBestellingen } = await import('../domein/webshopbestellingen.js');
+  bewaarBestellingen(db, [{ id: 'ord-sym', status: 'paid', items: [{ slug: 'x', name: 'Sleutelhanger', quantity: 1, price: 6.5, text: 'Lotte', font: 'Lobster', symbol: 'pootje' }] }]);
+  const i = leesBestellingen(db, { alles: true }).find(b => b.id === 'ord-sym').items[0];
+  assert.equal(i.tekst, 'Lotte'); assert.equal(i.lettertype, 'Lobster'); assert.equal(i.symbool, 'hondenpootje 🐾');
+});

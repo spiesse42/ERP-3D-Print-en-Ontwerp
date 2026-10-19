@@ -59,7 +59,7 @@ export default function WebshopBestellingen() {
                 <tbody>
                   {b.items.map((i, k) => {
                     // 18-10: gepersonaliseerd (naam/lettertype) = altijd apart printen
-                    const pers = [i.tekst ? `Naam: "${i.tekst}"` : null, i.lettertype ? `Lettertype: ${i.lettertype}` : null].filter(Boolean).join(' · ');
+                    const pers = [i.tekst ? `Naam: "${i.tekst}"` : null, i.lettertype ? `Lettertype: ${i.lettertype}` : null, i.symbool ? `Symbool: ${i.symbool}` : null].filter(Boolean).join(' · ');
                     const tekort = i.artikel && (pers || i.artikel.voorraad < i.aantal);
                     return (
                       <tr key={k}>
