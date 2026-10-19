@@ -22,7 +22,7 @@ import { DomeinFout } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
 import { sanityQuery, sanityMutate, sanityAfbeelding } from '../integraties/sanity.js';
 
-const BOOL = ['priceFrom', 'imageIsRender', 'customOrder', 'featured', 'hidden', 'comingSoon', 'colorChoice', 'textChoice', 'fontChoice'];
+const BOOL = ['priceFrom', 'imageIsRender', 'customOrder', 'featured', 'hidden', 'comingSoon', 'colorChoice', 'textChoice', 'fontChoice', 'symbolChoice'];
 // 18-10: lettertypes voor naam/tekst (zelfde lijst als de webshop: src/data/fonts.ts)
 export const LETTERTYPES = ['Archivo Black', 'Russo One', 'Bebas Neue', 'Pacifico', 'Titan One', 'Lilita One', 'Luckiest Guy', 'Lobster', 'Modak', 'Sniglet',
   'Coiny', 'Chewy', 'Bangers', 'Rammetto One', 'Bowlby One', 'Poppins Black', 'Paytone One', 'Passion One', 'Changa One', 'Fugaz One', 'Anton', 'Bungee',
@@ -31,7 +31,7 @@ export const LETTERTYPES = ['Archivo Black', 'Russo One', 'Bebas Neue', 'Pacific
 const STANDAARD = { description: '', priceFrom: false, emoji: '✨', category_id: null, createdAt: null, image_bijlage_id: null, photo_bijlage_ids: [],
   imageIsRender: false, customOrder: false, featured: false, featuredOrder: null, hidden: true, comingSoon: false,
   colorChoice: false, colorChoiceCount: null, colorChoiceLabel: '', allowedColors: [], weightGrams: null,
-  textChoice: false, textLabel: '', textMaxLength: null, fontChoice: false, allowedFonts: [] };
+  textChoice: false, textLabel: '', textMaxLength: null, fontChoice: false, allowedFonts: [], symbolChoice: false };
 const vandaag = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });
 const getalOfNull = (v, wat) => {
   if (v === null || v === undefined || String(v).trim() === '') return null;
@@ -109,7 +109,7 @@ export async function leesWebshop(db, artikelId, { fetchFn = fetch } = {}) {
       const p = await sanityQuery(`*[_type == "product" && slug.current == $s && !(_id in path("drafts.**"))][0]{
         description, priceFrom, emoji, "category_id": category._ref, createdAt, imageIsRender, customOrder, featured, featuredOrder, hidden, comingSoon,
         colorChoice, colorChoiceCount, colorChoiceLabel, "allowedColors": allowedColors[]._ref, weightGrams,
-        textChoice, textLabel, textMaxLength, fontChoice, allowedFonts, "foto": defined(image) }`, { s: a.webshop_slug }, { fetchFn, metToken: false });
+        textChoice, textLabel, textMaxLength, fontChoice, allowedFonts, symbolChoice, "foto": defined(image) }`, { s: a.webshop_slug }, { fetchFn, metToken: false });
       if (p) {
         data = { ...STANDAARD };
         for (const k of Object.keys(STANDAARD)) if (p[k] !== undefined && p[k] !== null) data[k] = p[k];

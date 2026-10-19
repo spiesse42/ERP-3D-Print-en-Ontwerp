@@ -35,6 +35,8 @@ const ART = `SELECT a.id, a.naam, a.verkoopprijs,
   (SELECT COALESCE(SUM(aantal_resterend), 0) FROM voorraad_partijen p WHERE p.artikel_id = a.id) AS voorraad
   FROM artikelen a WHERE a.webshop_slug = ? AND COALESCE(a.webshop_variant, '') = ?`;
 
+// 19-10: symbool na de naam (ids van de webshop: src/data/symbols.ts)
+const SYMBOLEN = { geen: 'geen', hartje: 'hartje ♥', ster: 'ster ★', pootje: 'hondenpootje 🐾' };
 export function leesBestellingen(db, { alles = false, kleuren = null } = {}) {
   const kleur = k => kleuren?.get(String(k).trim().toLowerCase()) || null;   // 11-10: filament bij de gekozen kleur
   const art = db.prepare(ART);
@@ -46,7 +48,7 @@ export function leesBestellingen(db, { alles = false, kleuren = null } = {}) {
     const items = JSON.parse(b.items || '[]').map(i => {
       const a = art.get(i.slug, i.variantLabel ?? '') || null;
       const uit = { slug: i.slug, naam: i.name, aantal: i.quantity, prijs: i.price, variant: i.variantLabel ?? null,
-        kleuren: i.colors || (i.color ? [i.color] : []), tekst: i.text ?? null, lettertype: i.font ?? null, artikel: a };
+        kleuren: i.colors || (i.color ? [i.color] : []), tekst: i.text ?? null, lettertype: i.font ?? null, symbool: SYMBOLEN[i.symbol] ?? i.symbol ?? null, artikel: a };
       return { ...uit, kleur_info: uit.kleuren.map(k => ({ label: k, filament: kleur(k)?.filamentName || null, hex: kleur(k)?.hex || null })) };
     });
     const klant = b.email ? db.prepare('SELECT id FROM klanten WHERE lower(email) = lower(?) LIMIT 1').get(b.email) : null;
