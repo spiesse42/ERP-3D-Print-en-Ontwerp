@@ -31,7 +31,11 @@ export const LETTERTYPES = ['Archivo Black', 'Russo One', 'Bebas Neue', 'Pacific
 const STANDAARD = { description: '', priceFrom: false, emoji: '✨', category_id: null, createdAt: null, image_bijlage_id: null, photo_bijlage_ids: [],
   imageIsRender: false, customOrder: false, featured: false, featuredOrder: null, hidden: true, comingSoon: false,
   colorChoice: false, colorChoiceCount: null, colorChoiceLabel: '', allowedColors: [], weightGrams: null,
-  textChoice: false, textLabel: '', textMaxLength: null, fontChoice: false, allowedFonts: [], symbolChoice: false };
+  textChoice: false, textLabel: '', textMaxLength: null, fontChoice: false, allowedFonts: [], symbolChoice: false, variantChoiceLabel: '' };
+// 19-10: keuzes (maten of modellen) = Sanity sizeVariants. In de data: null =
+// (nog) niet gekend → de push laat ze in Sanity ongemoeid; een lijst (ook
+// leeg) = het ERP beheert ze. Per keuze: label, price, weightGrams en een
+// foto (image_bijlage_id uit het ERP, of sanity_image = bestaande foto in Sanity).
 const vandaag = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });
 const getalOfNull = (v, wat) => {
   if (v === null || v === undefined || String(v).trim() === '') return null;
@@ -94,6 +98,18 @@ export function leesInvoer(db, artikelId, b) {
   d.textLabel = String(b?.textLabel ?? '').trim();
   d.textMaxLength = getalOfNull(b?.textMaxLength, 'Maximum aantal tekens');
   d.allowedFonts = (Array.isArray(b?.allowedFonts) ? b.allowedFonts : []).map(String).filter(f => LETTERTYPES.includes(f));
+  d.variantChoiceLabel = String(b?.variantChoiceLabel ?? '').trim();
+  d.sizeVariants = Array.isArray(b?.sizeVariants) ? b.sizeVariants.map((v, i) => {
+    const wat = `Keuze ${i + 1}`;
+    const label = String(v?.label ?? '').trim();
+    if (!label) throw new DomeinFout(`${wat}: vul een naam in`);
+    const price = getalOfNull(v?.price, `${wat}: prijs`);
+    if (price === null) throw new DomeinFout(`${wat} (${label}): vul een prijs in`);
+    return { label, price, weightGrams: getalOfNull(v?.weightGrams, `${wat}: gewicht`),
+      image_bijlage_id: v?.image_bijlage_id ? idLijst([v.image_bijlage_id], `${wat}: foto`)[0] : null,
+      sanity_image: !v?.image_bijlage_id && typeof v?.sanity_image === 'string' ? v.sanity_image : null };
+  }) : null;
+  if (d.sizeVariants && new Set(d.sizeVariants.map(v => v.label.toLowerCase())).size !== d.sizeVariants.length) throw new DomeinFout('Twee keuzes hebben dezelfde naam');
   return d;
 }
 
@@ -109,23 +125,37 @@ export async function leesWebshop(db, artikelId, { fetchFn = fetch } = {}) {
       const p = await sanityQuery(`*[_type == "product" && slug.current == $s && !(_id in path("drafts.**"))][0]{
         description, priceFrom, emoji, "category_id": category._ref, createdAt, imageIsRender, customOrder, featured, featuredOrder, hidden, comingSoon,
         colorChoice, colorChoiceCount, colorChoiceLabel, "allowedColors": allowedColors[]._ref, weightGrams,
-        textChoice, textLabel, textMaxLength, fontChoice, allowedFonts, symbolChoice, "foto": defined(image) }`, { s: a.webshop_slug }, { fetchFn, metToken: false });
+        textChoice, textLabel, textMaxLength, fontChoice, allowedFonts, symbolChoice, variantChoiceLabel, ${VARIANTEN_GROQ}, "foto": defined(image) }`, { s: a.webshop_slug }, { fetchFn, metToken: false });
       if (p) {
         data = { ...STANDAARD };
         for (const k of Object.keys(STANDAARD)) if (p[k] !== undefined && p[k] !== null) data[k] = p[k];
         for (const k of BOOL) data[k] = !!p[k];
         data.allowedColors = p.allowedColors || [];
         data.allowedFonts = p.allowedFonts || [];
+        data.sizeVariants = variantenUitSanity(p.sizeVariants);
         sanityFoto = !!p.foto;
         bron = 'sanity';
       }
     } catch { /* niet bereikbaar: leeg formulier */ }
   }
-  if (!data) data = { ...STANDAARD, createdAt: vandaag(), weightGrams: gewichtUitProfiel(a) };
+  if (!data) data = { ...STANDAARD, createdAt: vandaag(), weightGrams: gewichtUitProfiel(a), sizeVariants: a.webshop_slug ? null : [] };
+  // al door het ERP beheerd maar de keuzes nog niet gekend (van vóór 19-10): eenmalig uit Sanity
+  if ((data.sizeVariants === undefined || data.sizeVariants === null) && a.webshop_slug && bron !== 'sanity') {
+    try {
+      const p = await sanityQuery(`*[_type == "product" && slug.current == $s && !(_id in path("drafts.**"))][0]{ variantChoiceLabel, ${VARIANTEN_GROQ} }`,
+        { s: a.webshop_slug }, { fetchFn, metToken: false });
+      if (p) data = { ...data, sizeVariants: variantenUitSanity(p.sizeVariants), variantChoiceLabel: data.variantChoiceLabel || p.variantChoiceLabel || '' };
+    } catch { /* niet bereikbaar: blijft null, de push laat de keuzes dan ongemoeid */ }
+  }
+  if (data.sizeVariants === undefined) data.sizeVariants = a.webshop_slug ? null : [];
   if (isLayerLeaf(db, a.categorie_id)) data = { ...data, description: metSjabloon(data.description) };
   return { data, bron, sanity_foto: sanityFoto, fotos: fotosVan(db, a.id), slug: a.webshop_slug, variant: a.webshop_variant,
     gepusht_op: a.webshop_gepusht_op, naam: a.naam, prijs: a.verkoopprijs, gewicht_profiel: gewichtUitProfiel(a) };
 }
+
+const VARIANTEN_GROQ = '"sizeVariants": sizeVariants[]{ label, price, weightGrams, "sanity_image": image.asset._ref }';
+const variantenUitSanity = l => (Array.isArray(l) ? l : []).filter(v => v?.label).map(v => ({ label: v.label, price: v.price ?? null,
+  weightGrams: v.weightGrams ?? null, image_bijlage_id: null, sanity_image: v.sanity_image || null }));
 
 export function bewaarWebshop(db, artikelId, body) {
   const a = artikel(db, artikelId);
@@ -182,6 +212,7 @@ export async function pushWebshop(db, artikelId, { forceer = false, fetchFn = fe
   zetOfWeg('colorChoiceCount', d.colorChoiceCount);
   zetOfWeg('colorChoiceLabel', d.colorChoiceLabel);
   zetOfWeg('textLabel', d.textLabel);
+  zetOfWeg('variantChoiceLabel', d.variantChoiceLabel);
   zetOfWeg('textMaxLength', d.textMaxLength);
   velden.allowedFonts = d.allowedFonts || [];
   zetOfWeg('weightGrams', d.weightGrams ?? gewichtUitProfiel(a));
@@ -191,6 +222,18 @@ export async function pushWebshop(db, artikelId, { forceer = false, fetchFn = fe
     for (const f of d.photo_bijlage_ids) velden.photos.push({ ...beeld(await asset(db, d, f, fetchFn)), _key: `f${f}` });
   }
 
+  // keuzes: enkel als het ERP ze beheert (lijst); null = in Sanity laten
+  if (Array.isArray(d.sizeVariants)) {
+    if (!d.sizeVariants.length) weg.push('sizeVariants');
+    else {
+      velden.sizeVariants = [];
+      for (const v of d.sizeVariants) {
+        const foto = v.image_bijlage_id ? await asset(db, d, v.image_bijlage_id, fetchFn) : v.sanity_image;
+        velden.sizeVariants.push({ _type: 'sizeVariant', _key: crypto.createHash('md5').update(v.label).digest('hex').slice(0, 12), label: v.label, price: v.price,
+          weightGrams: v.weightGrams ?? d.weightGrams ?? gewichtUitProfiel(a) ?? 0, ...(foto ? { image: beeld(foto) } : {}) });
+      }
+    }
+  }
   let id, slug, nieuw = false;
   if (doc) {
     id = doc._id; slug = doc.slug;

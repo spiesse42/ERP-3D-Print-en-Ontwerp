@@ -115,3 +115,30 @@ test('W11. symbool na de naam: vinkje mee in de push; bestelling toont naam, let
   const i = leesBestellingen(db, { alles: true }).find(b => b.id === 'ord-sym').items[0];
   assert.equal(i.tekst, 'Lotte'); assert.equal(i.lettertype, 'Lobster'); assert.equal(i.symbool, 'hondenpootje');
 });
+
+test('W12. keuzes (modellen): null = Sanity ongemoeid; lijst = gepusht met foto; leeg = weg; dubbele naam en zonder prijs geweigerd', async () => {
+  const db = getDb();
+  const id = () => db.prepare('SELECT webshop_sanity_id i FROM artikelen WHERE id = ?').get(art).i;
+  // vanuit het ERP aangemaakt → het ERP beheert de keuzes (lege lijst)
+  assert.deepEqual((await leesWebshop(db, art, { fetchFn: nep })).data.sizeVariants, []);
+  // keuzes onbekend (bv. bewaard vóór 19-10) en niet op te halen uit Sanity → null → niets aan sizeVariants
+  bewaarWebshop(db, art, { ...(await leesWebshop(db, art, { fetchFn: nep })).data, sizeVariants: undefined });
+  const w = await leesWebshop(db, art, { fetchFn: nep });
+  assert.equal(w.data.sizeVariants, null);
+  docs.get(id()).sizeVariants = [{ _key: 'x', label: 'In Sanity', price: 1, weightGrams: 1 }];
+  bewaarWebshop(db, art, { ...w.data, sizeVariants: undefined });
+  await pushWebshop(db, art, { fetchFn: nep, forceer: true });
+  assert.equal(docs.get(id()).sizeVariants[0].label, 'In Sanity', 'ongemoeid');
+  assert.throws(() => bewaarWebshop(db, art, { ...w.data, sizeVariants: [{ label: 'Man', price: 6.5 }, { label: 'man', price: 6.5 }] }), /dezelfde naam/);
+  assert.throws(() => bewaarWebshop(db, art, { ...w.data, sizeVariants: [{ label: 'Man', price: '' }] }), /prijs/);
+  bewaarWebshop(db, art, { ...w.data, variantChoiceLabel: 'Model', sizeVariants: [{ label: 'Man', price: '6,50', weightGrams: 12, image_bijlage_id: foto }, { label: 'Vrouw', price: 6.5, sanity_image: 'image-oud' }] });
+  await pushWebshop(db, art, { fetchFn: nep, forceer: true });
+  const d = docs.get(id());
+  assert.equal(d.variantChoiceLabel, 'Model');
+  assert.deepEqual(d.sizeVariants.map(v => [v.label, v.price]), [['Man', 6.5], ['Vrouw', 6.5]]);
+  assert.ok(d.sizeVariants[0].image.asset._ref.startsWith('image-')); assert.equal(d.sizeVariants[1].image.asset._ref, 'image-oud');
+  assert.ok(d.sizeVariants[1].weightGrams >= 0, 'gewicht valt terug op het product');
+  bewaarWebshop(db, art, { ...w.data, sizeVariants: [] });
+  await pushWebshop(db, art, { fetchFn: nep, forceer: true });
+  assert.equal(docs.get(id()).sizeVariants, undefined, 'leeg = weg uit Sanity');
+});
