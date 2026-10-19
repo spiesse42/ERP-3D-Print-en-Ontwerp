@@ -124,6 +124,38 @@ export default function WebshopFormulier({ art, onKlaar }) {
       </div>
 
       <div style={{ marginTop: 10 }}>
+        {f.sizeVariants === null
+          ? <p className="sub">Keuzes (maten/modellen): niet op te halen uit Sanity — ze blijven daar zoals ze zijn.</p>
+          : <>
+            <label className="vinkje"><input type="checkbox" checked={f.sizeVariants.length > 0} onChange={e => zet('sizeVariants', e.target.checked ? [{ label: '', price: naarInvoer(data.prijs), weightGrams: '', image_bijlage_id: null, sanity_image: null }] : [])} /> Klant kiest uit keuzes (maten, hoogtes of modellen)</label>
+            {f.sizeVariants.length > 0 && <>
+              <div className="fgrid"><div><label htmlFor="ws-vl">Naam van de keuze</label><input id="ws-vl" className="inp" placeholder="Maat" value={f.variantChoiceLabel || ''} onChange={e => zet('variantChoiceLabel', e.target.value)} /></div></div>
+              <table className="mini" style={{ marginTop: 6 }}>
+                <thead><tr><th>Naam</th><th className="r">Prijs (€)</th><th className="r">Gewicht (g)</th><th>Foto</th><th /></tr></thead>
+                <tbody>{f.sizeVariants.map((v, i) => {
+                  const zetV = (sl, w) => zet('sizeVariants', f.sizeVariants.map((x, j) => (j === i ? { ...x, [sl]: w } : x)));
+                  return (
+                    <tr key={i}>
+                      <td><input className="inp" aria-label={`Keuze ${i + 1}: naam`} placeholder="bv. Vrouw" value={v.label} onChange={e => zetV('label', e.target.value)} /></td>
+                      <td className="r"><input className="inp num" style={{ width: 80 }} inputMode="decimal" aria-label={`Keuze ${i + 1}: prijs`} value={naarInvoer(v.price)} onChange={e => zetV('price', e.target.value)} /></td>
+                      <td className="r"><input className="inp num" style={{ width: 70 }} inputMode="decimal" aria-label={`Keuze ${i + 1}: gewicht`} placeholder={naarInvoer(f.weightGrams || data.gewicht_profiel || '')} value={naarInvoer(v.weightGrams)} onChange={e => zetV('weightGrams', e.target.value)} /></td>
+                      <td><select className="inp" aria-label={`Keuze ${i + 1}: foto`} value={v.image_bijlage_id || (v.sanity_image ? 'sanity' : '')} onChange={e => (e.target.value === 'sanity' ? null : zet('sizeVariants', f.sizeVariants.map((x, j) => (j === i ? { ...x, image_bijlage_id: e.target.value ? Number(e.target.value) : null, sanity_image: e.target.value ? null : x.sanity_image } : x))))}>
+                        <option value="">geen</option>
+                        {v.sanity_image && <option value="sanity">foto in Sanity</option>}
+                        {data.fotos.map(ft => <option key={ft.id} value={ft.id}>{ft.bestandsnaam}</option>)}
+                      </select></td>
+                      <td><button type="button" className="btn ghost" aria-label={`Keuze ${i + 1} weghalen`} onClick={() => zet('sizeVariants', f.sizeVariants.filter((_, j) => j !== i))}>×</button></td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+              <button type="button" className="linkish" onClick={() => zet('sizeVariants', [...f.sizeVariants, { label: '', price: f.sizeVariants.at(-1)?.price ?? naarInvoer(data.prijs), weightGrams: f.sizeVariants.at(-1)?.weightGrams ?? '', image_bijlage_id: null, sanity_image: null }])}>+ keuze</button>
+              <p className="sub" style={{ margin: '4px 0 0' }}>De klant kiest één keuze per keer en kan er meerdere na elkaar toevoegen, elk met eigen kleur en aantal. Zelfde prijs voor alle keuzes = geen "vanaf" op de site. Foto's: kies uit de foto's van dit artikel (tabblad Foto's & bestanden).</p>
+            </>}
+          </>}
+      </div>
+
+      <div style={{ marginTop: 10 }}>
         <label className="vinkje"><input type="checkbox" checked={!!f.textChoice} onChange={e => zet('textChoice', e.target.checked)} /> Klant geeft een naam/tekst mee</label>
         {f.textChoice && <div className="fgrid">
           <div><label htmlFor="ws-tl">Naam van het tekstveld</label><input id="ws-tl" className="inp" placeholder="Naam" value={f.textLabel} onChange={e => zet('textLabel', e.target.value)} /></div>
