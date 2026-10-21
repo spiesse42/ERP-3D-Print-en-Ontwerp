@@ -44,7 +44,7 @@ export function naarApi(r) {
     const n = r.per_stuk ? (getalVan(r.aantal) ?? 1) : 1, pl = r.per_stuk ? platen(r) : 1;
     const maal = (v, f) => { const x = nr(v); return x === null || f === 1 ? x : r4(Number(x) * f); };
     return { ...basis, afbeelding: r.afbeelding || null, slicer_bijlage_id: r.slicer_bijlage_id || null, slicer_plaat: r.slicer_bijlage_id ? r.slicer_plaat || null : null, printer_id: r.printer_id || null, aantal: nr(r.aantal) ?? 1, tijd_min: r4((u * 60 + m) * n), artikel_id: r.artikel_id || null,
-      per_stuk: !!r.per_stuk, per_plaat: nr(r.per_plaat),
+      per_stuk: !!r.per_stuk, per_plaat: nr(r.per_plaat), plaat_van: r.plaat_van || null,
       voorbereiding_min: maal(r.voorbereiding_min, pl), nabewerking_min: maal(r.nabewerking_min, n),
       materialen: r.materialen.filter(x => x.keuze).map(x => {
         const [soort, id] = x.keuze.split(':');
@@ -69,15 +69,26 @@ function wisselPerStuk(r, aan) {
   return { per_stuk: aan, ...tijdVelden(t), voorbereiding_min: om(r.voorbereiding_min, fp), nabewerking_min: om(r.nabewerking_min, f),
     materialen: r.materialen.map(m => ({ ...m, gram: om(m.gram, f) })) };
 }
-// Nieuwe printregel volgens het printprofiel van een product (knop "Uit product").
-export const regelUitProduct = (a, eindproducten) => { const r = nieuweRegel('printen'); return { ...r, ...uitProfiel(r, a, eindproducten) }; };
-// Printprofiel van een product → velden (per stuk) van de regel.
-function uitProfiel(r, a, eindproducten) {
-  const p = a.profiel || {};
+// Nieuwe printregel(s) volgens het printprofiel van een product (knop "Uit product").
+// 21-10: een product uit meerdere platen → één printregel per plaat; enkel de
+// laatste boekt het eindproduct in voorraad, de andere onthouden plaat_van.
+const platenVan = p => (!p ? [] : Array.isArray(p.platen) && p.platen.length ? p.platen : [p]);
+export const regelsUitProduct = (a, eindproducten) => {
+  const lijst = platenVan(a.profiel || {});
+  return lijst.map((_, k) => { const r = nieuweRegel('printen'); return { ...r, ...uitProfiel(r, a, eindproducten, k) }; });
+};
+export const regelUitProduct = (a, eindproducten) => regelsUitProduct(a, eindproducten)[0];
+// Printprofiel (plaat k) van een product → velden (per stuk) van de regel.
+function uitProfiel(r, a, eindproducten, k = 0) {
+  const lijst = platenVan(a.profiel || {});
+  const p = lijst[k] || {};
+  const meer = lijst.length > 1, laatste = k === lijst.length - 1;
+  const eind = eindproducten?.some(e => e.id === a.id);
   return { per_stuk: true, per_plaat: alsInvoer(p.per_plaat), ...tijdVelden(Number(p.tijd_min) || 0),
-    omschrijving: r.omschrijving || a.naam, printer_id: p.printer_id ? String(p.printer_id) : r.printer_id,
+    omschrijving: meer ? `${a.naam} — plaat ${k + 1}/${lijst.length}${p.naam ? ` (${p.naam})` : ''}` : r.omschrijving || a.naam,
+    printer_id: p.printer_id ? String(p.printer_id) : r.printer_id,
     voorbereiding_min: alsInvoer(p.voorbereiding_min), nabewerking_min: alsInvoer(p.nabewerking_min),
-    ...(eindproducten?.some(e => e.id === a.id) ? { artikel_id: String(a.id) } : {}),
+    ...(eind ? (laatste ? { artikel_id: String(a.id), plaat_van: null } : { artikel_id: '', plaat_van: a.id }) : {}),
     materialen: (p.materialen || []).length ? p.materialen.map(m => ({ keuze: m.artikel_id ? `a:${m.artikel_id}` : `p:${m.filament_type_id}`, gram: alsInvoer(m.gram) })) : [{ keuze: '', gram: '' }] };
 }
 export function vanApi(r) {
@@ -88,7 +99,7 @@ export function vanApi(r) {
     const n = r.per_stuk ? (Number(r.aantal) || 1) : 1;
     const pl = r.per_stuk ? platen({ aantal: r.aantal, per_plaat: r.per_plaat }) : 1;
     const deel = (v, f) => (v == null ? '' : alsInvoer(r4(Number(v) / f)));
-    Object.assign(f, { afbeelding: r.afbeelding || '', slicer_bijlage_id: r.slicer_bijlage_id ?? null, slicer_plaat: r.slicer_plaat ?? null, slicer_bestandsnaam: r.slicer_bestandsnaam || '', printer_id: alsInvoer(r.printer_id), artikel_id: alsInvoer(r.artikel_id), aantal: alsInvoer(r.aantal ?? 1),
+    Object.assign(f, { afbeelding: r.afbeelding || '', slicer_bijlage_id: r.slicer_bijlage_id ?? null, slicer_plaat: r.slicer_plaat ?? null, slicer_bestandsnaam: r.slicer_bestandsnaam || '', printer_id: alsInvoer(r.printer_id), artikel_id: alsInvoer(r.artikel_id), plaat_van: r.plaat_van ?? null, aantal: alsInvoer(r.aantal ?? 1),
       ...tijdVelden((Number(r.tijd_min) || 0) / n), per_stuk: !!r.per_stuk, per_plaat: alsInvoer(r.per_plaat),
       voorbereiding_min: deel(r.voorbereiding_min, pl), nabewerking_min: deel(r.nabewerking_min, n),
       materialen: (r.materialen || []).length
@@ -230,7 +241,8 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
             </div>
             <div className="regel-velden">
               {r.type === 'printen' && <>
-                {producten?.length > 0 && <label>Uit product<select className="inp" value="" onChange={e => { const a = producten.find(x => String(x.id) === e.target.value); if (a) zet(i, uitProfiel(r, a, eindproducten)); }}>
+                {producten?.length > 0 && <label>Uit product<select className="inp" value="" onChange={e => { const a = producten.find(x => String(x.id) === e.target.value); if (!a) return; const n = platenVan(a.profiel).length; if (n <= 1) { zet(i, uitProfiel(r, a, eindproducten)); return; }
+                  const extra = regelsUitProduct(a, eindproducten); onWijzig([...regels.slice(0, i), { ...r, ...uitProfiel(r, a, eindproducten, 0) }, ...extra.slice(1), ...regels.slice(i + 1)]); }}>
                   <option value="">Printprofiel kiezen…</option>
                   {producten.map(a => <option key={a.id} value={a.id}>{a.naam}</option>)}
                 </select></label>}

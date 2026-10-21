@@ -12,20 +12,29 @@ import ProfielUitSlicer from './ProfielUitSlicer.jsx';
 // Bijprinten (één printopdracht per plaat).
 const alsInvoer = v => (v == null ? '' : String(v).replace('.', ','));
 const nr = v => (String(v ?? '').trim() === '' ? null : String(v).trim().replace(',', '.'));
-const leeg = { printer_id: '', tijd_u: '', tijd_m: '', per_plaat: '', voorbereiding_min: '', nabewerking_min: '', slicer_bijlage_id: null, slicer_plaat: null, materialen: [{ keuze: '', gram: '' }] };
+// 21-10: een artikel kan uit meerdere platen bestaan → het formulier heeft
+// altijd een lijst platen; met één plaat wordt het de vlakke vorm van vroeger.
+const leegPlaat = { naam: '', printer_id: '', tijd_u: '', tijd_m: '', per_plaat: '', voorbereiding_min: '', nabewerking_min: '', slicer_plaat: null, materialen: [{ keuze: '', gram: '' }] };
+const leeg = { slicer_bijlage_id: null, platen: [leegPlaat] };
+const platenVan = p => (!p ? [] : Array.isArray(p.platen) && p.platen.length ? p.platen : [p]);
+function plaatNaarForm(p) {
+  const t = Number(p.tijd_min) || 0, u = Math.floor(t / 60), m = Math.round((t - u * 60) * 100) / 100;
+  return { naam: p.naam || '', printer_id: p.printer_id ? String(p.printer_id) : '', tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: alsInvoer(p.per_plaat),
+    voorbereiding_min: alsInvoer(p.voorbereiding_min), nabewerking_min: alsInvoer(p.nabewerking_min), slicer_plaat: p.slicer_plaat ?? null,
+    materialen: p.materialen?.length ? p.materialen.map(x => ({ keuze: x.artikel_id ? `a:${x.artikel_id}` : `p:${x.filament_type_id}`, gram: alsInvoer(x.gram) })) : leegPlaat.materialen };
+}
 function naarForm(p) {
   if (!p) return leeg;
-  const t = Number(p.tijd_min) || 0, u = Math.floor(t / 60), m = Math.round((t - u * 60) * 100) / 100;
-  return { printer_id: p.printer_id ? String(p.printer_id) : '', tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: alsInvoer(p.per_plaat),
-    voorbereiding_min: alsInvoer(p.voorbereiding_min), nabewerking_min: alsInvoer(p.nabewerking_min),
-    slicer_bijlage_id: p.slicer_bijlage_id ?? null, slicer_plaat: p.slicer_plaat ?? null,
-    materialen: p.materialen?.length ? p.materialen.map(x => ({ keuze: x.artikel_id ? `a:${x.artikel_id}` : `p:${x.filament_type_id}`, gram: alsInvoer(x.gram) })) : leeg.materialen };
+  return { slicer_bijlage_id: p.slicer_bijlage_id ?? null, platen: platenVan(p).map(plaatNaarForm) };
+}
+function plaatNaarBody(f) {
+  return { naam: f.naam || null, printer_id: f.printer_id || null, tijd_min: Number(nr(f.tijd_u) ?? 0) * 60 + Number(nr(f.tijd_m) ?? 0), per_plaat: nr(f.per_plaat),
+    voorbereiding_min: nr(f.voorbereiding_min), nabewerking_min: nr(f.nabewerking_min), slicer_plaat: f.slicer_plaat,
+    materialen: f.materialen.filter(m => m.keuze).map(m => { const [s, id] = m.keuze.split(':'); return { [s === 'a' ? 'artikel_id' : 'filament_type_id']: Number(id), gram: nr(m.gram) ?? 0 }; }) };
 }
 function naarBody(f) {
-  return { printer_id: f.printer_id || null, tijd_min: Number(nr(f.tijd_u) ?? 0) * 60 + Number(nr(f.tijd_m) ?? 0), per_plaat: nr(f.per_plaat),
-    voorbereiding_min: nr(f.voorbereiding_min), nabewerking_min: nr(f.nabewerking_min),
-    slicer_bijlage_id: f.slicer_bijlage_id, slicer_plaat: f.slicer_plaat,
-    materialen: f.materialen.filter(m => m.keuze).map(m => { const [s, id] = m.keuze.split(':'); return { [s === 'a' ? 'artikel_id' : 'filament_type_id']: Number(id), gram: nr(m.gram) ?? 0 }; }) };
+  const platen = f.platen.map(plaatNaarBody);
+  return platen.length === 1 ? { ...platen[0], slicer_bijlage_id: f.slicer_bijlage_id } : { platen, slicer_bijlage_id: f.slicer_bijlage_id };
 }
 
 export default function Printprofiel({ id, naam = '', gewicht = null, onBijprinten }) {
@@ -39,10 +48,14 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
   const [bezig, setBezig] = useState(false);
   const [slicer, setSlicer] = useState(false);
   const [nieuwBestand, setNieuwBestand] = useState(null);
+  const [nr_, setNr] = useState(0);   // actieve plaat
   const { data: bijlagen } = useData(`/bijlagen/artikel/${id}`);
-  useEffect(() => { if (data) setF(naarForm(data.profiel)); }, [data]);
-  const zet = k => e => setF(x => ({ ...x, [k]: e.target.value }));
-  const zetMat = (k, w) => setF(x => ({ ...x, materialen: x.materialen.map((m, j) => (j === k ? { ...m, ...w } : m)) }));
+  useEffect(() => { if (data) { setF(naarForm(data.profiel)); setNr(0); } }, [data]);
+  const i = Math.min(nr_, f.platen.length - 1);
+  const pl = f.platen[i];
+  const zetPl = w => setF(x => ({ ...x, platen: x.platen.map((q, j) => (j === i ? { ...q, ...w } : q)) }));
+  const zet = k => e => zetPl({ [k]: e.target.value });
+  const zetMat = (k, w) => zetPl({ materialen: pl.materialen.map((m, j) => (j === k ? { ...m, ...w } : m)) });
   const vuil = data && JSON.stringify(f) !== JSON.stringify(naarForm(data.profiel));
   async function bewaar(profiel) {
     setBezig(true);
@@ -55,43 +68,58 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
   }
   if (!data) return null;
   async function uitSlicer(x) {
-    const u = Math.floor(x.tijd_min / 60), m = Math.round((x.tijd_min - u * 60) * 100) / 100;
     // 09-10: het bestand zelf als bijlage bij het artikel (koppeling bij "Profiel bewaren")
-    let bijlage = {};
+    let bijlage = null;
     if (x.bestand) {
       try {
         const fd = new FormData();
         fd.append('bestand', x.bestand);
         const b = await api.upload(`/bijlagen/artikel/${id}`, fd);
-        bijlage = { slicer_bijlage_id: b.id, slicer_plaat: x.plaat };
+        bijlage = b.id;
         setNieuwBestand(b.bestandsnaam);
       } catch (e) { melding(`Bestand niet bewaard: ${e.message}`, 'fout'); }
     }
-    setF(v => ({ ...v, printer_id: x.printer_id || v.printer_id, tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: x.per_plaat, materialen: x.materialen, ...bijlage }));
+    // 21-10: één of meer platen uit het bestand
+    const nieuw = x.platen.map(q => {
+      const u = Math.floor(q.tijd_min / 60), m = Math.round((q.tijd_min - u * 60) * 100) / 100;
+      return { ...leegPlaat, naam: q.naam || '', printer_id: q.printer_id || '', tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: q.per_plaat,
+        materialen: q.materialen, slicer_plaat: bijlage ? q.plaat : null };
+    });
+    setF(v => (x.platen.length > 1 ? { slicer_bijlage_id: bijlage ?? v.slicer_bijlage_id, platen: nieuw }
+      : { slicer_bijlage_id: bijlage ?? v.slicer_bijlage_id, platen: v.platen.map((q, j) => (j === i ? { ...q, ...nieuw[0], naam: q.naam || nieuw[0].naam, printer_id: nieuw[0].printer_id || q.printer_id } : q)) }));
+    if (x.platen.length > 1) setNr(0);
     setSlicer(false);
-    melding('Overgenomen uit het slicerbestand. Kijk het filament na en klik op "Profiel bewaren".');
+    melding(`Overgenomen uit het slicerbestand${x.platen.length > 1 ? ` (${x.platen.length} platen)` : ''}. Kijk het filament na en klik op "Profiel bewaren".`);
   }
-  const b = naarBody(f);
+  const b = plaatNaarBody(pl);
   const gram = b.materialen.reduce((s, m) => s + Number(m.gram || 0), 0);
+  const meer = f.platen.length > 1;
   const filamenten = (artikelen || []).filter(a => a.type === 'filament');
   return (
     <>
       <p className="note" style={{ marginTop: 0 }}>Vul de printtijd en het gewicht van <b>één stuk</b> in (bv. uit Bambu Studio: tijd en gram van de plaat ÷ aantal stuks op de plaat). In een dossier kies je dan bij een printregel "Uit product" en vul je enkel het aantal in; Bijprinten maakt meteen één printopdracht per plaat.</p>
+      <div className="chips" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+        {meer && f.platen.map((q, j) => <button key={j} type="button" className={`btn${j === i ? ' primary' : ''}`} onClick={() => setNr(j)}>Plaat {j + 1}{q.naam ? ` · ${q.naam}` : ''}</button>)}
+        <button type="button" className="linkish" onClick={() => { setF(x => ({ ...x, platen: [...x.platen, { ...leegPlaat, printer_id: pl.printer_id }] })); setNr(f.platen.length); }}>+ plaat (dit artikel bestaat uit meerdere platen)</button>
+        {meer && <button type="button" className="linkish" onClick={() => { setF(x => ({ ...x, platen: x.platen.filter((_, j) => j !== i) })); setNr(Math.max(0, i - 1)); }}>plaat {i + 1} weghalen</button>}
+      </div>
+      {meer && <p className="sub" style={{ marginTop: 0 }}>{f.platen.length} platen vormen samen één stuk. In een dossier wordt elke plaat een eigen printregel (en printopdracht); de laatste plaat boekt het stuk in voorraad. Tijd en gram hieronder zijn die van plaat {i + 1}.</p>}
       <div className="fgrid">
+        {meer && <div><label htmlFor="pp-naam">Naam van plaat {i + 1}</label><input id="pp-naam" className="inp" placeholder="bv. voet, dak…" value={pl.naam} onChange={zet('naam')} /></div>}
         <div><label htmlFor="pp-printer">Printer</label>
-          <select id="pp-printer" className="inp" value={f.printer_id} onChange={zet('printer_id')}>
+          <select id="pp-printer" className="inp" value={pl.printer_id} onChange={zet('printer_id')}>
             <option value="">— geen voorkeur —</option>
             {(printers || []).filter(p => p.actief).map(p => <option key={p.id} value={p.id}>{p.naam}</option>)}
           </select></div>
         <div><label htmlFor="pp-u">Printtijd per stuk</label>
-          <span className="samen" style={{ display: 'flex', gap: 6 }}><input id="pp-u" className="inp num" inputMode="numeric" placeholder="u" aria-label="Uren per stuk" value={f.tijd_u} onChange={zet('tijd_u')} /><input className="inp num" inputMode="decimal" placeholder="min" aria-label="Minuten per stuk" value={f.tijd_m} onChange={zet('tijd_m')} /></span></div>
-        <div><label htmlFor="pp-plaat">Stuks per plaat</label><input id="pp-plaat" className="inp num" inputMode="numeric" placeholder="bv. 8" value={f.per_plaat} onChange={zet('per_plaat')} /></div>
-        <div><label htmlFor="pp-voorb">Voorbereiding per plaat (min)</label><input id="pp-voorb" className="inp num" inputMode="decimal" placeholder="standaard" value={f.voorbereiding_min} onChange={zet('voorbereiding_min')} /></div>
-        <div><label htmlFor="pp-nab">Nabewerking per stuk (min)</label><input id="pp-nab" className="inp num" inputMode="decimal" placeholder="standaard" value={f.nabewerking_min} onChange={zet('nabewerking_min')} /></div>
+          <span className="samen" style={{ display: 'flex', gap: 6 }}><input id="pp-u" className="inp num" inputMode="numeric" placeholder="u" aria-label="Uren per stuk" value={pl.tijd_u} onChange={zet('tijd_u')} /><input className="inp num" inputMode="decimal" placeholder="min" aria-label="Minuten per stuk" value={pl.tijd_m} onChange={zet('tijd_m')} /></span></div>
+        <div><label htmlFor="pp-plaat">Stuks per plaat</label><input id="pp-plaat" className="inp num" inputMode="numeric" placeholder="bv. 8" value={pl.per_plaat} onChange={zet('per_plaat')} /></div>
+        <div><label htmlFor="pp-voorb">Voorbereiding per plaat (min)</label><input id="pp-voorb" className="inp num" inputMode="decimal" placeholder="standaard" value={pl.voorbereiding_min} onChange={zet('voorbereiding_min')} /></div>
+        <div><label htmlFor="pp-nab">Nabewerking per stuk (min)</label><input id="pp-nab" className="inp num" inputMode="decimal" placeholder="standaard" value={pl.nabewerking_min} onChange={zet('nabewerking_min')} /></div>
       </div>
       <div className="materialen" style={{ marginTop: 10 }}>
         <span className="lbl">Filament per stuk</span>
-        {f.materialen.map((m, k) => (
+        {pl.materialen.map((m, k) => (
           <div className="materiaal" key={k} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
             <select className="inp" aria-label={`Filament ${k + 1}`} value={m.keuze} onChange={e => zetMat(k, { keuze: e.target.value })}>
               <option value="">Filament kiezen…</option>
@@ -99,18 +127,18 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
               <optgroup label="Enkel prijsgroep (kleur kies je per dossier)">{(groepen || []).map(g => <option key={`p${g.id}`} value={`p:${g.id}`}>{g.merk} {g.materiaal}</option>)}</optgroup>
             </select>
             <span className="unit"><input className="inp num" inputMode="decimal" aria-label={`Gram per stuk filament ${k + 1}`} placeholder="g/stuk" value={m.gram} onChange={e => zetMat(k, { gram: e.target.value })} /><span>g</span></span>
-            {f.materialen.length > 1 && <button type="button" className="btn ghost" aria-label="Kleur weghalen" onClick={() => setF(x => ({ ...x, materialen: x.materialen.filter((_, j) => j !== k) }))}><Icoon naam="kruis" maat={12} /></button>}
+            {pl.materialen.length > 1 && <button type="button" className="btn ghost" aria-label="Kleur weghalen" onClick={() => zetPl({ materialen: pl.materialen.filter((_, j) => j !== k) })}><Icoon naam="kruis" maat={12} /></button>}
           </div>
         ))}
-        <button type="button" className="linkish" onClick={() => setF(x => ({ ...x, materialen: [...x.materialen, { keuze: '', gram: '' }] }))}>+ kleur (multicolor)</button>
+        <button type="button" className="linkish" onClick={() => zetPl({ materialen: [...pl.materialen, { keuze: '', gram: '' }] })}>+ kleur (multicolor)</button>
       </div>
       {gewicht != null && <p className="sub">Gewicht volgens de webshop: {fmtAantal(gewicht)} g per stuk (zonder steunmateriaal en afval).</p>}
-      {f.slicer_bijlage_id && <p className="sub">Slicerbestand: <a href={`${BASE}/bijlagen/bestand/${f.slicer_bijlage_id}`} title="Downloaden (openen in Bambu Studio)">{(bijlagen || []).find(x => x.id === f.slicer_bijlage_id)?.bestandsnaam || nieuwBestand || 'slicerbestand'}</a>{f.slicer_plaat ? ` · plaat ${f.slicer_plaat}` : ''}{vuil ? ' (wordt gekoppeld bij "Profiel bewaren")' : ''}</p>}
+      {f.slicer_bijlage_id && <p className="sub">Slicerbestand: <a href={`${BASE}/bijlagen/bestand/${f.slicer_bijlage_id}`} title="Downloaden (openen in Bambu Studio)">{(bijlagen || []).find(x => x.id === f.slicer_bijlage_id)?.bestandsnaam || nieuwBestand || 'slicerbestand'}</a>{pl.slicer_plaat ? ` · plaat ${pl.slicer_plaat}` : ''}{vuil ? ' (wordt gekoppeld bij "Profiel bewaren")' : ''}</p>}
       {kost?.advies && <p className="sub">Adviesprijs volgens de rekenmotor: <b>{euro(kost.advies.stuk)}</b> voor 1 stuk{kost.advies.plaat_stuk != null ? <> · <b>{euro(kost.advies.plaat_stuk)}</b> per stuk bij een volle plaat ({kost.advies.per_plaat} stuks)</> : null}. Vergelijk met je verkoopprijs (webshop: aanpassen in Sanity).</p>}
       {kost?.profiel && <p className="sub">Geschatte kost per stuk: <b>{euro(kost.schatting.kost)}</b> (filament {euro(kost.schatting.filament)}, stroom {euro(kost.schatting.energie)}, machine {euro(kost.schatting.machine)}, BMCU {euro(kost.schatting.bmcu)}{kost.schatting.onderdelen ? `, onderdelen ${euro(kost.schatting.onderdelen)}` : ''}) + arbeid {euro(kost.schatting.arbeid)}{kost.schatting.onvolledig ? ` · ontbreekt: ${kost.schatting.ontbreekt.join(', ')}` : ''}{kost.gemeten ? ` · gemeten: ${euro(kost.gemeten.kost)} (${fmtAantal(kost.gemeten.stuks)} stuks)` : ''}</p>}
       {b.per_plaat && (b.tijd_min > 0 || gram > 0) && <p className="sub">Volle plaat: {b.per_plaat} stuks · {Math.floor(b.tijd_min * b.per_plaat / 60)} u {Math.round(b.tijd_min * b.per_plaat % 60)} min · {fmtAantal(Math.round(gram * b.per_plaat * 10) / 10)} g</p>}
       <div className="tabacties" style={{ marginTop: 12 }}>
-        <button type="button" className="btn primary" disabled={bezig || !vuil} onClick={() => bewaar(b)}>Profiel bewaren</button>
+        <button type="button" className="btn primary" disabled={bezig || !vuil} onClick={() => bewaar(naarBody(f))}>Profiel bewaren</button>
         <button type="button" className="btn" disabled={bezig} onClick={() => setSlicer(true)}>Uit slicerbestand…</button>
         {data.profiel && <button type="button" className="btn" disabled={bezig || vuil} onClick={onBijprinten}>Bijprinten…</button>}
         {data.profiel && <button type="button" className="btn ghost" disabled={bezig} onClick={wis}>Wissen</button>}

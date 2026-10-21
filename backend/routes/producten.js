@@ -9,7 +9,7 @@ import { leesArtikelen } from '../domein/artikelen.js';
 import { leesOnderdelen, bewaarOnderdelen } from '../domein/onderdelen.js';
 import { webshopRijen, vergelijk, neemOver, ontkoppel } from '../domein/webshop.js';
 import { haalProducten, WebshopFout } from '../integraties/sanity.js';
-import { artikelMetProfiel, schatKost, regelUitProfiel } from '../productie/printprofiel.js';
+import { artikelMetProfiel, schatKost, regelsUitProfiel, platenVan } from '../productie/printprofiel.js';
 import { berekenMetDb } from '../domein/berekening.js';
 import { leesWebshop, bewaarWebshop, pushWebshop, keuzes } from '../domein/webshoppush.js';
 
@@ -32,9 +32,11 @@ export function kostVanArtikel(db, a, { advies = true } = {}) {
   const { profiel } = artikelMetProfiel(db, a.id);
   const onderdelen = leesOnderdelen(db, a.id);
   const schatting = schatKost(db, profiel, onderdelen);
-  const g = db.prepare(`SELECT SUM(o.productiekost_stuk * o.aantal_goed) k, SUM(COALESCE(o.arbeid_stuk, 0) * o.aantal_goed) ar, SUM(o.aantal_goed) n
+  // 21-10: ook de andere platen (plaat_van) tellen mee in de kost; stuks = enkel die van de laatste plaat
+  const g = db.prepare(`SELECT SUM(o.productiekost_stuk * o.aantal_goed) k, SUM(COALESCE(o.arbeid_stuk, 0) * o.aantal_goed) ar,
+      SUM(CASE WHEN dr.artikel_id = ? THEN o.aantal_goed ELSE 0 END) n
     FROM printopdrachten o JOIN dossier_regels dr ON dr.id = o.dossier_regel_id JOIN dossiers d ON d.id = dr.dossier_id
-    WHERE dr.artikel_id = ? AND d.soort = 'eigen' AND o.voltooid_op IS NOT NULL AND o.aantal_goed > 0 AND o.productiekost_stuk IS NOT NULL`).get(a.id);
+    WHERE (dr.artikel_id = ? OR dr.plaat_van = ?) AND d.soort = 'eigen' AND o.voltooid_op IS NOT NULL AND o.aantal_goed > 0 AND o.productiekost_stuk IS NOT NULL`).get(a.id, a.id, a.id);
   const delen = schatting.onderdelen;
   const gemeten = g?.n ? { kost: r2(g.k / g.n + delen), arbeid: r2(g.ar / g.n), stuks: g.n } : null;
   return { profiel: !!profiel, onderdelen, schatting, gemeten, advies: advies ? adviesprijs(db, profiel, delen) : null };
@@ -44,15 +46,17 @@ export function kostVanArtikel(db, a, { advies = true } = {}) {
 // een printregel in een dossier): voor 1 stuk en per stuk bij een volle plaat,
 // plus de onderdelen aan inkoopprijs.
 function adviesprijs(db, profiel, onderdelen = 0) {
-  if (!profiel?.printer_id) return null;
+  const platen = platenVan(profiel);
+  if (!platen.length || platen.some(x => !x.printer_id)) return null;
+  // 21-10: alle platen samen (een stuk kan uit meerdere platen bestaan)
   const voor = n => {
-    const b = berekenMetDb(db, [{ type: 'printen', printer_id: profiel.printer_id, aantal: n, ...regelUitProfiel(profiel, n) }], { vergelijk: false });
-    const x = b.regels[0]?._berekend;
-    return x && !x.fout ? r2(x.eindbedrag / n + onderdelen) : null;
+    const b = berekenMetDb(db, regelsUitProfiel(profiel, n).map(({ omschrijving: _o, laatste: _l, ...r }) => ({ type: 'printen', aantal: n, ...r })), { vergelijk: false });
+    if (!b.volledig) return null;
+    return r2(b.totaal / n + onderdelen);
   };
   try {
     const stuk = voor(1);
-    const pp = profiel.per_plaat > 1 ? profiel.per_plaat : null;
+    const pp = platen.length === 1 && platen[0].per_plaat > 1 ? platen[0].per_plaat : null;
     return stuk == null ? null : { stuk, per_plaat: pp, plaat_stuk: pp ? voor(pp) : null };
   } catch { return null; }
 }

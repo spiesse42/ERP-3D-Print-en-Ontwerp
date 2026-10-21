@@ -25,6 +25,9 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
   const [stuks, setStuks] = useState('1');
   const [bestand, setBestand] = useState(null);
   const [bewaren, setBewaren] = useState(true);
+  // 21-10: artikel uit meerdere platen → de aangevinkte platen worden elk een plaat in het profiel (1 stuk per plaat)
+  const [meer, setMeer] = useState(false);
+  const [gekozen, setGekozen] = useState({});
 
   async function leesIn(bestand) {
     if (!bestand) return;
@@ -36,26 +39,27 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
       // voorkeur: de plaat met een object met de naam van dit product
       const i = Math.max(0, r.platen.findIndex(p => p.objecten.some(o => norm(o).includes(norm(naam)) || norm(naam).includes(norm(o)))));
       setD(r); setBestand(bestand); setPlaat(i); setStuks(stuksOp(r.platen[i], naam));
+      setGekozen(Object.fromEntries(r.platen.map(x => [x.nummer, true])));
     } catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
   }
   const p = d?.platen[plaat];
   const n = Number(String(stuks).replace(',', '.')) || 0;
+  const mat = (q, deel) => (q.filamenten.length ? q.filamenten.map(f => ({ keuze: f.keuze || '', gram: naarInvoer(Math.round(f.gram / deel * 100) / 100) })) : [{ keuze: '', gram: '' }]);
+  const printer = d?.printer_id ? String(d.printer_id) : '';
+  const lijst = meer ? (d?.platen || []).filter(x => gekozen[x.nummer]) : [];
   function overnemen() {
-    onOvernemen({
-      printer_id: d.printer_id ? String(d.printer_id) : '',
-      tijd_min: Math.round(p.tijd_min / n * 100) / 100,
-      per_plaat: String(n),
-      materialen: p.filamenten.length ? p.filamenten.map(f => ({ keuze: f.keuze || '', gram: naarInvoer(Math.round(f.gram / n * 100) / 100) })) : [{ keuze: '', gram: '' }],
-      bestand: bewaren ? bestand : null, plaat: p.nummer,
-    });
+    const platen = meer
+      ? lijst.map(q => ({ printer_id: printer, tijd_min: q.tijd_min, per_plaat: '1', materialen: mat(q, 1), plaat: q.nummer, naam: q.naam || '' }))
+      : [{ printer_id: printer, tijd_min: Math.round(p.tijd_min / n * 100) / 100, per_plaat: String(n), materialen: mat(p, n), plaat: p.nummer }];
+    onOvernemen({ platen, bestand: bewaren ? bestand : null });
   }
 
   return (
     <Dialoog titel="Printprofiel uit slicerbestand" onSluit={onSluit}
       voet={p && <>
         <button type="button" className="btn" onClick={onSluit}>Terug</button>
-        <button type="button" className="btn primary" disabled={n <= 0} onClick={overnemen}>Overnemen</button>
+        <button type="button" className="btn primary" disabled={meer ? !lijst.length : n <= 0} onClick={overnemen}>Overnemen{meer ? ` (${lijst.length} platen)` : ''}</button>
       </>}>
       {!d ? <>
         <label htmlFor="pp-slicer" className={`dropzone${bezig ? ' bezig' : ''}`}
@@ -69,6 +73,18 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
         <input id="pp-slicer" type="file" className="sr-only" accept=".3mf,.gcode,.gco" disabled={bezig} onChange={e => { leesIn(e.target.files?.[0]); e.target.value = ''; }} />
         <p className="note">In Bambu Studio: <b>Slice all</b> en daarna Bestand → Exporteren → <i>Export all sliced file</i>. Enkel geslicete platen staan in het bestand.</p>
       </> : <>
+        {d.platen.length > 1 && <label className="vinkje"><input type="checkbox" checked={meer} onChange={e => setMeer(e.target.checked)} /> Dit artikel bestaat uit meerdere platen (samen één stuk)</label>}
+        {meer ? <>
+          <p className="sub">Vink de platen aan die samen één stuk vormen. Elke plaat wordt een plaat in het printprofiel, met de tijd en het gram van de hele plaat.</p>
+          {d.platen.map(x => (
+            <label key={x.nummer} className="vinkje" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={!!gekozen[x.nummer]} onChange={e => setGekozen(g => ({ ...g, [x.nummer]: e.target.checked }))} />
+              {x.afbeelding && <img src={x.afbeelding} alt="" style={{ width: 48, borderRadius: 4 }} />}
+              Plaat {x.nummer}{x.naam ? ` · ${x.naam}` : ''} ({uurMin(x.tijd_min)}, {naarInvoer(x.gram)} g)
+            </label>
+          ))}
+          {lijst.length > 0 && <p className="sub">Samen: {uurMin(lijst.reduce((t, x) => t + x.tijd_min, 0))} · {naarInvoer(Math.round(lijst.reduce((t, x) => t + x.gram, 0) * 10) / 10)} g per stuk</p>}
+        </> : <>
         {d.platen.length > 1 && <label className="lbl">Plaat met dit product
           <select className="inp" value={plaat} onChange={e => { const i = Number(e.target.value); setPlaat(i); setStuks(stuksOp(d.platen[i], naam)); }}>
             {d.platen.map((x, i) => <option key={x.nummer} value={i}>Plaat {x.nummer}{x.naam ? ` · ${x.naam}` : ''} ({uurMin(x.tijd_min)}, {naarInvoer(x.gram)} g)</option>)}
@@ -82,6 +98,7 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
             {n > 0 && <p className="sub">Per stuk: {uurMin(p.tijd_min / n)} · {naarInvoer(Math.round(p.gram / n * 100) / 100)} g</p>}
           </div>
         </div>
+        </>}
         <label className="vinkje" style={{ marginTop: 8 }}><input type="checkbox" checked={bewaren} onChange={e => setBewaren(e.target.checked)} /> Slicerbestand bewaren bij dit artikel (downloaden vanuit het printprofiel)</label>
         <p className="note">Staan er ook andere producten op deze plaat, dan krijgt elk stuk een gelijk deel van tijd en gram. Slice voor een juiste kost liefst een plaat met enkel dit product. Filament dat niet herkend wordt, kies je daarna zelf in het profiel.</p>
       </>}

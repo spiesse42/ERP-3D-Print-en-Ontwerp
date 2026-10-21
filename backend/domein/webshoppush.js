@@ -21,6 +21,7 @@ import { bijlagenMap } from '../db/index.js';
 import { DomeinFout } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
 import { sanityQuery, sanityMutate, sanityAfbeelding } from '../integraties/sanity.js';
+import { gewichtVan } from '../productie/printprofiel.js';
 
 const BOOL = ['priceFrom', 'imageIsRender', 'customOrder', 'featured', 'hidden', 'comingSoon', 'colorChoice', 'textChoice', 'fontChoice', 'symbolChoice'];
 // 18-10: lettertypes voor naam/tekst (zelfde lijst als de webshop: src/data/fonts.ts)
@@ -74,7 +75,7 @@ function artikel(db, id) {
 }
 const fotosVan = (db, id) => db.prepare(`SELECT id, bestandsnaam, mimetype FROM bijlagen WHERE entiteit = 'artikel' AND entiteit_id = ? AND mimetype LIKE 'image/%' ORDER BY id`).all(id);
 function gewichtUitProfiel(a) {
-  try { const p = JSON.parse(a.printprofiel || 'null'); const g = (p?.materialen || []).reduce((t, m) => t + (Number(m.gram) || 0), 0); return g > 0 ? Math.round(g * 10) / 10 : null; }
+  try { return gewichtVan(JSON.parse(a.printprofiel || 'null')); }
   catch { return null; }
 }
 
