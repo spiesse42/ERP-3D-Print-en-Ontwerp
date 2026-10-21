@@ -20,8 +20,10 @@ export function PrintopdrachtDialoog({ a, onSluit }) {
   // 06-10: met een printprofiel → printer van het profiel, opdrachten per plaat
   const { data: pp } = useData(`/productie/printprofiel/${a.id}`);
   const profiel = pp?.profiel;
+  // 21-10: profiel uit meerdere platen → één printregel per plaat (eigen printer per plaat)
+  const platen = !profiel ? [] : Array.isArray(profiel.platen) && profiel.platen.length ? profiel.platen : [profiel];
   const [f, setF] = useState({ aantal: naarInvoer(a.voorstel), printer_id: '' });
-  const printerId = f.printer_id || (profiel?.printer_id ? String(profiel.printer_id) : '');
+  const printerId = f.printer_id || (platen[0]?.printer_id ? String(platen[0].printer_id) : '');
   const [bezig, setBezig] = useState(false);
   async function ok() {
     setBezig(true);
@@ -46,7 +48,7 @@ export function PrintopdrachtDialoog({ a, onSluit }) {
       {a.personalisatie && <p><span className="badge b-info">{a.personalisatie}</span> <span className="sub">komt in de printregel en de printopdracht</span></p>}
       <p className="sub"><Link naar={`/voorraad/artikelen/${a.id}`}>Artikel openen</Link> · voorraad {aantal(a.voorraad)}{a.in_productie ? ` · ${aantal(a.in_productie)} in productie` : ''}</p>
       <p className="note" style={{ marginBottom: 0 }}>Er komt een dossier "Eigen product" met een printregel voor dit artikel; {profiel
-        ? <>printtijd en filament komen uit het <b>printprofiel</b> (× het aantal){profiel.per_plaat ? `, één printopdracht per plaat van ${profiel.per_plaat} stuks` : ''}.</>
+        ? <>printtijd en filament komen uit het <b>printprofiel</b> (× het aantal){platen.length > 1 ? `, één printregel per plaat (${platen.length} platen; printer van de plaat, anders deze)` : profiel.per_plaat ? `, één printopdracht per plaat van ${profiel.per_plaat} stuks` : ''}.</>
         : 'printtijd en filament worden overgenomen van de vorige keer (herschaald naar het aantal). Tip: geef het artikel een printprofiel.'} Bij het bevestigen gaan de goede stuks in voorraad.</p>
     </Dialoog>
   );

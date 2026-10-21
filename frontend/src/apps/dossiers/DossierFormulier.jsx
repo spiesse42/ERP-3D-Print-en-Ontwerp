@@ -9,7 +9,7 @@ import Historiek from '../../schil/Historiek.jsx';
 import Bijlagen from '../../schil/Bijlagen.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import KeuzeMetToevoegen from '../../components/KeuzeMetToevoegen.jsx';
-import RegelEditor, { Totalen, TYPES, nieuweRegel, naarApi, vanApi, useBerekening, regelUitProduct } from '../../components/RegelEditor.jsx';
+import RegelEditor, { Totalen, TYPES, nieuweRegel, naarApi, vanApi, useBerekening, regelsUitProduct } from '../../components/RegelEditor.jsx';
 import { euro, datum } from '../../lib/formaat.js';
 import { klantNaam } from '../klanten/klant.js';
 import { FASE, SOORT, FaseBadge, VOOR_AFREKENING } from './dossier.jsx';
@@ -306,7 +306,7 @@ export default function DossierFormulier() {
                     <button type="button" className="btn" title="Printregels uit een geslicet 3mf-bestand van Bambu Studio" onClick={() => { setSlicerBoven(false); setDialoog('slicer'); }}><Icoon naam="plus" maat={14} /> Uit slicerbestand</button>
                     {producten?.length > 0 && <select className="inp" style={{ width: 'auto' }} aria-label="Printregel uit een product (printprofiel)" value="" onChange={e => {
                       const a = producten.find(x => String(x.id) === e.target.value);
-                      if (a) setForm(f => ({ ...f, regels: [...f.regels, regelUitProduct(a, f.kop.soort === 'eigen' ? artikelenZicht.filter(x => x.type === 'artikel' && x.zelf_geprint) : null)] }));
+                      if (a) setForm(f => ({ ...f, regels: [...f.regels, ...regelsUitProduct(a, f.kop.soort === 'eigen' ? artikelenZicht.filter(x => x.type === 'artikel' && x.zelf_geprint) : null)] }));
                     }}>
                       <option value="">+ Uit product…</option>
                       {producten.map(a => <option key={a.id} value={a.id}>{a.naam}</option>)}

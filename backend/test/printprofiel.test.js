@@ -249,3 +249,29 @@ test('P13. kortingen: filament, printuren en regel in % of €; korting op het t
   assert.ok(l.berekening.regels[1]._berekend.eindbedrag < 0);
   assert.equal((await vraag('POST', '/dossiers', { soort: 'klant', klant_id: klant, titel: 'Fout', regels: [{ ...regel, korting: { regel: { waarde: 120, soort: 'pct' } } }] })).status, 400);
 });
+
+test('P14. artikel uit meerdere platen: profiel met platen, kost en advies opgeteld, bijprinten = één regel per plaat, enkel de laatste naar voorraad', async () => {
+  const db = getDb();
+  const id = ok(await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Vuurtoren groot', zelf_geprint: true, wordt_verkocht: true, verkoopprijs: 80 }), 201).id;
+  // één plaat blijft de vlakke vorm
+  const een = ok(await vraag('PUT', `/productie/printprofiel/${id}`, { profiel: { platen: [{ printer_id: mini, tijd_min: 60, materialen: [{ artikel_id: zwart, gram: 50 }] }] } })).profiel;
+  assert.equal(een.platen, undefined); assert.equal(een.tijd_min, 60);
+  const k1 = ok(await vraag('GET', `/producten/${id}/kost`)).schatting;
+  const p = ok(await vraag('PUT', `/productie/printprofiel/${id}`, { profiel: { platen: [
+    { naam: 'voet', printer_id: mini, tijd_min: 60, per_plaat: 1, materialen: [{ artikel_id: zwart, gram: 50 }] },
+    { naam: 'dak', printer_id: mini, tijd_min: 120, per_plaat: 1, materialen: [{ artikel_id: zwart, gram: 100 }] }] } })).profiel;
+  assert.equal(p.platen.length, 2); assert.equal(p.platen[1].naam, 'dak');
+  const k = ok(await vraag('GET', `/producten/${id}/kost`));
+  assert.ok(Math.abs(k.schatting.filament - k1.filament * 3) < 1e-3, 'filament van beide platen');
+  assert.ok(Math.abs(k.schatting.machine - 3 * 0.2) < 1e-3, '3 u machine');
+  assert.ok(k.advies?.stuk > 0, 'adviesprijs over beide platen');
+  await assert.rejects(Promise.resolve(vraag('PUT', `/productie/printprofiel/${id}`, { profiel: { platen: [{ printer_id: mini, tijd_min: 60 }, { printer_id: mini }] } })).then(r => { if (r.status === 400) throw new Error(r.data.error); }), /Plaat 2/);
+  const u = ok(await vraag('POST', '/productie/eigen-product', { artikel_id: id, aantal: 2 }), 201);
+  const d = ok(await vraag('GET', `/dossiers/${u.dossier_id}`));
+  assert.equal(d.regels.length, 2);
+  assert.match(d.regels[0].omschrijving, /plaat 1\/2 \(voet\)/);
+  assert.equal(d.regels[0].artikel_id, null); assert.equal(d.regels[0].plaat_van, id);
+  assert.equal(d.regels[1].artikel_id, id); assert.equal(d.regels[1].plaat_van, null);
+  assert.equal(d.regels[1].tijd_min, 240, '2 stuks × 2 u');
+  assert.equal(u.opdrachten, 4, '2 stuks × 2 platen, 1 stuk per plaat');
+});

@@ -84,7 +84,7 @@ export function leesRegels(lijst) {
     if (!REGELTYPES.includes(r?.type)) throw new DomeinFout(`${nr}: onbekend soort regel`);
     const leeg = { aantal: null, printer_id: null, tijd_min: null, voorbereiding_min: null, nabewerking_min: null,
       minuten: null, tarief: null, artikel_id: null, bedrag: null, per_stuk: 0, materialen: [], afbeelding: null,
-      slicer_bijlage_id: null, slicer_plaat: null, per_plaat: null };
+      slicer_bijlage_id: null, slicer_plaat: null, per_plaat: null, plaat_van: null };
     const korting = leesKorting(r.korting, r.type, nr);
     const basis = { ...leeg, id: Number.isInteger(r.id) ? r.id : null, type: r.type, omschrijving: tekst(r.omschrijving),
       handmatig_bedrag: r.type === 'korting' ? null : nietNegatief(r.handmatig_bedrag, `${nr}: eindbedrag`),
@@ -100,6 +100,8 @@ export function leesRegels(lijst) {
         // slicerbestand (bijlage van dit dossier) + plaat, 28-09
         slicer_bijlage_id: id(r.slicer_bijlage_id, 'slicerbestand'), slicer_plaat: r.slicer_bijlage_id ? id(r.slicer_plaat, 'plaat') : null,
         aantal: aantal(r.aantal, nr), printer_id: id(r.printer_id, 'printer'), artikel_id: id(r.artikel_id, 'eindproduct'),
+        // 21-10: andere plaat van een artikel uit meerdere platen (kost telt mee, boekt niet in voorraad)
+        plaat_van: r.artikel_id ? null : id(r.plaat_van, 'artikel (plaat van)'),
         // 06-10: per_stuk = tijd/gram per stuk ingegeven (bewaard: totalen); per_plaat = stuks per plaat
         per_stuk: r.per_stuk ? 1 : 0, per_plaat: id(r.per_plaat, 'stuks per plaat'),
         tijd_min: nietNegatief(r.tijd_min, `${nr}: printtijd`) ?? 0,
@@ -123,10 +125,11 @@ export function leesRegels(lijst) {
 // ── regels bewaren: bestaande id's behouden (leveringen/printopdrachten
 // verwijzen er later naar), nieuwe toevoegen, weggelaten regels schrappen.
 const KOL = ['type', 'omschrijving', 'aantal', 'printer_id', 'tijd_min', 'voorbereiding_min', 'nabewerking_min',
-  'minuten', 'tarief', 'artikel_id', 'bedrag', 'per_stuk', 'handmatig_bedrag', 'afbeelding', 'slicer_bijlage_id', 'slicer_plaat', 'per_plaat', 'korting'];
+  'minuten', 'tarief', 'artikel_id', 'bedrag', 'per_stuk', 'handmatig_bedrag', 'afbeelding', 'slicer_bijlage_id', 'slicer_plaat', 'per_plaat', 'korting', 'plaat_van'];
 export function bewaarRegels(db, dossierId, regels) {
   const soort = db.prepare('SELECT soort FROM dossiers WHERE id = ?').get(dossierId)?.soort;
   for (const [i, r] of regels.entries()) {
+    if (r.type === 'printen' && r.plaat_van && (soort !== 'eigen' || !db.prepare(`SELECT 1 FROM artikelen WHERE id = ? AND type = 'artikel' AND zelf_geprint = 1`).get(r.plaat_van))) r.plaat_van = null;
     if (r.type !== 'printen' || !r.artikel_id) continue;
     if (soort !== 'eigen') { r.artikel_id = null; continue; }
     const a = db.prepare('SELECT type, zelf_geprint, naam FROM artikelen WHERE id = ?').get(r.artikel_id);
