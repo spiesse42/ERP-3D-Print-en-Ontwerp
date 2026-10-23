@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { api, BASE } from '../../lib/api.js';
-import { useData } from '../../schil/useData.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { Totalen } from '../../components/RegelEditor.jsx';

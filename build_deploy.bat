@@ -60,6 +60,8 @@ cd ..
 echo.
 echo [2/5] Frontend bouwen...
 cd frontend
+call npm run lint
+if %errorlevel% neq 0 ( echo. & echo *** LINT-FOUTEN in de frontend - niets gebouwd of gepusht. Zie de meldingen hierboven. *** & pause & exit /b 1 )
 call npm run build
 if %errorlevel% neq 0 ( echo FOUT bij npm run build & pause & exit /b 1 )
 cd ..
