@@ -68,7 +68,6 @@ export default function FactuurInlezen() {
         leesIn(new File([await res.blob()], uitMail.naam, { type: uitMail.type }));
       } catch (e) { setFout(e.message); }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function leesIn(bestand, tekst = null) {
