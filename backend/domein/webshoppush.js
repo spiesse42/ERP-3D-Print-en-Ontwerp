@@ -23,6 +23,7 @@ import { logGebeurtenis } from './historiek.js';
 import { sanityQuery, sanityMutate, sanityAfbeelding } from '../integraties/sanity.js';
 import { gewichtVan } from '../productie/printprofiel.js';
 import { maakArtikel } from './artikelen.js';
+import { voorraadVan, boekIn, boekUit } from './voorraad.js';
 
 const BOOL = ['priceFrom', 'imageIsRender', 'customOrder', 'featured', 'hidden', 'comingSoon', 'colorChoice', 'textChoice', 'fontChoice', 'symbolChoice'];
 // 18-10: lettertypes voor naam/tekst (zelfde lijst als de webshop: src/data/fonts.ts)
@@ -153,7 +154,7 @@ export async function leesWebshop(db, artikelId, { fetchFn = fetch } = {}) {
   // 23-10: per keuze het eigen artikel (prijs, voorraad, printprofiel), als dat er is
   if (Array.isArray(data.sizeVariants) && a.webshop_slug) data = { ...data, sizeVariants: data.sizeVariants.map(v => ({ ...v, artikel: keuzeArtikel(db, a.webshop_slug, v.label) })) };
   if (isLayerLeaf(db, a.categorie_id)) data = { ...data, description: metSjabloon(data.description) };
-  return { data, bron, sanity_foto: sanityFoto, fotos: fotosVan(db, a.id), slug: a.webshop_slug, variant: a.webshop_variant,
+  return { data, bron, voorraad: voorraadVan(db, a.id), sanity_foto: sanityFoto, fotos: fotosVan(db, a.id), slug: a.webshop_slug, variant: a.webshop_variant,
     gepusht_op: a.webshop_gepusht_op, naam: a.naam, prijs: a.verkoopprijs, gewicht_profiel: gewichtUitProfiel(a) };
 }
 
@@ -188,6 +189,25 @@ export function maakKeuzeArtikel(db, artikelId, label) {
   logGebeurtenis(db, 'artikel', a.id, 'gewijzigd', `Artikel "${naam}" aangemaakt voor keuze "${v.label}"`);
   return { ...keuzeArtikel(db, a.webshop_slug, v.label), nieuw: true, profiel_gekopieerd: !!basis };
 }
+// Stuks die nog op het hoofdartikel staan (van vóór de keuze-artikels) naar
+// het artikel van een keuze verplaatsen, partij per partij aan dezelfde prijs.
+export function voorraadNaarKeuze(db, artikelId, label) {
+  const a = artikel(db, artikelId);
+  const k = a.webshop_slug ? keuzeArtikel(db, a.webshop_slug, String(label ?? '')) : null;
+  if (!k) throw new DomeinFout('Maak eerst het artikel van die keuze aan.');
+  const partijen = db.prepare(`SELECT * FROM voorraad_partijen WHERE artikel_id = ? AND aantal_resterend > 0 ORDER BY ontvangen_op, id`).all(a.id);
+  if (!partijen.length) throw new DomeinFout('Er staat niets in voorraad op dit artikel.');
+  let n = 0;
+  for (const p of partijen) {
+    const notitie = `Verplaatst: ${a.naam} → ${k.naam}`;
+    boekUit(db, { artikelId: a.id, aantal: p.aantal_resterend, reden: 'correctie', notitie });
+    boekIn(db, { artikelId: k.id, aantal: p.aantal_resterend, prijs: p.prijs_per_eenheid, reden: 'correctie', notitie });
+    n += p.aantal_resterend;
+  }
+  logGebeurtenis(db, 'artikel', a.id, 'gewijzigd', `${String(n).replace('.', ',')} stuks in voorraad verplaatst naar "${k.naam}"`);
+  return { verplaatst: n, naar: k.naam };
+}
+
 // Alle producten met keuzes: de ontbrekende keuze-artikels aanmaken.
 export function maakAlleKeuzeArtikels(db) {
   let nieuw = 0, producten = 0;
