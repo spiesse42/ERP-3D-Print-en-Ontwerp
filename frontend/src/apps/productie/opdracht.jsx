@@ -17,7 +17,7 @@ export const OPDRACHT = {
 };
 export function OpdrachtBadge({ status }) { const [k, l] = OPDRACHT[status] || OPDRACHT.gepland; return <span className={`badge ${k}`}>{l}</span>; }
 export const INTERN = { kalibratie: 'Kalibratie', test: 'Test', overig: 'Overig (intern)' };
-export const SOORT_OPDRACHT = { klant: 'Klant', eigen: 'Eigen product', intern: 'Intern' };
+export const SOORT_OPDRACHT = { klant: 'Klant', eigen: 'Voorraad', intern: 'Intern' };
 export const duur = m => (m == null ? '—' : m >= 60 ? `${Math.floor(m / 60)} u ${String(Math.round(m % 60)).padStart(2, '0')}` : `${Math.round(m)} min`);
 const UITKOMST = { bezig: 'bezig', klaar: 'geslaagd', mislukt: 'mislukt', geannuleerd: 'geannuleerd' };
 
@@ -167,7 +167,7 @@ export function OpdrachtDialoog({ opdracht = null, vast = null, onSluit: sluit, 
           </select></div>
         {!o && !vast && <div><label htmlFor="po-soort">Soort</label>
           <select id="po-soort" className="inp" value={f.soort} onChange={zet('soort')}>
-            <option value="eigen">Eigen product</option><option value="intern">Intern</option>
+            <option value="eigen">Voorraad</option><option value="intern">Intern</option>
           </select></div>}
       </div>
       <label className="lbl" htmlFor="po-not" style={{ marginTop: 12 }}>Notities</label>
@@ -371,7 +371,7 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
             <div><label htmlFor="kp-aantal">Aantal stuks</label><input id="kp-aantal" className="inp num" inputMode="decimal" value={nieuw.aantal} onChange={e => setNieuw(x => ({ ...x, aantal: e.target.value }))} /></div>
             <div><label htmlFor="kp-soort">Soort</label>
               <select id="kp-soort" className="inp" value={nieuw.soort} onChange={e => setNieuw(x => ({ ...x, soort: e.target.value }))}>
-                <option value="eigen">Eigen product</option><option value="intern">Intern</option>
+                <option value="eigen">Voorraad</option><option value="intern">Intern</option>
               </select></div>
             <div style={{ gridColumn: '1 / -1' }}>
               <FilamentInvoer rijen={nieuwMat} onWijzig={setNieuwMat} id="kp-fil" />

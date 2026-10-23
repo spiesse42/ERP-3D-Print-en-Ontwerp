@@ -47,7 +47,7 @@ export function PrintopdrachtDialoog({ a, onSluit }) {
       </div>
       {a.personalisatie && <p><span className="badge b-info">{a.personalisatie}</span> <span className="sub">komt in de printregel en de printopdracht</span></p>}
       <p className="sub"><Link naar={`/voorraad/artikelen/${a.id}`}>Artikel openen</Link> · voorraad {aantal(a.voorraad)}{a.in_productie ? ` · ${aantal(a.in_productie)} in productie` : ''}</p>
-      <p className="note" style={{ marginBottom: 0 }}>Er komt een dossier "Eigen product" met een printregel voor dit artikel; {profiel
+      <p className="note" style={{ marginBottom: 0 }}>Er komt een dossier "Voorraad" met een printregel voor dit artikel; {profiel
         ? <>printtijd en filament komen uit het <b>printprofiel</b> (× het aantal){platen.length > 1 ? `, één printregel per plaat (${platen.length} platen; printer van de plaat, anders deze)` : profiel.per_plaat ? `, één printopdracht per plaat van ${profiel.per_plaat} stuks` : ''}.</>
         : 'printtijd en filament worden overgenomen van de vorige keer (herschaald naar het aantal). Tip: geef het artikel een printprofiel.'} Bij het bevestigen gaan de goede stuks in voorraad.</p>
     </Dialoog>

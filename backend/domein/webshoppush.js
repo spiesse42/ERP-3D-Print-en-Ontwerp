@@ -22,6 +22,7 @@ import { DomeinFout } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
 import { sanityQuery, sanityMutate, sanityAfbeelding } from '../integraties/sanity.js';
 import { gewichtVan } from '../productie/printprofiel.js';
+import { maakArtikel } from './artikelen.js';
 
 const BOOL = ['priceFrom', 'imageIsRender', 'customOrder', 'featured', 'hidden', 'comingSoon', 'colorChoice', 'textChoice', 'fontChoice', 'symbolChoice'];
 // 18-10: lettertypes voor naam/tekst (zelfde lijst als de webshop: src/data/fonts.ts)
@@ -149,9 +150,54 @@ export async function leesWebshop(db, artikelId, { fetchFn = fetch } = {}) {
     } catch { /* niet bereikbaar: blijft null, de push laat de keuzes dan ongemoeid */ }
   }
   if (data.sizeVariants === undefined) data.sizeVariants = a.webshop_slug ? null : [];
+  // 23-10: per keuze het eigen artikel (prijs, voorraad, printprofiel), als dat er is
+  if (Array.isArray(data.sizeVariants) && a.webshop_slug) data = { ...data, sizeVariants: data.sizeVariants.map(v => ({ ...v, artikel: keuzeArtikel(db, a.webshop_slug, v.label) })) };
   if (isLayerLeaf(db, a.categorie_id)) data = { ...data, description: metSjabloon(data.description) };
   return { data, bron, sanity_foto: sanityFoto, fotos: fotosVan(db, a.id), slug: a.webshop_slug, variant: a.webshop_variant,
     gepusht_op: a.webshop_gepusht_op, naam: a.naam, prijs: a.verkoopprijs, gewicht_profiel: gewichtUitProfiel(a) };
+}
+
+// ── per keuze een eigen artikel (23-10) ─────────────────────────────────
+// Elke keuze (maat/model) kan een eigen ERP-artikel hebben, gekoppeld via
+// dezelfde slug + webshop_variant = de naam van de keuze: eigen printprofiel,
+// voorraad en Bijprinten, en webshopbestellingen vinden het juiste artikel.
+// De prijs van die keuze komt dan van dat artikel (bij de push).
+export function keuzeArtikel(db, slug, label) {
+  const k = db.prepare(`SELECT a.id, a.naam, a.verkoopprijs, a.printprofiel IS NOT NULL AS profiel,
+      (SELECT COALESCE(SUM(aantal_resterend), 0) FROM voorraad_partijen p WHERE p.artikel_id = a.id) AS voorraad
+    FROM artikelen a WHERE a.webshop_slug = ? AND a.webshop_variant = ? COLLATE NOCASE AND a.gearchiveerd = 0`).get(slug, label);
+  return k ? { ...k, profiel: !!k.profiel } : null;
+}
+export function maakKeuzeArtikel(db, artikelId, label) {
+  const a = artikel(db, artikelId);
+  if (!a.webshop_slug) throw new DomeinFout('Zet het product eerst in de webshop (Naar de webshop): de keuze-artikels worden eraan gekoppeld.');
+  const d = a.webshop_data ? JSON.parse(a.webshop_data) : {};
+  const v = (Array.isArray(d.sizeVariants) ? d.sizeVariants : []).find(x => String(x.label).toLowerCase() === String(label ?? '').trim().toLowerCase());
+  if (!v) throw new DomeinFout('Onbekende keuze: bewaar eerst de keuzes (Enkel bewaren of Bijwerken in de webshop).');
+  const al = keuzeArtikel(db, a.webshop_slug, v.label);
+  if (al) return { ...al, nieuw: false };
+  const hoofd = db.prepare('SELECT categorie_id, printprofiel FROM artikelen WHERE id = ?').get(a.id);
+  let naam = `${a.naam} — ${v.label}`;
+  if (db.prepare(`SELECT 1 FROM artikelen WHERE naam = ? COLLATE NOCASE`).get(naam)) naam = `${naam} (${a.webshop_slug})`;
+  const id = maakArtikel(db, { type: 'artikel', wordt_gekocht: 0, wordt_verkocht: 1, zelf_geprint: 1, categorie_id: hoofd.categorie_id, naam,
+    filament_type_id: null, kleur_id: null, eenheid: 'stuks', verkoopprijs: v.price ?? a.verkoopprijs ?? null, inkoopprijs: null, marge_pct: null, productieprijs: null,
+    vaste_prijs: 0, min_voorraad: null, max_voorraad: null, locatie: null, notities: null }, `Keuze "${v.label}" van ${a.naam} (webshop)`);
+  // het printprofiel van het hoofdartikel hoort bij de keuze met dezelfde prijs (meestal de basismaat)
+  const basis = hoofd.printprofiel && v.price != null && a.verkoopprijs != null && Math.abs(v.price - a.verkoopprijs) < 0.005;
+  db.prepare(`UPDATE artikelen SET webshop_slug = ?, webshop_variant = ?, printprofiel = ? WHERE id = ?`).run(a.webshop_slug, v.label, basis ? hoofd.printprofiel : null, id);
+  logGebeurtenis(db, 'artikel', a.id, 'gewijzigd', `Artikel "${naam}" aangemaakt voor keuze "${v.label}"`);
+  return { ...keuzeArtikel(db, a.webshop_slug, v.label), nieuw: true, profiel_gekopieerd: !!basis };
+}
+// Alle producten met keuzes: de ontbrekende keuze-artikels aanmaken.
+export function maakAlleKeuzeArtikels(db) {
+  let nieuw = 0, producten = 0;
+  for (const a of db.prepare(`SELECT id, webshop_data FROM artikelen WHERE webshop_slug IS NOT NULL AND webshop_variant IS NULL AND webshop_data IS NOT NULL AND gearchiveerd = 0`).all()) {
+    let d; try { d = JSON.parse(a.webshop_data); } catch { continue; }
+    if (!Array.isArray(d.sizeVariants) || !d.sizeVariants.length) continue;
+    producten++;
+    for (const v of d.sizeVariants) if (maakKeuzeArtikel(db, a.id, v.label).nieuw) nieuw++;
+  }
+  return { producten, nieuw };
 }
 
 const VARIANTEN_GROQ = '"sizeVariants": sizeVariants[]{ label, price, weightGrams, "sanity_image": image.asset._ref }';
@@ -229,6 +275,8 @@ export async function pushWebshop(db, artikelId, { forceer = false, fetchFn = fe
     else {
       velden.sizeVariants = [];
       for (const v of d.sizeVariants) {
+        const ka = keuzeArtikel(db, a.webshop_slug || '', v.label);
+        if (ka?.verkoopprijs != null) v.price = ka.verkoopprijs;   // 23-10: de prijs komt van het keuze-artikel
         const foto = v.image_bijlage_id ? await asset(db, d, v.image_bijlage_id, fetchFn) : v.sanity_image;
         velden.sizeVariants.push({ _type: 'sizeVariant', _key: crypto.createHash('md5').update(v.label).digest('hex').slice(0, 12), label: v.label, price: v.price,
           weightGrams: v.weightGrams ?? d.weightGrams ?? gewichtUitProfiel(a) ?? 0, ...(foto ? { image: beeld(foto) } : {}) });

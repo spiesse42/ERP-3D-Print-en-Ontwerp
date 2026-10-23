@@ -99,7 +99,7 @@ function Productiekost({ id, verkoopprijs }) {
   const l = data.laatste, g = data.gemiddeld;
   return (
     <Veld label="Productiekost (gemeten)" hint={l ? 'Filament aan inkoopprijs, gemeten elektriciteit, machinetarief, BMCU en mislukte pogingen, per goed stuk. Arbeid = voorbereiding + nabewerking.' : null}>
-      {!l ? <span className="sub">Nog niet gemeten: plan het via een dossier "Eigen product" (printregel → naar voorraad als dit artikel).</span> : (
+      {!l ? <span className="sub">Nog niet gemeten: plan het via een dossier "Voorraad" (printregel → naar voorraad als dit artikel).</span> : (
         <div className="pk">
           <div>Laatste: <b className="num">{euro(l.productiekost_stuk)}</b><Winst prijs={verkoopprijs} kost={l.productiekost_stuk} />
             {l.kost_onvolledig ? <span className="badge b-warn" style={{ marginLeft: 6 }}>onvolledig</span> : null}

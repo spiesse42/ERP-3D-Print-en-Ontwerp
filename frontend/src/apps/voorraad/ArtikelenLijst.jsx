@@ -58,7 +58,13 @@ function KostCel({ a }) {
 // dubbelklik op de prijs; Enter of wegklikken = bewaren, Esc = annuleren).
 // Een prijs invullen zet "wordt verkocht" aan. Filament: prijs per kg elders.
 function PrijsCel({ a, onBewaard }) {
-  const { melding } = useOmgeving();
+  const { melding, bevestig } = useOmgeving();
+  // 23-10: per webshopkeuze (maat/model) een eigen artikel
+  async function keuzeArtikels() {
+    if (!await bevestig({ titel: 'Artikels voor webshopkeuzes', tekst: 'Voor elke keuze (bv. 10cm en 15cm) van een webshopproduct komt er een eigen artikel, met de prijs van die keuze. Zo heeft elke keuze een eigen printprofiel en voorraad, en vinden webshopbestellingen het juiste artikel. Bestaande keuze-artikels blijven zoals ze zijn.', bevestigLabel: 'Aanmaken', annuleerLabel: 'Terug' })) return;
+    try { const r = await api.post('/producten/webshop/keuze-artikels'); melding(r.nieuw ? `${r.nieuw} artikel${r.nieuw === 1 ? '' : 's'} aangemaakt voor de keuzes van ${r.producten} product${r.producten === 1 ? '' : 'en'}. Vul per keuze nog het printprofiel in.` : 'Alle keuzes hebben al een eigen artikel.'); herlaad(); }
+    catch (e) { melding(e.message, 'fout'); }
+  }
   const [invoer, setInvoer] = useState(null);
   if (a.type === 'filament') return prijs(a);
   const stop = e => e.stopPropagation();
@@ -146,6 +152,7 @@ export default function ArtikelenLijst() {
         acties={<>
           <button type="button" className="btn" onClick={() => setBulk(true)} title="De verkochte artikels uit deze lijst in één keer naar de webshop (Sanity)">Naar webshop…</button>
           <button type="button" className="btn" onClick={() => setImportOpen(true)} title="Artikels aanmaken uit een map met downloads (bv. Patreon)">Importeren uit map…</button>
+          <button type="button" className="btn" onClick={keuzeArtikels} title="Voor elke webshopkeuze (maat/model) zonder eigen artikel er een aanmaken: eigen printprofiel, voorraad en bestellingen per keuze">Artikels voor webshopkeuzes</button>
           <button type="button" className="btn primary" onClick={() => navigeer(`/voorraad/artikelen/nieuw${type ? `?type=${type}` : ''}`)}>Nieuw</button>
         </>}
         filters={<>

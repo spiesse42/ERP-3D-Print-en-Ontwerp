@@ -113,7 +113,7 @@ export function DossierUitleg({ onSluit }) {
           <li><b>Krijgt de klant het zonder te betalen</b> (goodwill, test)? <b>Gratis geleverd</b>: geen afrekening en geen omzet, maar je kost blijft zichtbaar in Financiën → Marges.</li>
           <li><b>Gaat de opdracht helemaal niet door?</b> <b>Dossier annuleren</b>. Heropenen kan later nog.</li>
           <li><b>Printopdracht annuleren</b> stopt enkel die ene opdracht (bv. een stuk dat niet meer nodig is), niet het dossier.</li>
-          <li><b>Eigen product</b> (soort "Eigen product"): geen offerte, werkbon of afrekening; de goede stuks gaan bij het bevestigen in voorraad.</li>
+          <li><b>Voorraad</b> (soort "Voorraad", vroeger "Eigen product"): geen offerte, werkbon of afrekening en geen verkoopprijs, enkel de productiekost; de goede stuks gaan bij het bevestigen in voorraad, aan die kost.</li>
         </ul>
       </div>
     </Dialoog>

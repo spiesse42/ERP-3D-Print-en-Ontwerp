@@ -153,23 +153,32 @@ function KortingVeld({ label, titel, k, onZet }) {
   );
 }
 
-function KostRegel({ k, bedrag }) {
+function KostRegel({ k, bedrag, alleenKost = false }) {
   const r = v => euro(Math.round(v * 100) / 100);
   return (
     <div className="kostregel" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '0 12px', color: 'var(--pos)' }}>
       <span>productiekost {r(k.kost)}{k.per_stuk !== k.kost ? ` (${r(k.per_stuk)}/stuk)` : ''}: filament {r(k.filament)} · stroom {r(k.energie)} · machine {r(k.machine)} · BMCU {r(k.bmcu)}</span>
       <span>+ arbeid {r(k.arbeid)}</span>
-      <span>winst {r(k.winst)}{pctVan(k.winst, bedrag)} · na arbeid {r(k.winst_na_arbeid)}</span>
+      {!alleenKost && <span>winst {r(k.winst)}{pctVan(k.winst, bedrag)} · na arbeid {r(k.winst_na_arbeid)}</span>}
       {k.onvolledig && <span>ontbreekt: {k.ontbreekt.join(', ')}</span>}
     </div>
   );
 }
 
 const e2 = v => euro(Math.round(v * 100) / 100);
-function Detail({ b, type }) {
+function Detail({ b, type, alleenKost = false }) {
   if (!b) return null;
   if (b.fout) return <div className="regelfout"><Icoon naam="let" maat={14} /> {b.fout}</div>;
   const d = b.detail || {};
+  // 23-10: voorraad → geen verkoopprijs, enkel wat het printen kost
+  if (alleenKost) {
+    return (
+      <div className="regeldetail sub">
+        {type === 'printen' && <span>{fmtAantal(Math.round(d.uren * 100) / 100)} u</span>}
+        {b.kost && <KostRegel k={b.kost} alleenKost />}
+      </div>
+    );
+  }
   const delen = type === 'printen'
     ? [[d.materialen?.some(m => m.prijs_bron === 'inkoop') ? 'materiaal (inkoopprijs)' : 'materiaal', d.materiaal], ['energie', d.energie], ['machine', d.machine], ['arbeid', d.arbeid], ['BMCU/AMS', d.bmcu], ...(d.winst ? [['winst printuren', d.winst]] : [])]
     : [];
@@ -202,7 +211,8 @@ function Totaal({ r }) {
 // alleenLezen: bv. een afgerekend dossier — alles zichtbaar, niets te wijzigen.
 // eindproducten: enkel bij een dossier "Eigen product" — zelf geprinte
 // artikelen waar de goede stuks van een printregel naartoe gaan (stap 6c).
-export default function RegelEditor({ regels, onWijzig, uitkomst, printers, filamenten, prijsgroepen, artikelen, tarieven, herkomst, onArtikelGemaakt, alleenLezen = false, eindproducten = null, producten = null }) {
+// alleenKost (23-10): dossier "Voorraad" — geen verkoopprijs, korting of eindbedrag, enkel de productiekost.
+export default function RegelEditor({ regels, onWijzig, uitkomst, printers, filamenten, prijsgroepen, artikelen, tarieven, herkomst, onArtikelGemaakt, alleenLezen = false, eindproducten = null, producten = null, alleenKost = false }) {
   const actueel = useRef(regels);
   actueel.current = regels;
   const { melding } = useOmgeving();
@@ -236,7 +246,7 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                 {TYPES.map(([w, l]) => <option key={w} value={w}>{l}</option>)}
               </select>
               <input className="inp" aria-label={`Omschrijving regel ${i + 1}`} placeholder="Omschrijving (bv. Sleutelhanger hond)" value={r.omschrijving} onChange={e => zet(i, { omschrijving: e.target.value })} />
-              <b className="num eind">{b && !b.fout ? euro(b.eindbedrag) : '—'}</b>
+              <b className="num eind" title={alleenKost ? 'Geschatte productiekost' : undefined}>{!b || b.fout ? '—' : alleenKost ? (b.kost ? <>{e2(b.kost.kost)} <span className="sub" style={{ fontWeight: 400 }}>kost</span></> : '—') : euro(b.eindbedrag)}</b>
               <button type="button" className="btn ghost" aria-label={`Regel ${i + 1} weghalen`} onClick={() => onWijzig(regels.filter((_, j) => j !== i))}><Icoon naam="kruis" maat={14} /></button>
             </div>
             <div className="regel-velden">
@@ -317,14 +327,14 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                 <KortingVeld label="Korting op het totaal" k={r.korting?.totaal} onZet={x => zet(i, { korting: { totaal: x } })} />
                 <span className="sub" style={{ alignSelf: 'center', flex: '1 1 320px' }}>op alle andere regels samen (niet op vaste prijzen zoals verzending); komt als aparte regel op offerte, werkbon en factuur</span>
               </>}
-              {r.type !== 'korting' && <label>Eindbedrag aanpassen<input className="inp num" inputMode="decimal" placeholder="berekend" value={r.handmatig_bedrag} onChange={e => zet(i, { handmatig_bedrag: e.target.value })} /></label>}
-              {r.type !== 'korting' && (open[r.sleutel] || Object.values(r.korting || {}).some(x => x?.waarde)) ? <>
+              {r.type !== 'korting' && !alleenKost && <label>Eindbedrag aanpassen<input className="inp num" inputMode="decimal" placeholder="berekend" value={r.handmatig_bedrag} onChange={e => zet(i, { handmatig_bedrag: e.target.value })} /></label>}
+              {alleenKost ? null : r.type !== 'korting' && (open[r.sleutel] || Object.values(r.korting || {}).some(x => x?.waarde)) ? <>
                 {r.type === 'printen' && <KortingVeld label="Korting filament" k={r.korting?.materiaal} onZet={x => zet(i, { korting: { ...r.korting, materiaal: x } })} />}
                 {r.type === 'printen' && <KortingVeld label="Korting printuren" titel="Op stroom, machine en winst per printuur" k={r.korting?.printuren} onZet={x => zet(i, { korting: { ...r.korting, printuren: x } })} />}
                 <KortingVeld label="Korting hele regel" k={r.korting?.regel} onZet={x => zet(i, { korting: { ...r.korting, regel: x } })} />
               </> : r.type !== 'korting' && !alleenLezen && <button type="button" className="linkish" style={{ alignSelf: 'end' }} onClick={() => setOpen(o => ({ ...o, [r.sleutel]: true }))}>+ korting</button>}
             </div>
-            <Detail b={b} type={r.type} />
+            <Detail b={b} type={r.type} alleenKost={alleenKost} />
           </div>
         );
       })}
@@ -333,11 +343,28 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
   );
 }
 
-export function Totalen({ uitkomst, gemeten = null }) {
+export function Totalen({ uitkomst, gemeten = null, alleenKost = false }) {
   if (!uitkomst) return null;
   const u = uitkomst;
   const k = u.productiekost;
   const r = v => euro(Math.round(v * 100) / 100);
+  // 23-10: dossier "Voorraad": geen prijs, totaal of winst — enkel de productiekost
+  if (alleenKost) {
+    return (<>
+      <div className="totalen">
+        <div><span>Totale printtijd</span><span className="num">{fmtAantal(Math.round(u.totale_tijd_u * 100) / 100)} u</span></div>
+        <div className="groot"><span>Productiekost (schatting){k?.onvolledig ? ' — onvolledig' : ''}</span><span className="num">{k ? r(k.kost) : '—'}</span></div>
+        {k && <div className="intern"><span>+ arbeid (je eigen tijd)</span><span className="num">{r(k.arbeid)}</span></div>}
+        {gemeten && <div className="intern"><span>Gemeten ({gemeten.voltooid} van {gemeten.totaal} opdrachten voltooid){gemeten.onvolledig ? ' — onvolledig' : ''}</span><span className="num">{r(gemeten.kost)} + arbeid {r(gemeten.arbeid)}</span></div>}
+        {!u.volledig && <div className="regelfout">Niet volledig: {u.fouten.length} regel(s) kunnen niet berekend worden (zie hierboven).</div>}
+      </div>
+      {k?.opbouw && <Kostenopbouw titel="Productiekost: schatting en meting" open verschil={!!gemeten?.opbouw} kolommen={[
+        { titel: 'Schatting (alle regels)', o: k.opbouw },
+        ...(gemeten?.opbouw ? [{ titel: `Schatting voltooide (${gemeten.voltooid}/${gemeten.totaal})`, o: gemeten.schatting_voltooid }, { titel: 'Gemeten voltooide', o: gemeten.opbouw }] : []),
+      ]} />}
+      <p className="note" style={{ fontSize: 12 }}>Voorraad: de stuks gaan bij het bevestigen in voorraad aan de gemeten productiekost per stuk. De verkoopprijs staat bij het artikel (en in de webshop).</p>
+    </>);
+  }
   return (<>
     <div className="totalen">
       <div><span>Totale printtijd</span><span className="num">{fmtAantal(Math.round(u.totale_tijd_u * 100) / 100)} u</span></div>

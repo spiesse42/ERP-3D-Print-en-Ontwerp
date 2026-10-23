@@ -28,7 +28,7 @@ export default function DossiersLijst() {
     { kop: 'Klant', cel: d => d.klant || <span className="sub">{d.soort === 'klant' ? '—' : SOORT[d.soort]}</span>, sorteer: d => (d.klant || '').toLowerCase() },
     { kop: 'Aangemaakt', cel: d => <span className="num">{datum(d.aangemaakt_op)}</span>, sorteer: d => d.aangemaakt_op },
     { kop: 'Fase', cel: d => <FaseBadge fase={d.fase} />, sorteer: d => FASE_VOLGORDE.indexOf(d.fase) },
-    { kop: 'Totaal', klasse: 'r', cel: d => d.volledig ? <span className="num">{euro(d.totaal)}</span> : <span className="badge b-warn">onvolledig</span>, sorteer: d => d.totaal ?? -1 },
+    { kop: 'Totaal', klasse: 'r', cel: d => d.volledig ? <span className="num" title={d.bedrag_soort === 'kost' ? 'Voorraad: geschatte productiekost' : undefined}>{euro(d.totaal)}{d.bedrag_soort === 'kost' && <span className="sub"> kost</span>}</span> : <span className="badge b-warn">onvolledig</span>, sorteer: d => d.totaal ?? -1 },
   ];
 
   const rijen = useMemo(() => {
