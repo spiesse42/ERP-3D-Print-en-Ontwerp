@@ -13,7 +13,8 @@ import { haStaten, haDienst, haCameraBeeld, haIngesteld, HaFout, meterOp } from 
 import { leesPrinter, entiteitenVan, KOPPELINGEN } from '../productie/adapters.js';
 import { liveCache, openRun, kwhVanRun, kwhUitMetingen, startRun, sluitRun, tik, INTERVAL_MS, vulAan } from '../productie/wachter.js';
 import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wijzigOpdracht, verschuif, bevestig, heropen, annuleer, verwijder, verwijderMetRegel,
-  voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer, herbereken, leesMaterialen, zetMaterialen } from '../productie/opdrachten.js';
+  voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer, herbereken, leesMaterialen, zetMaterialen,
+  zetOpEenPlaat, haalVanPlaat, bevestigPlaat, herprintSamen } from '../productie/opdrachten.js';
 import { productiekost } from '../productie/kost.js';
 import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct } from '../productie/materiaal.js';
 import { artikelMetProfiel, bewaarProfiel, leesProfielen } from '../productie/printprofiel.js';
@@ -37,7 +38,8 @@ const r4 = x => (x == null ? null : Math.round(x * 10000) / 10000);
 
 // Een run is "te koppelen" zolang hij niet aan een printopdracht hangt en
 // niet als intern gemarkeerd is.
-const OPDRACHT_VAN_RUN = `SELECT o.id, o.naam, o.voltooid_op, d.nummer AS dossier_nummer, d.id AS dossier_id FROM printopdrachten o
+const OPDRACHT_VAN_RUN = `SELECT o.id, o.naam, o.voltooid_op, d.nummer AS dossier_nummer, d.id AS dossier_id,
+    (SELECT COUNT(*) FROM printopdrachten x WHERE x.plaat_groep = o.id) AS plaat_leden FROM printopdrachten o
   LEFT JOIN dossier_regels r ON r.id = o.dossier_regel_id LEFT JOIN dossiers d ON d.id = r.dossier_id WHERE o.id = ?`;
 function runInfo(db, run, lezing) {
   if (!run) return null;
@@ -256,6 +258,29 @@ r.post('/opdrachten/:id/bevestig', metFouten((req, res) => {
     if (o.dossier_id) synchroniseer(db, o.dossier_id);
   })();
   res.json(leesOpdracht(db, o.id));
+}));
+// ── samen op één plaat (23-10) ──
+r.post('/plaat', metFouten((req, res) => {
+  const db = getDb();
+  const groep = db.transaction(() => zetOpEenPlaat(db, req.body?.opdracht_ids, { printer_id: req.body?.printer_id }))();
+  res.status(201).json({ groep, opdrachten: leesOpdrachten(db).filter(o => o.plaat_groep === groep) });
+}));
+r.post('/opdrachten/:id/los', metFouten((req, res) => {
+  const db = getDb();
+  const o = opdracht(db, req.params.id);
+  db.transaction(() => haalVanPlaat(db, o))();
+  res.json(leesOpdracht(db, o.id));
+}));
+// De hele plaat bevestigen: { aantallen: { opdrachtId: goed }, herprint_samen }
+r.post('/plaat/:groep/bevestig', metFouten((req, res) => {
+  const db = getDb();
+  const uit = db.transaction(() => {
+    const { dossiers, tekort } = bevestigPlaat(db, req.params.groep, req.body?.aantallen);
+    for (const d of dossiers) synchroniseer(db, d);
+    const nieuw = req.body?.herprint_samen ? herprintSamen(db, tekort) : null;
+    return { tekort: tekort.length, herprint_groep: nieuw };
+  })();
+  res.json(uit);
 }));
 // Filament van een losse opdracht (26-09): ook na het bevestigen; dan wordt
 // de productiekost meteen herberekend.

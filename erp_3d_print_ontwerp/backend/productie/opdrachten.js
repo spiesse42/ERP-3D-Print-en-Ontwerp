@@ -14,7 +14,7 @@
 import { DomeinFout, getTarieven } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { boekIn } from '../domein/voorraad.js';
-import { productiekost, schatOpdracht, runKost, telOpbouw } from './kost.js';
+import { productiekost, schatOpdracht, runKost, telOpbouw, aandeelInPlaat } from './kost.js';
 
 export const OPDRACHT_STATUS = {
   gepland: 'Gepland', bezig: 'Bezig', te_bevestigen: 'Te bevestigen', voltooid: 'Voltooid', mislukt: 'Mislukt', geannuleerd: 'Geannuleerd',
@@ -58,14 +58,22 @@ const MATERIAAL_SQL = (tabel, sleutel) => `SELECT m.gram, COALESCE(a.id, NULL) A
 
 function metRuns(db, lijst) {
   const runsVan = db.prepare('SELECT * FROM printruns WHERE printopdracht_id = ? ORDER BY gestart_op');
+  // 23-10: samen op één plaat → de runs van de trekker gelden voor elk lid
+  const ledenVan = db.prepare(`SELECT o.id, o.naam, o.aantal, o.aantal_goed, o.voltooid_op, o.geannuleerd_op, r.dossier_id FROM printopdrachten o
+    LEFT JOIN dossier_regels r ON r.id = o.dossier_regel_id WHERE o.plaat_groep = ? ORDER BY o.id`);
   const mat = db.prepare(MATERIAAL_SQL('dossier_regel_materialen', 'regel_id'));
   const matLos = db.prepare(MATERIAAL_SQL('printopdracht_materialen', 'printopdracht_id'));
   const t = getTarieven(db);
   return lijst.map(o => {
-    const runs = runsVan.all(o.id);
+    const runs = runsVan.all(o.plaat_groep ?? o.id);
     const uit = { ...o, status: statusVan(o, runs), runs: runs.map(r => ({ id: r.id, uitkomst: r.uitkomst, gestart_op: r.gestart_op, geeindigd_op: r.geeindigd_op, kwh: r.kwh, printer_id: r.printer_id, gewicht_g: r.gewicht_g ?? null, kost: runKost(db, r, t) })),
       materialen: o.dossier_regel_id ? mat.all(o.dossier_regel_id) : matLos.all(o.id) };
     uit.kost_schatting = schatOpdracht(db, uit);   // 08-10: geschatte productiekost
+    if (o.plaat_groep) {
+      const leden = ledenVan.all(o.plaat_groep);
+      if (leden.length > 1) uit.plaat = { groep: o.plaat_groep, trekker: o.plaat_groep === o.id, aandeel: Math.round(aandeelInPlaat(db, o) * 1000) / 1000,
+        leden: leden.map(l => ({ id: l.id, naam: l.naam, aantal: l.aantal, aantal_goed: l.aantal_goed, voltooid: !!l.voltooid_op, geannuleerd: !!l.geannuleerd_op, dossier_id: l.dossier_id })) };
+    }
     return uit;
   });
 }
@@ -272,6 +280,7 @@ export function verwijder(db, o) {
   volgtRegel(db, o);
   if (o.runs.length) throw new DomeinFout('Er zijn al runs aan gekoppeld: annuleer de opdracht in plaats van ze te verwijderen.');
   db.prepare('DELETE FROM printopdrachten WHERE id = ?').run(o.id);
+  if (o.plaat_groep) herstelGroepen(db);
 }
 
 // 13-10: een GEPLANDE opdracht van een gestart dossier weghalen = de regel
@@ -289,6 +298,7 @@ export function verwijderMetRegel(db, o) {
   const f = nieuw / oud;
   const sc = v => (v == null ? null : Math.round(v * f * 100) / 100);
   db.prepare('DELETE FROM printopdrachten WHERE id = ?').run(o.id);
+  if (o.plaat_groep) herstelGroepen(db);
   if (r.per_stuk) {
     const platen = n => (r.per_plaat > 0 ? Math.max(1, Math.ceil(n / r.per_plaat - 1e-9)) : 1);
     const voorb = r.voorbereiding_min == null ? null : Math.round(r.voorbereiding_min * platen(nieuw) / platen(oud) * 100) / 100;
@@ -308,14 +318,14 @@ const nlAantal = v => String(Math.round(v * 1000) / 1000).replace('.', ',');
 // Een opdracht die op "te bevestigen" staat (laatste run geslaagd) is klaar
 // om te bevestigen, niet om opnieuw te printen: geen voorstel en geen
 // "volgende" (25-09). Na een MISLUKTE poging blijft ze wel voorgesteld.
-export const NIET_TE_BEVESTIGEN = `COALESCE((SELECT x.uitkomst FROM printruns x WHERE x.printopdracht_id = o.id ORDER BY x.gestart_op DESC, x.id DESC LIMIT 1), '') <> 'klaar'`;
+export const NIET_TE_BEVESTIGEN = `COALESCE((SELECT x.uitkomst FROM printruns x WHERE x.printopdracht_id = COALESCE(o.plaat_groep, o.id) ORDER BY x.gestart_op DESC, x.id DESC LIMIT 1), '') <> 'klaar'`;
 export function volgendeOpdracht(db, printerId) {
   return db.prepare(`SELECT o.id, o.naam FROM printopdrachten o WHERE o.printer_id = ? AND o.voltooid_op IS NULL AND o.geannuleerd_op IS NULL
     AND ${NIET_TE_BEVESTIGEN} ORDER BY o.volgorde, o.id LIMIT 1`).get(printerId) || null;
 }
 export function voorstelVoorRun(db, run) {
   return db.prepare(`SELECT o.id, o.naam FROM printopdrachten o WHERE o.printer_id = ? AND o.voltooid_op IS NULL AND o.geannuleerd_op IS NULL
-    AND NOT EXISTS (SELECT 1 FROM printruns r WHERE r.printopdracht_id = o.id AND r.uitkomst = 'bezig' AND r.id <> ?)
+    AND NOT EXISTS (SELECT 1 FROM printruns r WHERE r.printopdracht_id = COALESCE(o.plaat_groep, o.id) AND r.uitkomst = 'bezig' AND r.id <> ?)
     AND ${NIET_TE_BEVESTIGEN} ORDER BY o.volgorde, o.id LIMIT 1`).get(run.printer_id, run.id) || null;
 }
 
@@ -335,11 +345,13 @@ export function koppelRun(db, run, keuze) {
   if (!o) throw new DomeinFout('Kies een printopdracht, maak een nieuwe of markeer de run als intern');
   if (o.status === 'voltooid' || o.status === 'geannuleerd') throw new DomeinFout('Deze printopdracht is afgesloten');
   if (o.runs.some(r => r.uitkomst === 'bezig' && r.id !== run.id)) throw new DomeinFout('Aan deze printopdracht hangt al een lopende print');
-  // opdracht uit de wachtrij van een andere printer → verhuist naar deze printer
+  // opdracht uit de wachtrij van een andere printer → verhuist naar deze printer (23-10: met de hele plaat)
   if (o.printer_id !== run.printer_id) {
-    db.prepare('UPDATE printopdrachten SET printer_id = ?, volgorde = ? WHERE id = ?').run(run.printer_id, volgendeVolgorde(db, run.printer_id), o.id);
+    const v = volgendeVolgorde(db, run.printer_id);
+    if (o.plaat_groep) db.prepare('UPDATE printopdrachten SET printer_id = ?, volgorde = ? WHERE plaat_groep = ? AND voltooid_op IS NULL AND geannuleerd_op IS NULL').run(run.printer_id, v, o.plaat_groep);
+    else db.prepare('UPDATE printopdrachten SET printer_id = ?, volgorde = ? WHERE id = ?').run(run.printer_id, v, o.id);
   }
-  db.prepare('UPDATE printruns SET printopdracht_id = ?, intern = NULL WHERE id = ?').run(o.id, run.id);
+  db.prepare('UPDATE printruns SET printopdracht_id = ?, intern = NULL WHERE id = ?').run(o.plaat_groep ?? o.id, run.id);
   if (o.dossier_id) logGebeurtenis(db, 'dossier', o.dossier_id, 'status', `Run gekoppeld aan printopdracht "${o.naam}"${run.bestand ? ` (${run.bestand})` : ''}`);
 }
 export function ontkoppelRun(db, run) {
@@ -355,20 +367,23 @@ export function ontkoppelRun(db, run) {
 // Kost van een mislukte poging = elektriciteit + machinetarief van de printer
 // waarop ze liep (verloren filament is niet gekend en telt niet mee).
 export function metingenPerRegel(db, dossierId) {
-  const runs = db.prepare(`SELECT r.*, o.dossier_regel_id, p.machine_per_uur FROM printruns r JOIN printopdrachten o ON o.id = r.printopdracht_id
+  // 23-10: een run van een gedeelde plaat telt per lid naar rato (aandeel)
+  const runs = db.prepare(`SELECT r.*, o.id AS opdracht_id, o.plaat_groep, o.dossier_regel_id, o.aantal AS opdracht_aantal, p.machine_per_uur FROM printruns r
+    JOIN printopdrachten o ON COALESCE(o.plaat_groep, o.id) = r.printopdracht_id
     JOIN dossier_regels dr ON dr.id = o.dossier_regel_id JOIN printers p ON p.id = r.printer_id
-    WHERE dr.dossier_id = ? AND r.uitkomst <> 'bezig'`).all(dossierId);
+    WHERE dr.dossier_id = ? AND r.uitkomst <> 'bezig' AND o.geannuleerd_op IS NULL`).all(dossierId);
   const kwhPrijs = db.prepare(`SELECT waarde FROM tarieven WHERE sleutel = 'kwh_prijs'`).get()?.waarde ?? null;
   const leeg = () => ({ runs: 0, uren: 0, kwh: 0, kwh_onbekend: false, kost: 0, kost_onvolledig: false });
   const per = new Map();
   for (const r of runs) {
     const x = per.get(r.dossier_regel_id) || { geslaagd: leeg(), mislukt: leeg() };
     const doel = r.uitkomst === 'klaar' ? x.geslaagd : x.mislukt;
-    const u = duurU(r);
+    const a = r.plaat_groep ? aandeelInPlaat(db, { id: r.opdracht_id, plaat_groep: r.plaat_groep, dossier_regel_id: r.dossier_regel_id, aantal: r.opdracht_aantal }) : 1;
+    const u = duurU(r) * a;
     doel.runs += 1; doel.uren += u;
-    if (r.kwh == null) doel.kwh_onbekend = true; else doel.kwh += r.kwh;
+    if (r.kwh == null) doel.kwh_onbekend = true; else doel.kwh += r.kwh * a;
     if (r.kwh == null || kwhPrijs == null || r.machine_per_uur == null) doel.kost_onvolledig = true;
-    doel.kost += (r.kwh ?? 0) * (kwhPrijs ?? 0) + u * (r.machine_per_uur ?? 0);
+    doel.kost += (r.kwh ?? 0) * a * (kwhPrijs ?? 0) + u * (r.machine_per_uur ?? 0);
     per.set(r.dossier_regel_id, x);
   }
   const rond = (v, n) => Math.round(v * 10 ** n) / 10 ** n;
@@ -399,7 +414,7 @@ export function productieVan(db, dossierId) {
   const printregels = db.prepare(`SELECT id, aantal FROM dossier_regels WHERE dossier_id = ? AND type = 'printen'`).all(dossierId);
   if (!printregels.length) return null;
   const ops = db.prepare(`SELECT o.dossier_regel_id, o.aantal_goed, o.voltooid_op, o.geannuleerd_op,
-    (SELECT COUNT(*) FROM printruns x WHERE x.printopdracht_id = o.id) AS aantal_runs FROM printopdrachten o
+    (SELECT COUNT(*) FROM printruns x WHERE x.printopdracht_id = COALESCE(o.plaat_groep, o.id)) AS aantal_runs FROM printopdrachten o
     JOIN dossier_regels r ON r.id = o.dossier_regel_id WHERE r.dossier_id = ?`).all(dossierId);
   return statusUit(printregels, ops);
 }
@@ -485,7 +500,7 @@ export function teKoppelenVoorDossier(db, dossierId, ops) {
 // (gebruikt door bewaarRegels, zoals controleerGeleverd)
 export function controleerPrintopdrachten(db, dossierId, nieuweRegels) {
   const rijen = db.prepare(`SELECT r.id, r.omschrijving, COUNT(o.id) n,
-      SUM(CASE WHEN o.voltooid_op IS NOT NULL OR EXISTS (SELECT 1 FROM printruns x WHERE x.printopdracht_id = o.id) THEN 1 ELSE 0 END) AS geprint
+      SUM(CASE WHEN o.voltooid_op IS NOT NULL OR EXISTS (SELECT 1 FROM printruns x WHERE x.printopdracht_id = COALESCE(o.plaat_groep, o.id)) THEN 1 ELSE 0 END) AS geprint
     FROM dossier_regels r JOIN printopdrachten o ON o.dossier_regel_id = r.id
     WHERE r.dossier_id = ? GROUP BY r.id`).all(dossierId);
   const wissen = [];
@@ -558,7 +573,7 @@ export function synchroniseer(db, dossierId, { oudeRegels = null, behoud = null 
   const d = db.prepare('SELECT id, nummer, gestart_op, geannuleerd_op FROM dossiers WHERE id = ?').get(dossierId);
   if (!d?.gestart_op || d.geannuleerd_op) return;
   const regels = db.prepare(`SELECT id, omschrijving, aantal, printer_id, per_plaat FROM dossier_regels WHERE dossier_id = ? AND type = 'printen' ORDER BY volgorde, id`).all(dossierId);
-  const ops = db.prepare(`SELECT o.*, (SELECT COUNT(*) FROM printruns x WHERE x.printopdracht_id = o.id) AS aantal_runs
+  const ops = db.prepare(`SELECT o.*, (SELECT COUNT(*) FROM printruns x WHERE x.printopdracht_id = COALESCE(o.plaat_groep, o.id)) AS aantal_runs
     FROM printopdrachten o JOIN dossier_regels r ON r.id = o.dossier_regel_id WHERE r.dossier_id = ? ORDER BY o.volgorde, o.id`).all(dossierId);
   const oud = new Map((oudeRegels || []).map(r => [r.id, r]));
   const zetAantal = db.prepare('UPDATE printopdrachten SET aantal = ? WHERE id = ?');
@@ -622,6 +637,7 @@ export function synchroniseer(db, dossierId, { oudeRegels = null, behoud = null 
     }
   }
   if (logboek.length) logGebeurtenis(db, 'dossier', dossierId, 'status', `Automatisch: ${logboek.join('; ')}`);
+  herstelGroepen(db);
 }
 
 // Opdrachten die bij een regel horen die weg gaat (of geen printregel meer
@@ -629,4 +645,91 @@ export function synchroniseer(db, dossierId, { oudeRegels = null, behoud = null 
 export function wisOpdrachtenVanRegels(db, regelIds) {
   const del = db.prepare('DELETE FROM printopdrachten WHERE dossier_regel_id = ?');
   for (const id of regelIds) del.run(id);
+  herstelGroepen(db);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SAMEN OP ÉÉN PLAAT (23-10)
+// ═══════════════════════════════════════════════════════════════════════
+// Meerdere printopdrachten (bv. 8 verschillende producten) liggen samen op
+// één plaat: één run voor allemaal. Elke opdracht blijft bij haar eigen
+// regel (aantal, goede stuks, voorraad); enkel de runs zijn gedeeld. Ze
+// hangen aan de trekker (plaat_groep = id van de trekker). Bevestigen kan
+// per lid of voor de hele plaat in één keer (aantal goed per product); wat
+// mislukte, plant de automatische flow opnieuw in — op wens weer samen.
+const runsVanSleutel = (db, k) => db.prepare('SELECT COUNT(*) n FROM printruns WHERE printopdracht_id = ?').get(k).n;
+
+export function zetOpEenPlaat(db, ids, { printer_id = null } = {}) {
+  const uniek = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Number.isInteger))];
+  if (uniek.length < 2) throw new DomeinFout('Kies minstens twee printopdrachten om samen op één plaat te zetten.');
+  // bestaande groepen van de gekozen opdrachten worden mee samengevoegd
+  const leden = new Map();
+  for (const id of uniek) {
+    const o = db.prepare('SELECT * FROM printopdrachten WHERE id = ?').get(id);
+    if (!o) throw new DomeinFout('Onbekende printopdracht');
+    const groep = o.plaat_groep ? db.prepare('SELECT * FROM printopdrachten WHERE plaat_groep = ?').all(o.plaat_groep) : [o];
+    for (const x of groep) leden.set(x.id, x);
+  }
+  const lijst = [...leden.values()];
+  const dicht = lijst.find(o => o.voltooid_op || o.geannuleerd_op);
+  if (dicht) throw new DomeinFout(`Printopdracht "${dicht.naam}" is al afgesloten.`);
+  // wie al runs heeft (een opdracht of een bestaande groep), wordt de trekker
+  const sleutels = [...new Set(lijst.map(o => o.plaat_groep ?? o.id))].filter(k => runsVanSleutel(db, k) > 0);
+  if (sleutels.length > 1) throw new DomeinFout('Meer dan één van deze printopdrachten heeft al een eigen run: die kunnen niet meer samen op één plaat.');
+  const trekker = sleutels[0] ?? Math.min(...lijst.map(o => o.id));
+  const t = lijst.find(o => o.id === trekker);
+  const printer = db.prepare('SELECT id FROM printers WHERE id = ? AND actief = 1').get(Number(printer_id || t.printer_id));
+  if (!printer) throw new DomeinFout('Kies een (actieve) printer');
+  const zet = db.prepare('UPDATE printopdrachten SET plaat_groep = ?, printer_id = ?, volgorde = ? WHERE id = ?');
+  const volgorde = printer.id === t.printer_id ? t.volgorde : volgendeVolgorde(db, printer.id);
+  for (const o of lijst) zet.run(trekker, printer.id, volgorde, o.id);
+  for (const d of new Set(lijst.map(o => db.prepare('SELECT dossier_id FROM dossier_regels WHERE id = ?').get(o.dossier_regel_id)?.dossier_id).filter(Boolean))) {
+    logGebeurtenis(db, 'dossier', d, 'status', `Samen op één plaat: ${lijst.map(o => `"${o.naam}"`).join(', ')}`);
+  }
+  return trekker;
+}
+
+export function haalVanPlaat(db, o) {
+  if (!o.plaat_groep) throw new DomeinFout('Deze printopdracht ligt niet samen met andere op een plaat.');
+  if (runsVanSleutel(db, o.plaat_groep) > 0) throw new DomeinFout('Op deze plaat is al geprint: de printopdrachten blijven samen (bevestig of annuleer ze).');
+  db.prepare('UPDATE printopdrachten SET plaat_groep = NULL WHERE id = ?').run(o.id);
+  herstelGroepen(db);
+}
+
+// Na verwijderen of losmaken: een groep zonder trekker krijgt een nieuwe
+// (de kleinste id), een groep van één wordt gewoon een losse opdracht.
+export function herstelGroepen(db) {
+  for (const { g } of db.prepare('SELECT DISTINCT plaat_groep g FROM printopdrachten WHERE plaat_groep IS NOT NULL').all()) {
+    const ids = db.prepare('SELECT id FROM printopdrachten WHERE plaat_groep = ? ORDER BY id').all(g).map(x => x.id);
+    let k = g;
+    if (!ids.includes(g) && !runsVanSleutel(db, g)) { k = ids[0]; db.prepare('UPDATE printopdrachten SET plaat_groep = ? WHERE plaat_groep = ?').run(k, g); }
+    if (ids.length === 1 && ids[0] === k) db.prepare('UPDATE printopdrachten SET plaat_groep = NULL WHERE id = ?').run(k);
+  }
+}
+
+// De hele plaat bevestigen: aantallen = { opdrachtId: aantal goed }. Geeft de
+// dossiers terug (om te synchroniseren) en de regels waar stuks tekort zijn.
+export function bevestigPlaat(db, groep, aantallen) {
+  const open = db.prepare('SELECT id FROM printopdrachten WHERE plaat_groep = ? AND voltooid_op IS NULL AND geannuleerd_op IS NULL ORDER BY id').all(Number(groep));
+  if (!open.length) throw new DomeinFout('Er is niets meer te bevestigen op deze plaat.');
+  const dossiers = new Set(), tekort = [];
+  for (const { id } of open) {
+    const v = aantallen?.[id] ?? aantallen?.[String(id)];
+    if (v === undefined || v === null || v === '') throw new DomeinFout('Vul voor elk product het aantal goede stuks in.');
+    const o = leesOpdracht(db, id);
+    bevestig(db, o, v);
+    if (o.dossier_id) dossiers.add(o.dossier_id);
+    if (Number(String(v).replace(',', '.')) < Number(o.aantal) - EPS && o.dossier_regel_id) tekort.push(o.dossier_regel_id);
+  }
+  return { dossiers: [...dossiers], tekort };
+}
+
+// Herprinten samen: de nieuwe geplande opdrachten (zonder runs, nog niet op
+// een plaat) van deze regels samen op één plaat zetten.
+export function herprintSamen(db, regelIds) {
+  if (!regelIds.length) return null;
+  const ids = db.prepare(`SELECT o.id FROM printopdrachten o WHERE o.dossier_regel_id IN (${regelIds.map(() => '?').join(',')})
+    AND o.voltooid_op IS NULL AND o.geannuleerd_op IS NULL AND o.plaat_groep IS NULL
+    AND NOT EXISTS (SELECT 1 FROM printruns x WHERE x.printopdracht_id = o.id) ORDER BY o.id`).all(...regelIds).map(x => x.id);
+  return ids.length >= 2 ? zetOpEenPlaat(db, ids) : null;
 }
