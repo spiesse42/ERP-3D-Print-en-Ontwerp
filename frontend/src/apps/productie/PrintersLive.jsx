@@ -69,7 +69,7 @@ function PrinterKaart({ p, herlaad }) {
       <dl className="pwaarden">
         <dt>Verbruik nu</dt><dd className="num">{l?.watt != null ? `${aantal(l.watt)} W` : '—'}</dd>
         {p.run && <><dt>Deze print</dt><dd className="num">{tijd(p.run.duur_min)} · {naarInvoer(p.run.kwh)} kWh{p.run.onvolledig ? ' (onvolledig)' : ''}</dd></>}
-        {p.run?.opdracht && <><dt>Opdracht</dt><dd>{p.run.opdracht.naam}{p.run.opdracht.dossier_nummer ? <> · <Link naar={`/dossiers/${p.run.opdracht.dossier_id}?tab=productie`}><span className="mono">{p.run.opdracht.dossier_nummer}</span></Link></> : null}</dd></>}
+        {p.run?.opdracht && <><dt>Opdracht</dt><dd>{p.run.opdracht.naam}{p.run.opdracht.plaat_leden > 1 ? ` + ${p.run.opdracht.plaat_leden - 1} andere` : ''}{p.run.opdracht.dossier_nummer ? <> · <Link naar={`/dossiers/${p.run.opdracht.dossier_id}?tab=productie`}><span className="mono">{p.run.opdracht.dossier_nummer}</span></Link></> : null}</dd></>}
         {p.run?.intern && <><dt>Opdracht</dt><dd className="sub">{p.run.intern_label}</dd></>}
         {!p.run && p.vorige_run && <><dt>Vorige print</dt><dd>{p.vorige_run.uitkomst} · {tijd(p.vorige_run.duur_min)} · {naarInvoer(p.vorige_run.kwh)} kWh</dd></>}
         {!p.run && p.volgende && <><dt>Volgende</dt><dd><Link naar="/productie/opdrachten">{p.volgende.naam}</Link></dd></>}

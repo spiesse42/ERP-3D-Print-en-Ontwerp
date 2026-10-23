@@ -3,7 +3,7 @@ import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
 import { Link } from '../../schil/Schil.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { aantal, euro, naarInvoer } from '../../lib/formaat.js';
-import { OpdrachtBadge, OpdrachtDialoog, BevestigDialoog, KoppelDialoog, duur } from '../productie/opdracht.jsx';
+import { OpdrachtBadge, OpdrachtDialoog, BevestigDialoog, KoppelDialoog, duur, PlaatBadge, PlaatBevestigDialoog } from '../productie/opdracht.jsx';
 import { RunVenster } from '../productie/RunDialoog.jsx';
 import { StatusBadge } from '../productie/PrintersLive.jsx';
 import { api, BASE } from '../../lib/api.js';
@@ -20,6 +20,21 @@ export default function ProductieTab({ d, vuil, herlaad }) {
   const { melding, bevestig } = useOmgeving();
   const [dialoog, setDialoog] = useState(null);   // { soort: 'nieuw', regel } | { soort: 'open' | 'bevestig', o } | { soort: 'koppel', run }
   const [bezig, setBezig] = useState(false);
+  // 23-10: samen op één plaat — open opdrachten aanvinken
+  const [kies, setKies] = useState({});
+  const gekozen = Object.keys(kies).filter(k => kies[k]).map(Number);
+  async function opEenPlaat() {
+    setBezig(true);
+    try { await api.post('/productie/plaat', { opdracht_ids: gekozen }); melding(`${gekozen.length} printopdrachten liggen nu samen op één plaat: koppel de run aan één ervan, hij geldt voor allemaal.`); setKies({}); await herlaad(); }
+    catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
+  async function los(o) {
+    setBezig(true);
+    try { await api.post(`/productie/opdrachten/${o.id}/los`); melding(`"${o.naam}" ligt niet meer op de gedeelde plaat.`); await herlaad(); }
+    catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
   // Te koppelen runs op de printers van dit dossier (25-09): in één klik aan het voorstel
   async function koppel(run) {
     setBezig(true);
@@ -56,8 +71,29 @@ export default function ProductieTab({ d, vuil, herlaad }) {
       aantal: rest > 0 ? rest : x.besteld, printer_id: x.printer_id } });
   }
   const gemeten = Object.fromEntries(d.regels.filter(r => r.type === 'printen').map(r => [r.id, r.gemeten]));
+  const alle = d.productie.regels.flatMap(x => x.opdrachten);
+  const platen = [...new Map(alle.filter(o => o.plaat).map(o => [o.plaat.groep, o])).values()]
+    .filter(o => o.plaat.leden.some(l => !l.voltooid && !l.geannuleerd));
+  const kiesbaar = o => kan && !o.voltooid_op && !o.geannuleerd_op && (o.status === 'gepland' || o.status === 'te_bevestigen' || o.status === 'mislukt');
   return (
     <>
+      {platen.map(o => (
+        <section key={o.plaat.groep} className="te-koppelen" aria-label="Gedeelde plaat">
+          <h4>Samen op één plaat ({o.plaat.leden.length} producten) · <OpdrachtBadge status={o.status} /></h4>
+          <p className="sub" style={{ margin: '0 0 6px' }}>{o.plaat.leden.map(l => `${l.naam}${l.voltooid ? ` ✓ ${aantal(l.aantal_goed)}` : ''}`).join(' · ')}</p>
+          <div className="knoppen">
+            {(o.status === 'te_bevestigen' || o.status === 'mislukt') && o.runs.some(r => r.uitkomst === 'klaar') && <button type="button" className="btn klein primary" onClick={() => setDialoog({ soort: 'plaat_bevestig', o })}>Plaat bevestigen…</button>}
+            {(o.status === 'gepland' || o.status === 'mislukt') && <button type="button" className="btn klein" onClick={() => setDialoog({ soort: 'run_kiezen', o })}>Run koppelen…</button>}
+          </div>
+        </section>
+      ))}
+      {gekozen.length > 0 && (
+        <div className="waarschuwing" style={{ marginBottom: 10 }} role="status">
+          <span>{gekozen.length} printopdracht{gekozen.length === 1 ? '' : 'en'} aangevinkt.</span>
+          <button type="button" className="btn klein primary" style={{ marginLeft: 'auto' }} disabled={bezig || gekozen.length < 2} onClick={opEenPlaat}>Op één plaat zetten</button>
+          <button type="button" className="btn klein ghost" onClick={() => setKies({})}>Wissen</button>
+        </div>
+      )}
       {runs.length > 0 && (
         <section className="te-koppelen" aria-label="Te koppelen runs">
           <h4>{runs.length === 1 ? 'Er is een run die nog niet gekoppeld is' : `Er zijn ${runs.length} runs die nog niet gekoppeld zijn`}</h4>
@@ -101,11 +137,12 @@ export default function ProductieTab({ d, vuil, herlaad }) {
             {x.opdrachten.length > 0 && (
               <div className="tabelvak" style={{ marginTop: 8 }}>
                 <table className="mini">
-                  <thead><tr><th>Opdracht</th><th>Printer</th><th className="r">Stuks</th><th className="r">Runs</th><th>Status</th><th /></tr></thead>
+                  <thead><tr><th><span className="sr-only">Kiezen</span></th><th>Opdracht</th><th>Printer</th><th className="r">Stuks</th><th className="r">Runs</th><th>Status</th><th /></tr></thead>
                   <tbody>
                     {x.opdrachten.map(o => (
                       <tr key={o.id} className="row" tabIndex={0} onClick={() => setDialoog({ soort: 'open', o })} onKeyDown={e => { if (e.key === 'Enter') setDialoog({ soort: 'open', o }); }}>
-                        <td>{o.naam}{o.slicer_bijlage_id && <div className="sub"><a href={`${BASE}/bijlagen/bestand/${o.slicer_bijlage_id}`} onClick={e => e.stopPropagation()} title="Slicerbestand downloaden (openen in Bambu Studio)">{o.slicer_bestandsnaam || 'slicerbestand'}</a>{o.slicer_plaat ? ` · plaat ${o.slicer_plaat}` : ''}</div>}</td>
+                        <td onClick={e => e.stopPropagation()}>{kiesbaar(o) && <input type="checkbox" aria-label={`${o.naam} aanvinken (samen op één plaat)`} title="Aanvinken om samen op één plaat te zetten" checked={!!kies[o.id]} onChange={e => setKies(k => ({ ...k, [o.id]: e.target.checked }))} />}</td>
+                        <td>{o.naam}<PlaatBadge o={o} />{o.slicer_bijlage_id && <div className="sub"><a href={`${BASE}/bijlagen/bestand/${o.slicer_bijlage_id}`} onClick={e => e.stopPropagation()} title="Slicerbestand downloaden (openen in Bambu Studio)">{o.slicer_bestandsnaam || 'slicerbestand'}</a>{o.slicer_plaat ? ` · plaat ${o.slicer_plaat}` : ''}</div>}</td>
                         <td>{o.printer}</td>
                         <td className="r num">{o.status === 'voltooid' ? `${aantal(o.aantal_goed)} / ${aantal(o.aantal)}` : aantal(o.aantal)}</td>
                         <td className="r num">{o.runs.length || ''}</td>
@@ -113,6 +150,7 @@ export default function ProductieTab({ d, vuil, herlaad }) {
                         <td className="r">
                           {o.status === 'te_bevestigen' && <button type="button" className="btn klein primary" onClick={e => { e.stopPropagation(); setDialoog({ soort: 'bevestig', o }); }}>Bevestigen</button>}
                           {(o.status === 'gepland' || o.status === 'mislukt') && <button type="button" className="btn klein" title="Een run (ook van een andere printer) aan deze opdracht koppelen" onClick={e => { e.stopPropagation(); setDialoog({ soort: 'run_kiezen', o }); }}>Run koppelen…</button>}
+                          {o.plaat && o.status === 'gepland' && !o.runs.length && <button type="button" className="btn klein ghost" title="Van de gedeelde plaat halen" onClick={e => { e.stopPropagation(); los(o); }}>los</button>}
                           {o.status === 'gepland' && !o.runs.length && !d.afgerekend_op && !d.gratis_op && <button type="button" className="btn klein ghost" title="Deze geplande opdracht weghalen (de regel krijgt evenveel stuks minder)" aria-label={`Printopdracht ${o.naam} verwijderen`} onClick={e => { e.stopPropagation(); verwijderOpdracht(o, x); }}><Icoon naam="vuilbak" maat={14} /></button>}
                         </td>
                       </tr>
@@ -131,10 +169,12 @@ export default function ProductieTab({ d, vuil, herlaad }) {
         );
       })}
       {d.gestart_op && <p className="note"><b>Automatisch:</b> de printopdrachten volgen de regels. Pas je het aantal, de printer of de omschrijving van een regel aan, dan volgen de opdrachten waarop nog niets geprint is. Is er al geprint en is er meer nodig, dan komt er een extra opdracht bij. Wil je een regel over twee printers spreiden, maak dan zelf een extra opdracht voor een deel: de andere wordt kleiner.</p>}
+      <p className="note"><b>Samen op één plaat:</b> liggen verschillende producten samen op één plaat (bv. 8 figuren), vink hun printopdrachten aan en kies "Op één plaat zetten". Koppel de run aan één ervan: hij geldt voor allemaal. Met "Plaat bevestigen" vul je per product de goede stuks in; wat mislukte, wordt opnieuw gepland (op wens weer samen).</p>
       <p className="note">Plan een printopdracht per printregel; ze komt in de wachtrij van de printer (<Link naar="/productie/opdrachten">Productie → Printopdrachten</Link>). Start je de print, koppel dan de run hier ("Run koppelen…" bij de opdracht) of op de printerkaart. Tijd en verbruik van de <b>geslaagde</b> runs komen op de werkbon; mislukte pogingen zijn een kost voor jou (elektriciteit + machinetarief; verloren filament niet meegerekend).</p>
       {dialoog?.soort === 'nieuw' && <OpdrachtDialoog vast={dialoog.regel} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'open' && <OpdrachtDialoog opdracht={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'bevestig' && <BevestigDialoog o={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
+      {dialoog?.soort === 'plaat_bevestig' && <PlaatBevestigDialoog o={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'run_kiezen' && <RunKiezen o={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'koppel' && <KoppelDialoog run={dialoog.run} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'run' && <RunVenster runId={dialoog.id} onSluit={() => setDialoog(null)} onKlaar={klaar} />}

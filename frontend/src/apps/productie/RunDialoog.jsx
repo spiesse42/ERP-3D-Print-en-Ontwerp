@@ -13,8 +13,8 @@ import RunFoto from '../../components/RunFoto.jsx';
 // verbruik aanvullen, uitkomst of starttijd corrigeren.
 export function Koppeling({ r }) {
   if (r.opdracht) return r.opdracht.dossier_id
-    ? <span>{r.opdracht.naam} · <Link naar={`/dossiers/${r.opdracht.dossier_id}?tab=productie`}><span className="mono">{r.opdracht.dossier_nummer}</span></Link></span>
-    : <span>{r.opdracht.naam}</span>;
+    ? <span>{r.opdracht.naam}{r.opdracht.plaat_leden > 1 ? ` + ${r.opdracht.plaat_leden - 1} andere op dezelfde plaat` : ''} · <Link naar={`/dossiers/${r.opdracht.dossier_id}?tab=productie`}><span className="mono">{r.opdracht.dossier_nummer}</span></Link></span>
+    : <span>{r.opdracht.naam}{r.opdracht.plaat_leden > 1 ? ` + ${r.opdracht.plaat_leden - 1} andere op dezelfde plaat` : ''}</span>;
   if (r.intern) return <span className="sub">{r.intern_label}</span>;
   return <span className="badge b-warn">Te koppelen</span>;
 }
