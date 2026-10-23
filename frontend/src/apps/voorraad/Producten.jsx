@@ -68,20 +68,23 @@ export default function Producten() {
   const rijen = useMemo(() => {
     const q = zoek.trim().toLowerCase();
     return (data || []).filter(p => (!q || [p.weergave, p.categorie].some(v => String(v || '').toLowerCase().includes(q)))
-      && (filter !== 'webshop' || p.webshop) && (filter !== 'zonder_profiel' || !p.profiel)
+      && (filter !== 'webshop' || p.webshop) && (filter !== 'zonder_profiel' || (!p.profiel && !p.keuzes))
       && (filter !== 'onder_min' || (p.min != null && p.voorraad + p.in_productie < p.min)));
   }, [data, zoek, filter]);
-  const kost = p => (p.kost == null ? <span className="sub">{p.profiel ? 'onvolledig' : 'geen profiel'}</span>
+  const kost = p => (p.keuzes ? <span className="sub">zie de keuzes</span> : p.kost == null ? <span className="sub">{p.profiel ? 'onvolledig' : 'geen profiel'}</span>
     : <>{euro(p.kost)}<div className="sub">{p.gemeten ? `gemeten (${aantal(p.gemeten.stuks)} st.)` : 'geschat'}{p.schatting.onvolledig && !p.gemeten ? ' · onvolledig' : ''}</div></>);
   const kolommen = [
-    { kop: 'Product', cel: p => <>{p.webshop?.foto && <img src={`${p.webshop.foto}?w=64&h=64&fit=crop`} alt="" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 4, verticalAlign: 'middle', marginRight: 8 }} />}<b>{p.weergave}</b>{p.webshop && <span className="badge b-info" style={{ marginLeft: 6 }}>webshop</span>}</> },
+    { kop: 'Product', cel: p => <>{p.webshop?.foto && <img src={`${p.webshop.foto}?w=64&h=64&fit=crop`} alt="" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 4, verticalAlign: 'middle', marginRight: 8 }} />}<b>{p.weergave}</b>{p.webshop && <span className="badge b-info" style={{ marginLeft: 6 }}>webshop</span>}
+      {p.keuzes > 0 && <span className="badge b-neutral" style={{ marginLeft: 6 }} title="Productfiche in de webshop: printprofiel en voorraad zitten bij de artikels per keuze">{p.keuzes} keuzes</span>}
+      {p.webshop?.variant && <span className="badge b-neutral" style={{ marginLeft: 6 }}>keuze {p.webshop.variant}</span>}
+      {!p.profiel && !p.keuzes && <span className="badge b-warn" style={{ marginLeft: 6 }}>geen printprofiel</span>}</> },
     { kop: 'Categorie', cel: p => <span className="sub">{p.categorie || '—'}</span> },
     { kop: 'Prijs', klasse: 'r num', cel: p => euro(p.verkoopprijs) },
     { kop: 'Kost / stuk', klasse: 'r num', cel: kost },
     { kop: 'Marge', klasse: 'r num', cel: p => (p.marge == null ? <span className="sub">—</span> : <><b className={p.marge < 0 ? 'neg' : ''}>{euro(p.marge)}</b><div className="sub">{p.marge_pct} %</div></>) },
     { kop: 'Voorraad', klasse: 'r num', cel: p => <>{aantal(p.voorraad)}{p.in_productie > 0 && <div className="sub">+ {aantal(p.in_productie)} in productie</div>}{p.min != null && <div className="sub">min {aantal(p.min)}</div>}</> },
     { kop: 'Verkocht 30 d.', klasse: 'r num', cel: p => aantal(p.verkocht_30d) },
-    { kop: '', klasse: 'r', cel: p => <button type="button" className="btn klein" onClick={e => { e.stopPropagation(); setPrinten(p); }}>Bijprinten</button> },
+    { kop: '', klasse: 'r', cel: p => (p.keuzes ? null : <button type="button" className="btn klein" onClick={e => { e.stopPropagation(); setPrinten(p); }}>Bijprinten</button>) },
   ];
   return (
     <>
@@ -89,7 +92,7 @@ export default function Producten() {
         acties={<button type="button" className="btn primary" onClick={() => setWebshop(true)}>Webshop ophalen</button>}
         filters={<>
           <Chip aan={filter === 'webshop'} onClick={() => setFilter(f => (f === 'webshop' ? null : 'webshop'))}>In de webshop</Chip>
-          <Chip aan={filter === 'zonder_profiel'} onClick={() => setFilter(f => (f === 'zonder_profiel' ? null : 'zonder_profiel'))}>Zonder printprofiel</Chip>
+          <Chip aan={filter === 'zonder_profiel'} onClick={() => setFilter(f => (f === 'zonder_profiel' ? null : 'zonder_profiel'))}>Zonder printprofiel{data ? ` (${data.filter(p => !p.profiel && !p.keuzes).length})` : ''}</Chip>
           <Chip aan={filter === 'onder_min'} onClick={() => setFilter(f => (f === 'onder_min' ? null : 'onder_min'))}>Onder minimum</Chip>
         </>}
         teller={data ? `${rijen.length} / ${data.length}` : null} />

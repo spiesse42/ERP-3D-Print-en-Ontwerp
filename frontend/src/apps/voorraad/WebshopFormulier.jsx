@@ -23,6 +23,7 @@ export default function WebshopFormulier({ art, onKlaar }) {
   const { data: k } = useData('/producten/webshop/keuzes');
   const [f, setF] = useState(null);
   const [bezig, setBezig] = useState(false);
+  const [naarKeuze, setNaarKeuze] = useState('');   // keuze waar de voorraad van het hoofdartikel naartoe gaat
   const alsFormulier = d => ({ ...d, weightGrams: naarInvoer(d.weightGrams), featuredOrder: naarInvoer(d.featuredOrder), colorChoiceCount: naarInvoer(d.colorChoiceCount), textMaxLength: naarInvoer(d.textMaxLength) });
   useEffect(() => { if (data) setF(alsFormulier(data.data)); }, [data]);
   if (!data || !f) return null;
@@ -62,6 +63,13 @@ export default function WebshopFormulier({ art, onKlaar }) {
       melding(`Artikel "${r.naam}" aangemaakt${r.profiel_gekopieerd ? ' (met het printprofiel van dit artikel)' : '; vul er nog een printprofiel bij in'}.`);
       await herlaad(); onKlaar?.();
     } catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
+  // stuks die nog op dit (hoofd)artikel staan naar een keuze-artikel
+  async function verplaats() {
+    setBezig(true);
+    try { const r = await api.post(`/producten/${art.id}/webshop/voorraad-naar-keuze`, { label: naarKeuze }); melding(`${String(r.verplaatst).replace('.', ',')} stuks verplaatst naar "${r.naar}".`); await herlaad(); onKlaar?.(); }
+    catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
   }
   async function los() {
@@ -165,6 +173,16 @@ export default function WebshopFormulier({ art, onKlaar }) {
                   );
                 })}</tbody>
               </table>
+              {data.voorraad > 0 && f.sizeVariants.some(v => v.artikel) && (
+                <div className="waarschuwing" style={{ margin: '8px 0' }} role="status">
+                  <span>Op dit hoofdartikel staan nog {naarInvoer(data.voorraad)} stuks in voorraad. Bij welke keuze horen ze?</span>
+                  <select className="inp" style={{ width: 'auto', marginLeft: 8 }} aria-label="Keuze voor de voorraad" value={naarKeuze} onChange={e => setNaarKeuze(e.target.value)}>
+                    <option value="">Kies…</option>
+                    {f.sizeVariants.filter(v => v.artikel).map(v => <option key={v.label} value={v.label}>{v.label}</option>)}
+                  </select>
+                  <button type="button" className="btn klein" style={{ marginLeft: 8 }} disabled={bezig || !naarKeuze} onClick={verplaats}>Verplaatsen</button>
+                </div>
+              )}
               <button type="button" className="linkish" onClick={() => zet('sizeVariants', [...f.sizeVariants, { label: '', price: f.sizeVariants.at(-1)?.price ?? naarInvoer(data.prijs), weightGrams: f.sizeVariants.at(-1)?.weightGrams ?? '', image_bijlage_id: null, sanity_image: null }])}>+ keuze</button>
               <p className="sub" style={{ margin: '4px 0 0' }}>De klant kiest één keuze per keer en kan er meerdere na elkaar toevoegen, elk met eigen kleur en aantal. Met "Artikel aanmaken" krijgt een keuze een eigen artikel: eigen printprofiel, voorraad en Bijprinten, en webshopbestellingen van die keuze vinden het; de prijs pas je dan aan bij dat artikel. Zelfde prijs voor alle keuzes = geen "vanaf" op de site. Foto's: kies uit de foto's van dit artikel (tabblad Foto's & bestanden).</p>
             </>}

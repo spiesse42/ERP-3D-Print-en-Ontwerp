@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { initDb, sluitDb, getDb, bijlagenMap } from '../db/index.js';
-import { leesWebshop, bewaarWebshop, pushWebshop, slugVan, LAYER_LEAF_SJABLOON, maakKeuzeArtikel, maakAlleKeuzeArtikels } from '../domein/webshoppush.js';
+import { leesWebshop, bewaarWebshop, pushWebshop, slugVan, LAYER_LEAF_SJABLOON, maakKeuzeArtikel, maakAlleKeuzeArtikels, voorraadNaarKeuze } from '../domein/webshoppush.js';
 
 // nagebootste Sanity: documenten in een Map, GROQ enkel voor de paar vragen die de push stelt
 const docs = new Map();
@@ -170,4 +170,16 @@ test('W13. per keuze een eigen artikel: aangemaakt en gekoppeld (slug + keuze), 
   const slug = db.prepare('SELECT webshop_slug s FROM artikelen WHERE id = ?').get(art).s;
   bewaarBestellingen(db, [{ id: 'ord-keuze', status: 'paid', items: [{ slug, name: 'x', quantity: 1, price: 21, variantLabel: '15cm' }] }]);
   assert.equal(leesBestellingen(db, { alles: true }).find(x => x.id === 'ord-keuze').items[0].artikel.id, k.id);
+});
+
+test('W14. voorraad van het hoofdartikel naar een keuze-artikel verplaatsen (zelfde prijs per stuk)', async () => {
+  const db = getDb();
+  const { boekIn, voorraadVan } = await import('../domein/voorraad.js');
+  boekIn(db, { artikelId: art, aantal: 2, prijs: 1.5, reden: 'productie' });
+  const r = voorraadNaarKeuze(db, art, '10cm');
+  assert.equal(r.verplaatst, 2);
+  const tien = db.prepare(`SELECT id FROM artikelen WHERE webshop_variant = '10cm'`).get().id;
+  assert.equal(voorraadVan(db, art), 0); assert.equal(voorraadVan(db, tien), 2);
+  assert.equal(db.prepare('SELECT prijs_per_eenheid p FROM voorraad_partijen WHERE artikel_id = ? AND aantal_resterend > 0').get(tien).p, 1.5);
+  assert.throws(() => voorraadNaarKeuze(db, art, '10cm'), /niets in voorraad/);
 });

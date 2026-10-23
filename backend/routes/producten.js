@@ -11,7 +11,7 @@ import { webshopRijen, vergelijk, neemOver, ontkoppel } from '../domein/webshop.
 import { haalProducten, WebshopFout } from '../integraties/sanity.js';
 import { artikelMetProfiel, schatKost, regelsUitProfiel, platenVan } from '../productie/printprofiel.js';
 import { berekenMetDb } from '../domein/berekening.js';
-import { leesWebshop, bewaarWebshop, pushWebshop, keuzes, maakKeuzeArtikel, maakAlleKeuzeArtikels } from '../domein/webshoppush.js';
+import { leesWebshop, bewaarWebshop, pushWebshop, keuzes, maakKeuzeArtikel, maakAlleKeuzeArtikels, voorraadNaarKeuze } from '../domein/webshoppush.js';
 
 const r = Router();
 function metFouten(fn) {
@@ -66,6 +66,7 @@ r.get('/', metFouten((req, res) => {
   const verkocht = db.prepare(`SELECT vr.artikel_id, SUM(vr.aantal) n FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id
     WHERE v.geannuleerd_op IS NULL AND vr.artikel_id IS NOT NULL AND v.datum >= date('now', '-30 days') GROUP BY vr.artikel_id`).all();
   const per = new Map(verkocht.map(x => [x.artikel_id, x.n]));
+  const keuzeTel = new Map(db.prepare(`SELECT webshop_slug s, COUNT(*) n FROM artikelen WHERE webshop_slug IS NOT NULL AND webshop_variant IS NOT NULL AND gearchiveerd = 0 GROUP BY webshop_slug`).all().map(x => [x.s, x.n]));
   const lijst = leesArtikelen(db, { archief: req.query.archief || '0', type: 'artikel' }).filter(a => a.zelf_geprint).map(a => {
     const k = kostVanArtikel(db, a);
     const kost = k.gemeten?.kost ?? (k.schatting.onvolledig && !k.profiel ? null : k.schatting.kost);
@@ -73,6 +74,8 @@ r.get('/', metFouten((req, res) => {
     return {
       id: a.id, weergave: a.weergave, categorie: a.categorie ?? null, verkoopprijs: a.verkoopprijs,
       webshop: a.webshop_slug ? { slug: a.webshop_slug, variant: a.webshop_variant, foto: a.webshop_foto } : null,
+      // 23-10: hoofdartikel met eigen artikels per keuze (maat/model): het printprofiel en de voorraad zitten bij die keuzes
+      keuzes: a.webshop_slug && !a.webshop_variant ? keuzeTel.get(a.webshop_slug) || 0 : 0,
       voorraad: a.voorraad, min: a.min_eff ?? a.min_voorraad ?? null, in_productie: a.in_productie ?? 0, verkocht_30d: per.get(a.id) || 0,
       profiel: k.profiel, onderdelen: k.onderdelen.length, schatting: k.schatting, gemeten: k.gemeten,
       kost, marge: kost != null && prijsExcl ? r2(prijsExcl - kost) : null, marge_pct: kost != null && prijsExcl ? Math.round((prijsExcl - kost) / prijsExcl * 100) : null,
@@ -92,6 +95,7 @@ r.post('/webshop/overnemen', metFouten(async (req, res) => {
 r.get('/webshop/keuzes', metFouten(async (req, res) => res.json(await keuzes())));
 // 23-10: per webshopkeuze een eigen artikel
 r.post('/webshop/keuze-artikels', metFouten((req, res) => { const db = getDb(); res.json(db.transaction(() => maakAlleKeuzeArtikels(db))()); }));
+r.post('/:id/webshop/voorraad-naar-keuze', metFouten((req, res) => { const db = getDb(); res.json(db.transaction(() => voorraadNaarKeuze(db, req.params.id, req.body?.label))()); }));
 r.post('/:id/webshop/keuze-artikel', metFouten((req, res) => { const db = getDb(); res.status(201).json(db.transaction(() => maakKeuzeArtikel(db, req.params.id, req.body?.label))()); }));
 r.get('/:id/webshop', metFouten(async (req, res) => res.json(await leesWebshop(getDb(), req.params.id))));
 r.put('/:id/webshop', metFouten((req, res) => { bewaarWebshop(getDb(), req.params.id, req.body); res.json({ ok: true }); }));
