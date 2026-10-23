@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { initDb, sluitDb, getDb, bijlagenMap } from '../db/index.js';
-import { leesWebshop, bewaarWebshop, pushWebshop, slugVan, LAYER_LEAF_SJABLOON } from '../domein/webshoppush.js';
+import { leesWebshop, bewaarWebshop, pushWebshop, slugVan, LAYER_LEAF_SJABLOON, maakKeuzeArtikel, maakAlleKeuzeArtikels } from '../domein/webshoppush.js';
 
 // nagebootste Sanity: documenten in een Map, GROQ enkel voor de paar vragen die de push stelt
 const docs = new Map();
@@ -141,4 +141,33 @@ test('W12. keuzes (modellen): null = Sanity ongemoeid; lijst = gepusht met foto;
   bewaarWebshop(db, art, { ...w.data, sizeVariants: [] });
   await pushWebshop(db, art, { fetchFn: nep, forceer: true });
   assert.equal(docs.get(id()).sizeVariants, undefined, 'leeg = weg uit Sanity');
+});
+
+test('W13. per keuze een eigen artikel: aangemaakt en gekoppeld (slug + keuze), prijs bij de push van dat artikel, bulk maakt enkel wat ontbreekt', async () => {
+  const db = getDb();
+  const id = () => db.prepare('SELECT webshop_sanity_id i FROM artikelen WHERE id = ?').get(art).i;
+  const w = await leesWebshop(db, art, { fetchFn: nep });
+  db.prepare(`UPDATE artikelen SET printprofiel = ? WHERE id = ?`).run(JSON.stringify({ printer_id: 1, tijd_min: 60, materialen: [] }), art);
+  bewaarWebshop(db, art, { ...w.data, sizeVariants: [{ label: '10cm', price: 16 }, { label: '15cm', price: 19.95 }] });   // hoofdartikel kost 16 (W3)
+  const k = maakKeuzeArtikel(db, art, '15cm');
+  assert.equal(k.nieuw, true); assert.match(k.naam, /— 15cm$/); assert.equal(k.verkoopprijs, 19.95);
+  const rij = db.prepare('SELECT webshop_slug, webshop_variant, printprofiel FROM artikelen WHERE id = ?').get(k.id);
+  assert.equal(rij.webshop_variant, '15cm'); assert.equal(rij.printprofiel, null, 'profiel enkel bij de basismaat (zelfde prijs)');
+  assert.equal(maakKeuzeArtikel(db, art, '15cm').nieuw, false, 'geen dubbel');
+  // prijs op het keuze-artikel aanpassen → de push neemt die over
+  db.prepare('UPDATE artikelen SET verkoopprijs = 21 WHERE id = ?').run(k.id);
+  await pushWebshop(db, art, { fetchFn: nep, forceer: true });
+  assert.equal(docs.get(id()).sizeVariants.find(v => v.label === '15cm').price, 21);
+  const l = await leesWebshop(db, art, { fetchFn: nep });
+  assert.equal(l.data.sizeVariants.find(v => v.label === '15cm').artikel.id, k.id);
+  // bulk: enkel 10cm ontbreekt nog; die krijgt het profiel (zelfde prijs als het hoofdartikel)
+  const b = maakAlleKeuzeArtikels(db);
+  assert.equal(b.nieuw, 1);
+  const tien = db.prepare(`SELECT printprofiel FROM artikelen WHERE webshop_variant = '10cm'`).get();
+  assert.ok(tien.printprofiel, 'basismaat krijgt het printprofiel');
+  // een webshopbestelling van 15cm vindt het keuze-artikel
+  const { bewaarBestellingen, leesBestellingen } = await import('../domein/webshopbestellingen.js');
+  const slug = db.prepare('SELECT webshop_slug s FROM artikelen WHERE id = ?').get(art).s;
+  bewaarBestellingen(db, [{ id: 'ord-keuze', status: 'paid', items: [{ slug, name: 'x', quantity: 1, price: 21, variantLabel: '15cm' }] }]);
+  assert.equal(leesBestellingen(db, { alles: true }).find(x => x.id === 'ord-keuze').items[0].artikel.id, k.id);
 });

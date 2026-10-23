@@ -50,7 +50,7 @@ export default function Statistieken() {
                   <tr key={f.id}><td><Link naar={`/voorraad/artikelen/${f.id}`}>{f.naam}</Link></td><td className="r num">{aantal(f.rollen)}</td></tr>
                 ))}</tbody></table>) : <p className="sub" style={{ margin: 0 }}>Nog geen rollen leeggemeld in {jaar}.</p>}</div>
             </div>
-            <div className="panel"><h3>Eigen producten (geproduceerd)</h3>
+            <div className="panel"><h3>Voor voorraad geproduceerd</h3>
               <div className="pbody">{s.producten.length ? (
                 <table className="mini"><thead><tr><th>Artikel</th><th className="r">Stuks</th><th className="r">Kost/stuk</th><th className="r">Verkoopprijs</th></tr></thead>
                   <tbody>{s.producten.map(p => (

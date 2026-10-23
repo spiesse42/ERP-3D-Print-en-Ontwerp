@@ -10,7 +10,7 @@ import { peppolVerplicht } from '../documenten/factuur.js';
 import { leverbaar, leverStatus, leverStatusVan, leveringenVan, controleerGeleverd, nogTeLeveren } from './leveringen.js';
 import { productieVan, productieOverzicht, metingenPerRegel, controleerPrintopdrachten, wisOpdrachtenVanRegels } from '../productie/opdrachten.js';
 
-export const SOORTEN = { klant: 'Klantopdracht', eigen: 'Eigen product', intern: 'Intern' };
+export const SOORTEN = { klant: 'Klantopdracht', eigen: 'Voorraad', intern: 'Intern' };
 export const REGELTYPES = ['printen', 'ontwerp', 'aanpassing', 'artikel', 'extra', 'korting'];
 
 const tekst = v => { const t = String(v ?? '').trim(); return t || null; };
@@ -391,7 +391,10 @@ export function leesDossiers(db, { archief = '0', klant_id = null } = {}) {
     const offerte = laatsteVerstuurde(offertesVan(db, d.id));
     const lever = d.soort === 'klant' ? leverStatusVan(db, d.id) : null;
     const prod = productieVan(db, d.id);
-    return { ...d, fase: faseVan(d, { offerte, lever, prod }), lever_status: lever, prod_status: prod, totaal: b.totaal, volledig: b.volledig };
+    // 23-10: voorraad (eigen) heeft geen verkoopprijs → het bedrag is de geschatte productiekost
+    const voorraad = d.soort === 'eigen';
+    const totaal = voorraad ? (b.productiekost ? Math.round(b.productiekost.kost * 100) / 100 : 0) : b.totaal;
+    return { ...d, fase: faseVan(d, { offerte, lever, prod }), lever_status: lever, prod_status: prod, totaal, volledig: b.volledig, bedrag_soort: voorraad ? 'kost' : 'prijs' };
   });
 }
 

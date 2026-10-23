@@ -251,7 +251,7 @@ export default function DossierFormulier() {
                   {Object.entries(SOORT).map(([w, l]) => <option key={w} value={w}>{l}</option>)}
                 </select>
               </Veld>
-              <Veld label="Klant" id="d-klant" hint={klantOpdracht ? null : 'Optioneel bij een eigen product of intern dossier.'}>
+              <Veld label="Klant" id="d-klant" hint={klantOpdracht ? null : 'Optioneel bij een voorraad- of intern dossier.'}>
                 {kopVast ? (d.klant_id ? <Link naar={`/klanten/${d.klant_id}`}>{d.klant}</Link> : <span className="sub">—</span>) : (
                   <KeuzeMetToevoegen id="d-klant" ariaLabel="Klant" waarde={form.kop.klant_id} leegLabel="Geen klant"
                     opties={klantOpties} onKies={zetKop('klant_id')} onNieuw={nieuweKlant} watLabel="klant" />
@@ -267,7 +267,9 @@ export default function DossierFormulier() {
             </div>
             <div>
               <Veld label="Fase"><FaseBadge fase={fase} /></Veld>
-              <Veld label="Totaal">{uitkomst ? (uitkomst.volledig ? <b className="num">{euro(uitkomst.totaal)}</b> : <span className="badge b-warn">onvolledig</span>) : <span className="sub">—</span>}</Veld>
+              {form.kop.soort === 'eigen'
+                ? <Veld label="Productiekost">{uitkomst?.productiekost ? <b className="num">{euro(Math.round(uitkomst.productiekost.kost * 100) / 100)}</b> : <span className="sub">—</span>}</Veld>
+                : <Veld label="Totaal">{uitkomst ? (uitkomst.volledig ? <b className="num">{euro(uitkomst.totaal)}</b> : <span className="badge b-warn">onvolledig</span>) : <span className="sub">—</span>}</Veld>}
               {!nieuw && d.afgerekend_op && (
                 <Veld label="Afgerekend">
                   <span><span className="mono">{String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>{d.afrekening_pdf_op && d.afgerekend_soort === 'factuur' && !d.afrekening_gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}
@@ -290,7 +292,7 @@ export default function DossierFormulier() {
               <>
                 {!kopVast && form.regels.length > 0 && (
                   <div className="toevoegen boven" aria-label="Regel bovenaan toevoegen">
-                    {TYPES.map(([w, l]) => <button key={w} type="button" className="btn" title="Nieuwe regel bovenaan" onClick={() => setForm(f => ({ ...f, regels: [nieuweRegel(w), ...f.regels] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}
+                    {TYPES.filter(([w]) => w !== 'korting' || form.kop.soort !== 'eigen').map(([w, l]) => <button key={w} type="button" className="btn" title="Nieuwe regel bovenaan" onClick={() => setForm(f => ({ ...f, regels: [nieuweRegel(w), ...f.regels] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}
                     <button type="button" className="btn" title="Printregels uit een geslicet 3mf- of gcode-bestand, bovenaan" onClick={() => { setSlicerBoven(true); setDialoog('slicer'); }}><Icoon naam="plus" maat={14} /> Uit slicerbestand</button>
                   </div>
                 )}
@@ -298,11 +300,11 @@ export default function DossierFormulier() {
                   uitkomst={uitkomst} tarieven={tarieven} printers={printers} alleenLezen={kopVast}
                   filamenten={artikelenZicht.filter(a => a.type === 'filament')} prijsgroepen={prijsgroepen}
                   artikelen={artikelenZicht.filter(a => a.type !== 'filament' && a.wordt_verkocht)}
-                  herkomst="dossier" onArtikelGemaakt={herlaadArtikelen}
+                  herkomst="dossier" onArtikelGemaakt={herlaadArtikelen} alleenKost={form.kop.soort === 'eigen'}
                   eindproducten={form.kop.soort === 'eigen' ? artikelenZicht.filter(a => a.type === 'artikel' && a.zelf_geprint) : null} producten={producten} />
                 {!kopVast && (
                   <div className="toevoegen">
-                    {TYPES.map(([w, l]) => <button key={w} type="button" className="btn" onClick={() => setForm(f => ({ ...f, regels: [...f.regels, nieuweRegel(w)] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}
+                    {TYPES.filter(([w]) => w !== 'korting' || form.kop.soort !== 'eigen').map(([w, l]) => <button key={w} type="button" className="btn" onClick={() => setForm(f => ({ ...f, regels: [...f.regels, nieuweRegel(w)] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}
                     <button type="button" className="btn" title="Printregels uit een geslicet 3mf-bestand van Bambu Studio" onClick={() => { setSlicerBoven(false); setDialoog('slicer'); }}><Icoon naam="plus" maat={14} /> Uit slicerbestand</button>
                     {producten?.length > 0 && <select className="inp" style={{ width: 'auto' }} aria-label="Printregel uit een product (printprofiel)" value="" onChange={e => {
                       const a = producten.find(x => String(x.id) === e.target.value);
@@ -313,7 +315,7 @@ export default function DossierFormulier() {
                     </select>}
                   </div>
                 )}
-                <Totalen uitkomst={form.regels.length ? uitkomst : null} gemeten={d?.productie?.gemeten} />
+                <Totalen uitkomst={form.regels.length ? uitkomst : null} gemeten={d?.productie?.gemeten} alleenKost={form.kop.soort === 'eigen'} />
                 {kopVast && fase === 'samengevoegd' && <p className="note">Dit dossier is samengevoegd in {d.samengevoegd_in_nummer || 'een ander dossier'}: de regels staan daar.</p>}
                 {kopVast && fase !== 'geannuleerd' && fase !== 'samengevoegd' && <p className="note">Dit dossier is afgerekend en ligt vast. Wil je nog iets wijzigen, maak dan eerst de afrekening ongedaan.</p>}
               </>

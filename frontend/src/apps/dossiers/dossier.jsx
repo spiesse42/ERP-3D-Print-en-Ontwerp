@@ -26,7 +26,7 @@ export function OfferteBadge({ status }) {
   return <span className={`badge ${k}`}>{l}</span>;
 }
 export const VOOR_AFREKENING = ['nieuw', 'offerte', 'akkoord', 'gepland', 'productie', 'klaar', 'afgerond', 'deels', 'geleverd'];
-export const SOORT = { klant: 'Klantopdracht', eigen: 'Eigen product', intern: 'Intern' };
+export const SOORT = { klant: 'Klantopdracht', eigen: 'Voorraad', intern: 'Intern' };
 
 export function FaseBadge({ fase }) {
   const [k, l] = FASE[fase] || FASE.nieuw;

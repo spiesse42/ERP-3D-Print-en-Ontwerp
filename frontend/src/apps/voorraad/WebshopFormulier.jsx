@@ -18,7 +18,7 @@ const VINKJES = [
 ];
 
 export default function WebshopFormulier({ art, onKlaar }) {
-  const { melding, bevestig } = useOmgeving();
+  const { melding, bevestig, navigeer } = useOmgeving();
   const { data, herlaad } = useData(`/producten/${art.id}/webshop`);
   const { data: k } = useData('/producten/webshop/keuzes');
   const [f, setF] = useState(null);
@@ -52,6 +52,16 @@ export default function WebshopFormulier({ art, onKlaar }) {
       if (!/gewijzigd sinds/.test(e.message)) melding(e.message, 'fout');
       return;
     }
+    setBezig(false);
+  }
+  // 23-10: per keuze een eigen artikel (voorraad, printprofiel, bestellingen)
+  async function keuzeArtikel(label) {
+    setBezig(true);
+    try {
+      const r = await api.post(`/producten/${art.id}/webshop/keuze-artikel`, { label });
+      melding(`Artikel "${r.naam}" aangemaakt${r.profiel_gekopieerd ? ' (met het printprofiel van dit artikel)' : '; vul er nog een printprofiel bij in'}.`);
+      await herlaad(); onKlaar?.();
+    } catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
   }
   async function los() {
@@ -131,26 +141,32 @@ export default function WebshopFormulier({ art, onKlaar }) {
             {f.sizeVariants.length > 0 && <>
               <div className="fgrid"><div><label htmlFor="ws-vl">Naam van de keuze</label><input id="ws-vl" className="inp" placeholder="Maat" value={f.variantChoiceLabel || ''} onChange={e => zet('variantChoiceLabel', e.target.value)} /></div></div>
               <table className="mini" style={{ marginTop: 6 }}>
-                <thead><tr><th>Naam</th><th className="r">Prijs (€)</th><th className="r">Gewicht (g)</th><th>Foto</th><th /></tr></thead>
+                <thead><tr><th>Naam</th><th className="r">Prijs (€)</th><th className="r">Gewicht (g)</th><th>Foto</th><th>Artikel (voorraad, printprofiel)</th><th /></tr></thead>
                 <tbody>{f.sizeVariants.map((v, i) => {
                   const zetV = (sl, w) => zet('sizeVariants', f.sizeVariants.map((x, j) => (j === i ? { ...x, [sl]: w } : x)));
                   return (
                     <tr key={i}>
                       <td><input className="inp" aria-label={`Keuze ${i + 1}: naam`} placeholder="bv. Vrouw" value={v.label} onChange={e => zetV('label', e.target.value)} /></td>
-                      <td className="r"><input className="inp num" style={{ width: 80 }} inputMode="decimal" aria-label={`Keuze ${i + 1}: prijs`} value={naarInvoer(v.price)} onChange={e => zetV('price', e.target.value)} /></td>
+                      <td className="r">{v.artikel?.verkoopprijs != null
+                        ? <span className="num" title="De prijs komt van het artikel van deze keuze (daar aanpassen)">{naarInvoer(v.artikel.verkoopprijs)}</span>
+                        : <input className="inp num" style={{ width: 80 }} inputMode="decimal" aria-label={`Keuze ${i + 1}: prijs`} value={naarInvoer(v.price)} onChange={e => zetV('price', e.target.value)} />}</td>
                       <td className="r"><input className="inp num" style={{ width: 70 }} inputMode="decimal" aria-label={`Keuze ${i + 1}: gewicht`} placeholder={naarInvoer(f.weightGrams || data.gewicht_profiel || '')} value={naarInvoer(v.weightGrams)} onChange={e => zetV('weightGrams', e.target.value)} /></td>
                       <td><select className="inp" aria-label={`Keuze ${i + 1}: foto`} value={v.image_bijlage_id || (v.sanity_image ? 'sanity' : '')} onChange={e => (e.target.value === 'sanity' ? null : zet('sizeVariants', f.sizeVariants.map((x, j) => (j === i ? { ...x, image_bijlage_id: e.target.value ? Number(e.target.value) : null, sanity_image: e.target.value ? null : x.sanity_image } : x))))}>
                         <option value="">geen</option>
                         {v.sanity_image && <option value="sanity">foto in Sanity</option>}
                         {data.fotos.map(ft => <option key={ft.id} value={ft.id}>{ft.bestandsnaam}</option>)}
                       </select></td>
+                      <td>{v.artikel
+                        ? <a href={`/voorraad/artikelen/${v.artikel.id}`} onClick={e => { e.preventDefault(); navigeer(`/voorraad/artikelen/${v.artikel.id}`); }}>{v.artikel.naam}</a>
+                        : <button type="button" className="btn klein" disabled={bezig || !data.slug || vuil || !v.label} title={!data.slug ? 'Eerst naar de webshop' : vuil ? 'Eerst bewaren' : 'Eigen artikel voor deze keuze: printprofiel, voorraad en bestellingen per keuze'} onClick={() => keuzeArtikel(v.label)}>Artikel aanmaken</button>}
+                        {v.artikel && <div className="sub">voorraad {naarInvoer(v.artikel.voorraad)}{v.artikel.profiel ? '' : ' · nog geen printprofiel'}</div>}</td>
                       <td><button type="button" className="btn ghost" aria-label={`Keuze ${i + 1} weghalen`} onClick={() => zet('sizeVariants', f.sizeVariants.filter((_, j) => j !== i))}>×</button></td>
                     </tr>
                   );
                 })}</tbody>
               </table>
               <button type="button" className="linkish" onClick={() => zet('sizeVariants', [...f.sizeVariants, { label: '', price: f.sizeVariants.at(-1)?.price ?? naarInvoer(data.prijs), weightGrams: f.sizeVariants.at(-1)?.weightGrams ?? '', image_bijlage_id: null, sanity_image: null }])}>+ keuze</button>
-              <p className="sub" style={{ margin: '4px 0 0' }}>De klant kiest één keuze per keer en kan er meerdere na elkaar toevoegen, elk met eigen kleur en aantal. Zelfde prijs voor alle keuzes = geen "vanaf" op de site. Foto's: kies uit de foto's van dit artikel (tabblad Foto's & bestanden).</p>
+              <p className="sub" style={{ margin: '4px 0 0' }}>De klant kiest één keuze per keer en kan er meerdere na elkaar toevoegen, elk met eigen kleur en aantal. Met "Artikel aanmaken" krijgt een keuze een eigen artikel: eigen printprofiel, voorraad en Bijprinten, en webshopbestellingen van die keuze vinden het; de prijs pas je dan aan bij dat artikel. Zelfde prijs voor alle keuzes = geen "vanaf" op de site. Foto's: kies uit de foto's van dit artikel (tabblad Foto's & bestanden).</p>
             </>}
           </>}
       </div>
