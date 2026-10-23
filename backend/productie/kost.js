@@ -75,6 +75,35 @@ function voegFilamentToe(lijst, naam, gram, kost) {
 }
 export const rondFilamenten = l => l.map(f => ({ naam: f.naam, gram: rond(f.gram, 1), kost: rond(f.kost) }));
 
+// ── samen op één plaat (23-10) ────────────────────────────────────────────
+// De runs hangen aan de trekker van de groep (plaat_groep); elk lid draagt
+// een deel van stroom, machine en slijtage: naar gewicht, anders naar de
+// geschatte printtijd, anders gelijk verdeeld. Geannuleerde leden niet.
+export function runSleutel(db, o) {
+  const g = o.plaat_groep !== undefined ? o.plaat_groep : db.prepare('SELECT plaat_groep FROM printopdrachten WHERE id = ?').get(o.id)?.plaat_groep;
+  return g ?? o.id;
+}
+function maatVan(db, o, soort) {
+  const regel = o.dossier_regel_id ? db.prepare('SELECT aantal, tijd_min FROM dossier_regels WHERE id = ?').get(o.dossier_regel_id) : null;
+  const deel = regel ? Number(o.aantal) / (Number(regel.aantal) || 1) : 1;
+  if (soort === 'tijd') return regel ? (Number(regel.tijd_min) || 0) * deel : 0;
+  const g = regel
+    ? db.prepare('SELECT COALESCE(SUM(gram), 0) g FROM dossier_regel_materialen WHERE regel_id = ?').get(o.dossier_regel_id).g
+    : db.prepare('SELECT COALESCE(SUM(gram), 0) g FROM printopdracht_materialen WHERE printopdracht_id = ?').get(o.id).g;
+  return g * deel;
+}
+export function aandeelInPlaat(db, o) {
+  const groep = runSleutel(db, o);
+  const leden = db.prepare('SELECT id, dossier_regel_id, aantal FROM printopdrachten WHERE plaat_groep = ? AND geannuleerd_op IS NULL').all(groep);
+  if (leden.length <= 1 || !leden.some(l => l.id === o.id)) return 1;
+  for (const soort of ['gram', 'tijd']) {
+    const m = leden.map(l => maatVan(db, l, soort));
+    const tot = m.reduce((t, x) => t + x, 0);
+    if (tot > 0) return m[leden.findIndex(l => l.id === o.id)] / tot;
+  }
+  return 1 / leden.length;
+}
+
 // opdracht: { id, dossier_regel_id, aantal, aantal_goed? }; goed = aantal goede stuks
 // materialen (optioneel, enkel losse opdracht): nog niet bewaard filament om
 // vooraf te rekenen (bevestigvenster), in plaats van wat in de databank staat.
@@ -102,14 +131,16 @@ export function productiekost(db, opdracht, goed = opdracht.aantal_goed, { mater
       : mat.length ? 'gewicht filament (open de printopdracht → Filament)' : 'filament en gewicht (open de printopdracht → Filament)');
   }
   const runs = db.prepare(`SELECT r.*, p.machine_per_uur, p.slijtage_per_print FROM printruns r JOIN printers p ON p.id = r.printer_id
-    WHERE r.printopdracht_id = ? AND r.uitkomst <> 'bezig'`).all(opdracht.id);
+    WHERE r.printopdracht_id = ? AND r.uitkomst <> 'bezig'`).all(runSleutel(db, opdracht));
+  const aandeel = aandeelInPlaat(db, opdracht);   // 23-10: deel van een gedeelde plaat
   let energie = 0, machine = 0, kwh = 0, uren = 0;
   for (const r of runs) {
     kwh += r.kwh ?? 0; uren += duurU(r);
     if (r.kwh == null) ontbreekt.push('kWh van een run (open de run → Verbruik aanvullen)'); else if (t.kwh_prijs == null) ontbreekt.push('kWh-prijs (Instellingen → Tarieven)'); else energie += r.kwh * t.kwh_prijs;
     if (r.machine_per_uur == null) ontbreekt.push(`machinetarief ${db.prepare('SELECT naam FROM printers WHERE id = ?').get(r.printer_id)?.naam || ''}`.trim()); else machine += duurU(r) * r.machine_per_uur;
   }
-  const bmcu = runs.reduce((s, r) => s + (r.slijtage_per_print ?? t.bmcu_per_job ?? 0), 0);
+  let bmcu = runs.reduce((s, r) => s + (r.slijtage_per_print ?? t.bmcu_per_job ?? 0), 0);
+  energie *= aandeel; machine *= aandeel; bmcu *= aandeel; kwh *= aandeel; uren *= aandeel;
   const arb = arbeidVan(regel, t, deel);
   const arbeid = arb.euro;
   const kost = filament + energie + machine + bmcu;

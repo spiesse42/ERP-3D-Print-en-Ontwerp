@@ -267,6 +267,49 @@ export function BevestigDialoog({ o, mat: matVan = null, onSluit, onKlaar }) {
   );
 }
 
+// ── Samen op één plaat (23-10) ───────────────────────────────────────────
+// Badge bij een opdracht die met andere op één plaat ligt.
+export function PlaatBadge({ o }) {
+  if (!o.plaat) return null;
+  return <span className="badge b-neutral" style={{ marginLeft: 6 }} title={`Samen op één plaat: ${o.plaat.leden.map(l => l.naam).join(', ')}`}>plaat · {o.plaat.leden.length} producten</span>;
+}
+// De hele plaat bevestigen: per product het aantal goede stuks; wat mislukte,
+// wordt opnieuw gepland (op wens weer samen op één plaat).
+export function PlaatBevestigDialoog({ o, onSluit, onKlaar }) {
+  const { melding } = useOmgeving();
+  const open = o.plaat.leden.filter(l => !l.voltooid && !l.geannuleerd);
+  const [n, setN] = useState(() => Object.fromEntries(open.map(l => [l.id, naarInvoer(l.aantal)])));
+  const [samen, setSamen] = useState(true);
+  const [bezig, setBezig] = useState(false);
+  const getal = v => Number(String(v ?? '').replace(',', '.'));
+  const mislukt = open.filter(l => String(n[l.id] ?? '').trim() !== '' && getal(n[l.id]) < Number(l.aantal)).length;
+  async function ok() {
+    setBezig(true);
+    try {
+      const r = await api.post(`/productie/plaat/${o.plaat.groep}/bevestig`, { aantallen: n, herprint_samen: samen });
+      melding(`Plaat bevestigd.${r.tekort ? ` ${r.tekort} product${r.tekort === 1 ? '' : 'en'} opnieuw gepland${r.herprint_groep ? ', samen op één plaat' : ''}.` : ''}`);
+      await onKlaar();
+    } catch (e) { melding(e.message, 'fout'); setBezig(false); }
+  }
+  return (
+    <Dialoog titel="Plaat bevestigen" breed onSluit={onSluit}
+      voet={<><button type="button" className="btn" onClick={onSluit}>Terug</button><button type="button" className="btn primary" disabled={bezig} onClick={ok}>Bevestigen</button></>}>
+      <p className="sub" style={{ marginTop: 0 }}>Vul per product het aantal goede stuks in (0 = mislukt). De goede stuks gaan naar voorraad of tellen voor hun dossier; stroom en machinetijd van de run worden verdeeld naar gewicht.</p>
+      <table className="mini">
+        <thead><tr><th>Product</th><th className="r">Gepland</th><th className="r">Goed</th></tr></thead>
+        <tbody>{open.map(l => (
+          <tr key={l.id}>
+            <td>{l.naam}</td>
+            <td className="r num">{aantal(l.aantal)}</td>
+            <td className="r"><input className="inp num" style={{ width: 70 }} inputMode="decimal" aria-label={`Goede stuks ${l.naam}`} value={n[l.id] ?? ''} onChange={e => setN(x => ({ ...x, [l.id]: e.target.value }))} /></td>
+          </tr>))}</tbody>
+      </table>
+      {mislukt > 0 && <label className="vinkje" style={{ marginTop: 10 }}><input type="checkbox" checked={samen} onChange={e => setSamen(e.target.checked)} /> De {mislukt} mislukte product{mislukt === 1 ? '' : 'en'} opnieuw plannen{mislukt > 1 ? ', samen op één plaat' : ''}</label>}
+      <p className="note" style={{ marginBottom: 0 }}>Wat mislukte, komt automatisch opnieuw in de wachtrij (enkel die producten).{mislukt > 1 && !samen ? ' Zonder vinkje: elk als aparte printopdracht.' : ''}</p>
+    </Dialoog>
+  );
+}
+
 // ── Run koppelen ─────────────────────────────────────────────────────────
 // Koppelen gebeurt ALTIJD door jou; het voorstel is de eerste geplande
 // opdracht van die printer. Een opdracht van een andere printer verhuist mee.

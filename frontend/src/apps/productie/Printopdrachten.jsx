@@ -5,7 +5,7 @@ import { useOmgeving } from '../../schil/Omgeving.jsx';
 import { ControlePaneel, Chip, Lijst, Laden, Fout } from '../../schil/Weergaven.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { aantal } from '../../lib/formaat.js';
-import { OpdrachtBadge, OpdrachtDialoog, BevestigDialoog, Herkomst } from './opdracht.jsx';
+import { OpdrachtBadge, OpdrachtDialoog, BevestigDialoog, Herkomst, PlaatBadge } from './opdracht.jsx';
 
 // Productie → Printopdrachten (stap 6b): de wachtrij per printer. Volgorde
 // met ↑/↓; de eerste open opdracht is het voorstel als de printer start.
@@ -34,7 +34,7 @@ export default function Printopdrachten() {
   const klaar = async () => { setDialoog(null); await herlaad(); };
   const kolommen = [
     { kop: '#', klasse: 'num', cel: o => { const i = (openPer.get(o.printer_id) || []).indexOf(o.id); return i >= 0 ? i + 1 : ''; } },
-    { kop: 'Opdracht', cel: o => <b>{o.naam}</b> },
+    { kop: 'Opdracht', cel: o => <><b>{o.naam}</b><PlaatBadge o={o} /></> },
     { kop: 'Voor', cel: o => <Herkomst o={o} /> },
     { kop: 'Stuks', klasse: 'r', cel: o => <span className="num">{o.status === 'voltooid' ? `${aantal(o.aantal_goed)} / ${aantal(o.aantal)}` : aantal(o.aantal)}</span> },
     { kop: 'Runs', klasse: 'r', cel: o => <span className="num">{o.runs.length || ''}</span> },
