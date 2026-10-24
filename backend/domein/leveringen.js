@@ -9,6 +9,7 @@ import { DomeinFout } from './hulp.js';
 import { volgendNummer } from './nummering.js';
 import { boekUit, voorraadVan } from './voorraad.js';
 import { logGebeurtenis } from './historiek.js';
+import { boekOnderdelenUit } from './onderdelen.js';
 
 const r3 = x => Math.round(x * 1000) / 1000;
 const STANDAARD = { printen: 'Printwerk' };
@@ -115,8 +116,16 @@ export function maakLevering(db, dossier, body) {
   const opm = String(body?.opmerking ?? '').trim() || null;
   const id = Number(db.prepare('INSERT INTO leveringen (dossier_id, nummer, datum, opmerking) VALUES (?,?,?,?)').run(dossier.id, nummer, datum, opm).lastInsertRowid);
   const ins = db.prepare('INSERT INTO levering_regels (levering_id, dossier_regel_id, aantal, omschrijving) VALUES (?,?,?,?)');
+  // 24-10: een printregel uit een product neemt zijn onderdelen mee (sleutelring…);
+  // te weinig in voorraad = melding in de historiek, de levering gaat door
+  const productVan = new Map((dossier.soort === 'klant' ? dossier.regels || [] : []).filter(x => x.type === 'printen' && x.artikel_id).map(x => [x.id, x.artikel_id]));
+  const tekort = [];
   for (const r of regels) {
     const lrId = Number(ins.run(id, r.regel_id, r.aantal, r.omschrijving).lastInsertRowid);
+    if (productVan.has(r.regel_id)) {
+      tekort.push(...boekOnderdelenUit(db, { artikelId: productVan.get(r.regel_id), aantal: r.aantal, regelId: lrId, bronType: 'levering_regel',
+        notitie: `Levering ${nummer} (dossier ${dossier.nummer}, onderdeel)` }));
+    }
     if (r.boekt_voorraad) {
       try {
         boekUit(db, { artikelId: r.artikel_id, aantal: r.aantal, reden: 'levering', bronType: 'levering_regel', bronId: lrId, notitie: `Levering ${nummer} (dossier ${dossier.nummer})` });
@@ -126,7 +135,7 @@ export function maakLevering(db, dossier, body) {
       }
     }
   }
-  logGebeurtenis(db, 'dossier', dossier.id, 'status', `Geleverd (pakbon ${nummer}, ${dmj(datum)}): ${regels.map(r => `${String(r.aantal).replace('.', ',')} × ${r.omschrijving}`).join(', ')}`);
+  logGebeurtenis(db, 'dossier', dossier.id, 'status', `Geleverd (pakbon ${nummer}, ${dmj(datum)}): ${regels.map(r => `${String(r.aantal).replace('.', ',')} × ${r.omschrijving}`).join(', ')}${tekort.length ? `. Onderdelen te weinig in voorraad: ${tekort.join(', ')}` : ''}`);
   return id;
 }
 
