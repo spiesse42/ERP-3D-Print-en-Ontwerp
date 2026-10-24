@@ -158,7 +158,9 @@ r.post('/artikelen/:id/kopie', metFouten((req, res) => {
   if (oud.webshop_data) {
     // foto's en bijlagen horen bij het oorspronkelijke product; nieuw product blijft verborgen tot je het controleert
     const { image_bijlage_id, photo_bijlage_ids, assets, createdAt, ...rest } = JSON.parse(oud.webshop_data);
-    webshop = JSON.stringify({ ...rest, image_bijlage_id: null, photo_bijlage_ids: [], createdAt: null, hidden: true });
+    // de keuzes (labels, prijzen) blijven, hun foto's niet
+    const sizeVariants = Array.isArray(rest.sizeVariants) ? rest.sizeVariants.map(v => ({ ...v, image_bijlage_id: null, sanity_image: null })) : rest.sizeVariants;
+    webshop = JSON.stringify({ ...rest, sizeVariants, image_bijlage_id: null, photo_bijlage_ids: [], createdAt: null, hidden: true });
   }
   const nieuwId = db.transaction(() => {
     const nieuw = maakArtikel(db, { ...oud, naam }, `Gekopieerd van "${oud.naam}"`);
