@@ -364,7 +364,7 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
           </div>
         )}
         <label className="keuze"><input type="radio" name="kp" checked={keuze === 'nieuw'} onChange={() => setKeuze('nieuw')} />
-          <span>Nieuwe printopdracht (eigen product of intern)</span></label>
+          <span>Nieuwe printopdracht (voorraad of intern)</span></label>
         {keuze === 'nieuw' && (
           <div className="keuze-sub fgrid">
             <div><label htmlFor="kp-naam">Naam</label><input id="kp-naam" className="inp" value={nieuw.naam} onChange={e => setNieuw(x => ({ ...x, naam: e.target.value }))} /></div>

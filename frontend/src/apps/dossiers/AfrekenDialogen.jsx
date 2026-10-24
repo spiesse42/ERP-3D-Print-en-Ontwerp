@@ -275,7 +275,7 @@ export function Overnamefiche({ dossier, onSluit }) {
           <tfoot><tr><th colSpan={3}>Totaal</th><th className="r num">{euro(b.totaal)}</th><td className="r"><Kopieer tekst={naarInvoer(b.totaal)} /></td></tr></tfoot>
         </table>
       </div>
-      <p className="note" style={{ marginBottom: 0 }}>Vrijgesteld van btw (art. 56bis). {b.vast > 0 && `Waarvan ${euro(b.vast)} vaste prijs (bv. verzending). `}Aangemaakt op {fmtDatum(dossier.aangemaakt_op)}.</p>
+      <p className="note" style={{ marginBottom: 0 }}>Vrijgesteld van btw (art. 56bis). {b.vast > 0 && `Waarvan ${euro(b.vast)} doorgerekende kosten (bv. verzending). `}Aangemaakt op {fmtDatum(dossier.aangemaakt_op)}.</p>
     </Dialoog>
   );
 }

@@ -55,7 +55,7 @@ export default function Statistieken() {
                 <table className="mini"><thead><tr><th>Artikel</th><th className="r">Stuks</th><th className="r">Kost/stuk</th><th className="r">Verkoopprijs</th></tr></thead>
                   <tbody>{s.producten.map(p => (
                     <tr key={p.id}><td><Link naar={`/voorraad/artikelen/${p.id}`}>{p.naam}</Link></td><td className="r num">{aantal(p.stuks)}</td><td className="r num">{euro(p.kost_stuk)}</td><td className="r num">{euro(p.verkoopprijs)}</td></tr>
-                  ))}</tbody></table>) : <p className="sub" style={{ margin: 0 }}>Nog geen eigen producten in voorraad gebracht in {jaar}.</p>}</div>
+                  ))}</tbody></table>) : <p className="sub" style={{ margin: 0 }}>Nog niets op voorraad geprint in {jaar}.</p>}</div>
             </div>
             <div className="panel"><h3>Klanten (omzet)</h3>
               <div className="pbody">{s.klanten.length ? (

@@ -26,6 +26,9 @@ export default function Startscherm() {
     api.get('/controles').then(l => setTellers(t => ({ ...t, instellingen: l.length ? { tekst: `${l.length} ontbreekt`, klasse: 'b-warn' } : 'alles ingevuld' }))).catch(() => {});
     // 30-09: ongelezen mails (enkel als de mailbox ingesteld is)
     api.get('/mail/status?ongelezen=1').then(m => { if (m.ingesteld && m.ongelezen != null) setTellers(t => ({ ...t, mail: m.ongelezen ? { tekst: `${m.ongelezen} ongelezen`, klasse: 'b-warn' } : 'niets nieuw' })); else if (!m.ingesteld) setTellers(t => ({ ...t, mail: 'niet ingesteld' })); }).catch(() => {});
+    // 24-10: webshopbestellingen die nog verwerkt moeten worden (geen verkoop, niet afgehandeld)
+    api.get('/webshopbestellingen').then(w => { if (!w.ingesteld) return; const n = w.bestellingen.filter(b => !b.afgehandeld_op && !b.verkoop_id).length;
+      setTellers(t => ({ ...t, verkoop: n ? { tekst: `${n} webshopbestelling${n === 1 ? '' : 'en'}`, klasse: 'b-warn' } : 'webshop bij' })); }).catch(() => {});
     api.get('/voorraad/te-bestellen').then(l => setTellers(t => ({ ...t, voorraad: l.length ? `${l.length} te bestellen` : 'alles op peil' }))).catch(() => {});
   }, []);
   const vandaag = new Date().toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' });

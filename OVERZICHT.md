@@ -19,8 +19,20 @@ Bijgehouden tijdens de ontwikkeling. Wat hier staat is (nog) niet gebouwd.
 
 ## Ideeën / later
 
-- Onderdelen ook afboeken bij een klantdossier dat een product via "Uit product" print
-  (nu enkel bij een verkoop uit voorraad).
+- ~~Onderdelen bij een klantdossier dat een product print~~ — gebouwd 24-10 (prijs + levering).
 - Kleur per bestelling: de webshop bewaart de gekozen kleur sinds 06-10 in
   `orders.items[].color` (webshop-PR "Kleurenpalet + kleurkeuze"); bij de koppeling
   meenemen naar de printopdracht (kleurenpalet in Sanity heeft per kleur ook het filament).
+
+## Nazicht 24-10-2026 — voorstellen (nog niet gebouwd)
+
+1. Onderdelen afboeken bij afrekenen zonder pakbon (nu enkel bij een levering/pakbon).
+2. Printregel uit een slicerbestand in een dossier bewaren als printprofiel van het product
+   (knop "Als printprofiel van het product bewaren").
+3. Voorraad → Mutaties: kolom "Bron" met een link naar de verkoop, levering, printopdracht of aankoop.
+4. Kostbegrippen op het artikel samenbrengen: "Productieprijs" (handmatig) naast "Productiekost
+   (gemeten)" en "Kost / stuk" (Producten) → één kost per stuk: gemeten, anders geschat, anders handmatig.
+5. Productie → "Printers" (live) heet hetzelfde als Instellingen → "Printers" (instellingen):
+   eerste hernoemen naar "Live" of "Printers nu".
+6. Webshopbestelling met een kleurkeuze → filament meegeven aan de printopdracht.
+7. Opruimen: oude, ongebruikte frontendbestanden (`frontend/src/pages/*`, `App.css`, `index.css`).

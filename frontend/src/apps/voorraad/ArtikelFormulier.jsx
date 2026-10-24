@@ -345,9 +345,10 @@ export default function ArtikelFormulier() {
                     <Bedrag id="a-verkoop" waarde={form.verkoopprijs} onWijzig={zet('verkoopprijs')} eenheid={`€/${form.eenheid || 'eenheid'}`} placeholder="nog in te vullen" />
                   </Veld>
                 )}
-                {form.wordt_verkocht && (
-                  <Veld label="Vaste prijs">
-                    <Vinkje id="a-vast" aan={form.vaste_prijs} onWijzig={zet('vaste_prijs')}>Geen marge, niet in de btw-grondslag (bv. verzending)</Vinkje>
+                {/* 24-10: enkel voor doorgerekende kosten (verzending); bij een zelf geprint product verborgen, tenzij per ongeluk aangevinkt */}
+                {form.wordt_verkocht && (!form.zelf_geprint || form.vaste_prijs) && (
+                  <Veld label="Doorgerekende kost" hint={form.zelf_geprint && form.vaste_prijs ? 'Let op: dit is bedoeld voor bv. verzendkosten, niet voor een geprint product. Vink het uit.' : null}>
+                    <Vinkje id="a-vast" aan={form.vaste_prijs} onWijzig={zet('vaste_prijs')}>Zonder marge en buiten de btw-grondslag (bv. verzending)</Vinkje>
                   </Veld>
                 )}
                 {form.zelf_geprint && (

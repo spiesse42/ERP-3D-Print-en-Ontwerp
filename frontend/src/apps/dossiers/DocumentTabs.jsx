@@ -74,7 +74,7 @@ export function OffertesTab({ d, vuil, herlaad, bedrijf }) {
   const heeftConcept = lijst.some(o => o.status === 'concept');
   return (
     <>
-      {d.soort !== 'klant' ? <p className="sub">Een eigen product of intern dossier krijgt geen offerte.</p> : <>
+      {d.soort !== 'klant' ? <p className="sub">Een voorraaddossier of intern dossier krijgt geen offerte.</p> : <>
         {lijst.length === 0 && <div className="leeg" style={{ padding: '18px 8px' }}><b>Nog geen offerte.</b>Een offerte toont de regels van dit dossier. Bij het versturen wordt ze vastgelegd.</div>}
         {d.acties.offerte && !heeftConcept && (
           <button type="button" className="btn primary" style={{ marginBottom: 12 }} disabled={vuil}

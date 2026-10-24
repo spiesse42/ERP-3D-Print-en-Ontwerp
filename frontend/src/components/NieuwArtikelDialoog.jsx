@@ -11,7 +11,7 @@ import KeuzeMetToevoegen from './KeuzeMetToevoegen.jsx';
 const SOORTEN = [
   ['dienst', 'Dienst', 'bv. verzending, montage'],
   ['gekocht', 'Gekocht artikel', 'bv. sleutelring, magneet'],
-  ['zelf', 'Zelf geprint product', 'eigen product met vaste prijs'],
+  ['zelf', 'Zelf geprint product', 'zelf geprint, met een eigen verkoopprijs'],
 ];
 
 export default function NieuwArtikelDialoog({ herkomst, onSluit, onGemaakt }) {
@@ -53,7 +53,7 @@ export default function NieuwArtikelDialoog({ herkomst, onSluit, onGemaakt }) {
         <div><label htmlFor="na-cat">Categorie (optioneel)</label>
           <KeuzeMetToevoegen id="na-cat" ariaLabel="Categorie" waarde={f.categorie_id} leegLabel="Geen categorie"
             opties={(categorieen || []).map(c => ({ id: c.id, naam: c.pad }))} onKies={w => zet('categorie_id', w)} onNieuw={nieuweCategorie} watLabel="categorie" /></div>
-        <div className="vinkjes" style={{ gridColumn: '1/-1', marginTop: 0 }}><label className="vinkje"><input type="checkbox" checked={f.vaste_prijs} onChange={e => zet('vaste_prijs', e.target.checked)} /> Vaste prijs: geen marge, buiten de btw-grondslag (bv. verzending)</label></div>
+        {f.soort !== 'zelf' && <div className="vinkjes" style={{ gridColumn: '1/-1', marginTop: 0 }}><label className="vinkje"><input type="checkbox" checked={f.vaste_prijs} onChange={e => zet('vaste_prijs', e.target.checked)} /> Doorgerekende kost: zonder marge en buiten de btw-grondslag (bv. verzending)</label></div>}
       </div>
       <p className="note" style={{ marginBottom: 0 }}>Leverancier, productcode, voorraad en dergelijke vul je later aan in Voorraad → Artikelen.</p>
     </Dialoog>

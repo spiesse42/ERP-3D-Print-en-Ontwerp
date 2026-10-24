@@ -70,7 +70,7 @@ export default function Prijsopbouw() {
       </table>
 
       <h4 className="tussenkop">5. Overige regels</h4>
-      <p className="note">Artikelen en diensten: hun verkoopprijs, zonder opslag. Een vaste prijs (bv. verzending) telt niet mee in de btw-grondslag.
+      <p className="note">Artikelen en diensten: hun verkoopprijs, zonder opslag. Een doorgerekende kost (bv. verzending) telt niet mee in de btw-grondslag.
         Extra kosten: het ingevulde bedrag{data.nieuw ? '' : ', met de marge'}. Een handmatig eindbedrag op een regel gaat altijd voor.</p>
 
       <h4 className="tussenkop">{data.nieuw ? '6. Oude berekening (ter vergelijking)' : '6. Getrapte marge'}</h4>
