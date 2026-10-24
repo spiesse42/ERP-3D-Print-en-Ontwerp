@@ -26,12 +26,10 @@ Bijgehouden tijdens de ontwikkeling. Wat hier staat is (nog) niet gebouwd.
 
 ## Nazicht 24-10-2026 — voorstellen (nog niet gebouwd)
 
-1. Onderdelen afboeken bij afrekenen zonder pakbon (nu enkel bij een levering/pakbon).
-2. Printregel uit een slicerbestand in een dossier bewaren als printprofiel van het product
-   (knop "Als printprofiel van het product bewaren").
+1. ~~Onderdelen afboeken bij afrekenen zonder pakbon~~ — gebouwd 24-10 (het geprinte deel gaat mee op de automatische pakbon).
+2. ~~Printregel bewaren als printprofiel van het product~~ — gebouwd 24-10 (knop bij de printregel, slicerbestand mee).
 3. Voorraad → Mutaties: kolom "Bron" met een link naar de verkoop, levering, printopdracht of aankoop.
-4. Kostbegrippen op het artikel samenbrengen: "Productieprijs" (handmatig) naast "Productiekost
-   (gemeten)" en "Kost / stuk" (Producten) → één kost per stuk: gemeten, anders geschat, anders handmatig.
+4. ~~Eén kost per stuk~~ — gebouwd 24-10 (gemeten, anders geschat, anders zelf ingevuld; artikel, Artikelen, Producten).
 5. Productie → "Printers" (live) heet hetzelfde als Instellingen → "Printers" (instellingen):
    eerste hernoemen naar "Live" of "Printers nu".
 6. Webshopbestelling met een kleurkeuze → filament meegeven aan de printopdracht.

@@ -41,7 +41,7 @@ export default function DossierFormulier() {
   const { data: printersAlle } = useData('/printers');
   const { data: artikelenAlle, herlaad: herlaadArtikelen } = useData('/voorraad/artikelen?archief=alle');
   const { data: prijsgroepen } = useData('/filament/types');
-  const { data: producten } = useData('/productie/printprofielen');
+  const { data: producten, herlaad: herlaadProducten } = useData('/productie/printprofielen');
   const { data: tarievenLijst } = useData('/tarieven');
   const { data: instellingen } = useData('/instellingen');
   const bedrijfNaam = (instellingen || []).find(i => i.sleutel === 'bedrijf_naam')?.waarde || '';
@@ -302,7 +302,7 @@ export default function DossierFormulier() {
                   artikelen={artikelenZicht.filter(a => a.type !== 'filament' && a.wordt_verkocht)}
                   herkomst="dossier" onArtikelGemaakt={herlaadArtikelen} alleenKost={form.kop.soort === 'eigen'}
                   eindproducten={form.kop.soort === 'eigen' ? artikelenZicht.filter(a => a.type === 'artikel' && a.zelf_geprint) : null}
-                  productKeuze={form.kop.soort === 'klant' ? artikelenZicht.filter(a => a.type === 'artikel' && a.zelf_geprint) : null} producten={producten} />
+                  productKeuze={form.kop.soort === 'klant' ? artikelenZicht.filter(a => a.type === 'artikel' && a.zelf_geprint) : null} producten={producten} onProfielBewaard={herlaadProducten} />
                 {!kopVast && (
                   <div className="toevoegen">
                     {TYPES.filter(([w]) => w !== 'korting' || form.kop.soort !== 'eigen').map(([w, l]) => <button key={w} type="button" className="btn" onClick={() => setForm(f => ({ ...f, regels: [...f.regels, nieuweRegel(w)] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}

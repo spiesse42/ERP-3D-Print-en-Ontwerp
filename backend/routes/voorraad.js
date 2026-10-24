@@ -56,8 +56,7 @@ r.get('/artikelen', metFouten((req, res) => {
         kost = kg == null ? null : { bedrag: rond(kg, 2), soort: 'inkoop', per: 'kg' };
       } else if (a.zelf_geprint) {
         const k = kostVanArtikel(db, a, { advies: false });
-        const b = k.gemeten?.kost ?? (k.profiel ? k.schatting.kost : null);
-        kost = b == null ? null : { bedrag: rond(b, 2), soort: k.gemeten ? 'gemeten' : 'schatting', onvolledig: !k.gemeten && k.schatting.onvolledig };
+        kost = k.per_stuk ? { bedrag: rond(k.per_stuk.bedrag, 2), soort: k.per_stuk.bron, onvolledig: !!k.per_stuk.onvolledig } : null;
       } else if (a.wordt_gekocht) {
         const b = partij.get(a.id).p ?? a.inkoopprijs;
         kost = b == null ? null : { bedrag: rond(b, 2), soort: 'inkoop' };

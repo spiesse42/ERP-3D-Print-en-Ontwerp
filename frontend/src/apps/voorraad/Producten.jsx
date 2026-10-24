@@ -72,7 +72,7 @@ export default function Producten() {
       && (filter !== 'onder_min' || (p.min != null && p.voorraad + p.in_productie < p.min)));
   }, [data, zoek, filter]);
   const kost = p => (p.keuzes ? <span className="sub">zie de keuzes</span> : p.kost == null ? <span className="sub">{p.profiel ? 'onvolledig' : 'geen profiel'}</span>
-    : <>{euro(p.kost)}<div className="sub">{p.gemeten ? `gemeten (${aantal(p.gemeten.stuks)} st.)` : 'geschat'}{p.schatting.onvolledig && !p.gemeten ? ' · onvolledig' : ''}</div></>);
+    : <>{euro(p.kost)}<div className="sub">{p.kost_bron === 'gemeten' ? `gemeten (${aantal(p.gemeten.stuks)} st.)` : p.kost_bron}{p.kost_onvolledig ? ' · onvolledig' : ''}</div></>);
   const kolommen = [
     { kop: 'Product', cel: p => <>{p.webshop?.foto && <img src={`${p.webshop.foto}?w=64&h=64&fit=crop`} alt="" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 4, verticalAlign: 'middle', marginRight: 8 }} />}<b>{p.weergave}</b>{p.webshop && <span className="badge b-info" style={{ marginLeft: 6 }}>webshop</span>}
       {p.keuzes > 0 && <span className="badge b-neutral" style={{ marginLeft: 6 }} title="Productfiche in de webshop: printprofiel en voorraad zitten bij de artikels per keuze">{p.keuzes} keuzes</span>}

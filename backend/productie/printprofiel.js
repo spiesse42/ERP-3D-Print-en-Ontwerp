@@ -84,6 +84,23 @@ export function bewaarProfiel(db, artikelId, body) {
   return p;
 }
 
+// 24-10: een printregel (opslagvorm: totalen, zoals een dossierregel) →
+// printprofiel PER STUK van het product. Zonder "per stuk" is de regel één
+// plaat met `aantal` stuks erop. `slicer_bijlage_id` = de bijlage bij het
+// artikel (al gekopieerd door de oproeper).
+export function profielUitRegel(r, { slicer_bijlage_id = null } = {}) {
+  const n = Number(String(r?.aantal ?? 1).replace(',', '.')) || 1;
+  const pp = Number(r?.per_plaat) > 0 ? Number(r.per_plaat) : r?.per_stuk ? null : Math.round(n);
+  const platen = platenVoor(n, pp);
+  const deel = (v, d) => (v == null || v === '' ? null : Math.round(Number(String(v).replace(',', '.')) / d * 10000) / 10000);
+  return {
+    printer_id: r?.printer_id ?? null, tijd_min: deel(r?.tijd_min, n) ?? 0, per_plaat: pp && pp >= 1 ? pp : null,
+    voorbereiding_min: deel(r?.voorbereiding_min, platen), nabewerking_min: deel(r?.nabewerking_min, n),
+    materialen: (r?.materialen || []).map(m => ({ ...(m.artikel_id ? { artikel_id: m.artikel_id } : { filament_type_id: m.filament_type_id }), gram: deel(m.gram, n) ?? 0 })),
+    ...(slicer_bijlage_id ? { slicer_bijlage_id, slicer_plaat: r?.slicer_plaat ?? null } : {}),
+  };
+}
+
 export const platenVoor = (aantal, perPlaat) => (perPlaat > 0 ? Math.max(1, Math.ceil(aantal / perPlaat - 1e-9)) : 1);
 const r2 = v => Math.round(v * 100) / 100;
 
