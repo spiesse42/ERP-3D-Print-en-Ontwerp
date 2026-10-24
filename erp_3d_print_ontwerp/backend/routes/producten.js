@@ -39,7 +39,14 @@ export function kostVanArtikel(db, a, { advies = true } = {}) {
     WHERE (dr.artikel_id = ? OR dr.plaat_van = ?) AND d.soort = 'eigen' AND o.voltooid_op IS NOT NULL AND o.aantal_goed > 0 AND o.productiekost_stuk IS NOT NULL`).get(a.id, a.id, a.id);
   const delen = schatting.onderdelen;
   const gemeten = g?.n ? { kost: r2(g.k / g.n + delen), arbeid: r2(g.ar / g.n), stuks: g.n } : null;
-  return { profiel: !!profiel, onderdelen, schatting, gemeten, advies: advies ? adviesprijs(db, profiel, delen) : null };
+  // 24-10: één kost per stuk, overal dezelfde: gemeten (gemiddelde van de
+  // voorraadprints), anders geschat uit het printprofiel, anders zelf ingevuld
+  // (productieprijs op het artikel). Telkens met de onderdelen erbij.
+  const zelf = db.prepare('SELECT productieprijs FROM artikelen WHERE id = ?').get(a.id)?.productieprijs ?? null;
+  const per_stuk = gemeten ? { bedrag: gemeten.kost, bron: 'gemeten', stuks: gemeten.stuks }
+    : profiel ? { bedrag: schatting.kost, bron: 'geschat', onvolledig: schatting.onvolledig }
+    : zelf != null ? { bedrag: r2(zelf + delen), bron: 'zelf ingevuld' } : null;
+  return { profiel: !!profiel, onderdelen, schatting, gemeten, per_stuk, advies: advies ? adviesprijs(db, profiel, delen) : null };
 }
 
 // 09-10: adviesprijs per stuk volgens de rekenmotor (dezelfde berekening als
@@ -69,7 +76,7 @@ r.get('/', metFouten((req, res) => {
   const keuzeTel = new Map(db.prepare(`SELECT webshop_slug s, COUNT(*) n FROM artikelen WHERE webshop_slug IS NOT NULL AND webshop_variant IS NOT NULL AND gearchiveerd = 0 GROUP BY webshop_slug`).all().map(x => [x.s, x.n]));
   const lijst = leesArtikelen(db, { archief: req.query.archief || '0', type: 'artikel' }).filter(a => a.zelf_geprint).map(a => {
     const k = kostVanArtikel(db, a);
-    const kost = k.gemeten?.kost ?? (k.schatting.onvolledig && !k.profiel ? null : k.schatting.kost);
+    const kost = k.per_stuk?.bedrag ?? null;
     const prijsExcl = a.verkoopprijs;   // btw 0 % (vrijstelling kleine onderneming)
     return {
       id: a.id, weergave: a.weergave, categorie: a.categorie ?? null, verkoopprijs: a.verkoopprijs,
@@ -78,7 +85,7 @@ r.get('/', metFouten((req, res) => {
       keuzes: a.webshop_slug && !a.webshop_variant ? keuzeTel.get(a.webshop_slug) || 0 : 0,
       voorraad: a.voorraad, min: a.min_eff ?? a.min_voorraad ?? null, in_productie: a.in_productie ?? 0, verkocht_30d: per.get(a.id) || 0,
       profiel: k.profiel, onderdelen: k.onderdelen.length, schatting: k.schatting, gemeten: k.gemeten,
-      kost, marge: kost != null && prijsExcl ? r2(prijsExcl - kost) : null, marge_pct: kost != null && prijsExcl ? Math.round((prijsExcl - kost) / prijsExcl * 100) : null,
+      kost, kost_bron: k.per_stuk?.bron ?? null, kost_onvolledig: !!k.per_stuk?.onvolledig, marge: kost != null && prijsExcl ? r2(prijsExcl - kost) : null, marge_pct: kost != null && prijsExcl ? Math.round((prijsExcl - kost) / prijsExcl * 100) : null,
     };
   });
   res.json(lijst);

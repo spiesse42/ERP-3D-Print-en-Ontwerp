@@ -187,7 +187,7 @@ export function leesArtikelInvoer(body) {
       a.inkoopprijs = getal(body.inkoopprijs, 'Inkoopprijs');
       a.marge_pct = a.wordt_verkocht ? getal(body.marge_pct, 'Marge') : null;
     }
-    if (a.zelf_geprint) a.productieprijs = getal(body.productieprijs, 'Productieprijs');
+    if (a.zelf_geprint) a.productieprijs = getal(body.productieprijs, 'Kost per stuk');
     if (!a.wordt_verkocht) a.vaste_prijs = 0;
   }
   if (type !== 'dienst') {
