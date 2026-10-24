@@ -246,7 +246,8 @@ test('artikel kopiëren: eigenschappen, printprofiel, onderdelen en leveranciers
   const bron = ok(await vraag('POST', '/voorraad/artikelen', basis), 201).id;
   const onderdeel = ok(await vraag('POST', '/voorraad/artikelen', { type: 'artikel', wordt_gekocht: true, naam: 'Kopie-sleutelring', inkoopprijs: 0.1 }), 201).id;
   getDb().prepare('INSERT INTO artikel_onderdelen (artikel_id, onderdeel_id, aantal) VALUES (?,?,2)').run(bron, onderdeel);
-  getDb().prepare('UPDATE artikelen SET printprofiel = ?, webshop_slug = ?, webshop_sanity_id = ? WHERE id = ?').run('{"gewicht_g":10}', 'beer', 'sanity-1', bron);
+  getDb().prepare('UPDATE artikelen SET printprofiel = ?, webshop_slug = ?, webshop_sanity_id = ?, webshop_data = ? WHERE id = ?').run('{"gewicht_g":10}', 'beer', 'sanity-1',
+    JSON.stringify({ title: 'Beer', image_bijlage_id: 5, sizeVariants: [{ label: '10cm', price: 12, image_bijlage_id: 7 }, { label: '15cm', price: 16, sanity_image: 'image-abc' }] }), bron);
   ok(await vraag('PUT', `/voorraad/artikelen/${bron}`, { ...basis, leveranciers: [{ leverancier_id: lev, productcode: 'ABC', laatste_prijs: 1, voorkeur: true }] }));
 
   const k1 = ok(await vraag('POST', `/voorraad/artikelen/${bron}/kopie`), 201);
@@ -261,6 +262,10 @@ test('artikel kopiëren: eigenschappen, printprofiel, onderdelen en leveranciers
   assert.equal(rij.printprofiel, '{"gewicht_g":10}');
   assert.equal(rij.webshop_slug, null);
   assert.equal(rij.webshop_sanity_id, null);
+  const wd = JSON.parse(getDb().prepare('SELECT webshop_data d FROM artikelen WHERE id = ?').get(k1.id).d);
+  assert.equal(wd.hidden, true);
+  assert.equal(wd.image_bijlage_id, null);
+  assert.deepEqual(wd.sizeVariants.map(v => [v.label, v.price, v.image_bijlage_id, v.sanity_image]), [['10cm', 12, null, null], ['15cm', 16, null, null]]);
   assert.equal(getDb().prepare('SELECT aantal FROM artikel_onderdelen WHERE artikel_id = ? AND onderdeel_id = ?').get(k1.id, onderdeel).aantal, 2);
   const l = getDb().prepare('SELECT productcode, voorkeur FROM artikel_leveranciers WHERE artikel_id = ?').all(k1.id);
   assert.equal(l.length, 1);
