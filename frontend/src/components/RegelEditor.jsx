@@ -321,7 +321,7 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
               {r.type === 'artikel' && <>
                 <label className="breed">Artikel / dienst<select className="inp" value={r.artikel_id} onChange={e => (e.target.value === NIEUW ? setNieuwVoor(r.sleutel) : zet(i, { artikel_id: e.target.value }))}>
                   <option value="">Kies…</option>
-                  {(artikelen || []).map(a => <option key={a.id} value={a.id}>{a.weergave} · {euro(a.verkoopprijs)}{a.vaste_prijs ? ' (vaste prijs)' : ''}</option>)}
+                  {(artikelen || []).map(a => <option key={a.id} value={a.id}>{a.weergave} · {euro(a.verkoopprijs)}{a.vaste_prijs ? ' (doorgerekend)' : ''}</option>)}
                   <option value={NIEUW}>+ Nieuw artikel of dienst…</option>
                 </select></label>
                 <label>Aantal<input className="inp num" inputMode="decimal" value={r.aantal} onChange={e => zet(i, { aantal: e.target.value })} /></label>
@@ -383,7 +383,7 @@ export function Totalen({ uitkomst, gemeten = null, alleenKost = false }) {
           <div><span>Kost waar marge op komt</span><span className="num">{euro(Math.round(u.kost_met_marge * 100) / 100)}</span></div>
         </>}
       <div><span>Zonder marge (materiaal, artikelen, handmatig)</span><span className="num">{euro(Math.round(u.zonder_marge * 100) / 100)}</span></div>
-      {u.vast > 0 && <div><span>Vaste prijs (buiten btw-grondslag)</span><span className="num">{euro(Math.round(u.vast * 100) / 100)}</span></div>}
+      {u.vast > 0 && <div><span>Doorgerekende kosten (buiten btw-grondslag)</span><span className="num">{euro(Math.round(u.vast * 100) / 100)}</span></div>}
       <div><span>Btw-grondslag</span><span className="num">{euro(u.btw_grondslag)}</span></div>
       <div className="groot"><span>Totaal</span><span className="num">{euro(u.totaal)}</span></div>
       {u.oud && Math.abs(u.oud.totaal - u.totaal) >= 0.01 && <div className="intern oud"><span>Oude berekening (getrapte marge)</span><span className="num">{euro(u.oud.totaal)} → {u.totaal > u.oud.totaal ? '+' : ''}{euro(Math.round((u.totaal - u.oud.totaal) * 100) / 100)}</span></div>}

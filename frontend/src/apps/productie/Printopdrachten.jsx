@@ -65,7 +65,7 @@ export default function Printopdrachten() {
         <Lijst kolommen={kolommen} sleutel={o => o.id} onOpen={o => setDialoog({ soort: 'open', o })}
           groepen={printers.map(([id, naam]) => ({ titel: naam, rijen: rijen.filter(o => o.printer_id === id) }))}
           kaart={o => ({ titel: o.naam, rechts: <OpdrachtBadge status={o.status} />, regel: `${o.printer}${o.dossier_nummer ? ` · ${o.dossier_nummer}` : ''}`, onder: `${aantal(o.aantal)} stuks` })}
-          leeg={<><b>Geen {toon === 'open' ? 'open ' : ''}printopdrachten.</b>Plan een printopdracht vanuit een dossier (tabblad Productie) of maak een losse opdracht voor een eigen product.</>} />
+          leeg={<><b>Geen {toon === 'open' ? 'open ' : ''}printopdrachten.</b>Plan een printopdracht vanuit een dossier (tabblad Productie) of maak een losse opdracht om op voorraad te printen.</>} />
       )}
       <p className="note" style={{ margin: '8px 16px' }}>Start je een print, dan stelt het ERP de eerste open opdracht van die printer voor. Koppelen doe je zelf op de printerkaart of onder Runs.</p>
       {dialoog?.soort === 'nieuw' && <OpdrachtDialoog onSluit={sluit} onKlaar={klaar} />}
