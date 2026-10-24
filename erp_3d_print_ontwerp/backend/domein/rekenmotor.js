@@ -26,7 +26,8 @@
 //   { type: 'ontwerp' | 'aanpassing', minuten, tarief? }
 //   { type: 'printen', aantal, printer: { naam, machine_per_uur, verbruik_watt },
 //     materialen: [{ naam, gram, prijs_per_kg }], tijd_min,
-//     voorbereiding_min?, nabewerking_min?, werkelijk?: { uren?, kwh? } }
+//     voorbereiding_min?, nabewerking_min?, werkelijk?: { uren?, kwh? },
+//     onderdelen?: [{ naam, aantal (per stuk), prijs }] }   (24-10, product)
 //   { type: 'artikel', naam, aantal, prijs, vaste_prijs }
 //   { type: 'extra', omschrijving, bedrag, per_stuk, aantal }
 //   + optioneel handmatig_bedrag op elke regel
@@ -77,7 +78,16 @@ function berekenRegel(regel, t, stand) {
       }
       return { naam: m.naam, gram, prijs_per_kg: prijs, kost: gram / 1000 * (prijs ?? 0) * faal, ...(m.prijs_bron ? { prijs_bron: m.prijs_bron } : {}) };
     });
+    // 24-10: onderdelen per stuk van het product (sleutelring…) × aantal, aan inkoopprijs
+    const stuks = of(regel.aantal, 1);
+    const onderdelen = (regel.onderdelen || []).map(o => {
+      const prijs = getal(o.prijs);
+      if (prijs === null) fouten.push(`Geen inkoopprijs voor het onderdeel ${o.naam} (Voorraad → artikel → inkoopprijs)`);
+      const aantal = of(o.aantal, 1) * stuks;
+      return { naam: o.naam, aantal, prijs, kost: aantal * (prijs ?? 0) };
+    });
     if (fouten.length) return { fout: fouten.join('. '), tijd_u: uren };
+    const delen = onderdelen.reduce((s, o) => s + o.kost, 0);
     const materiaal = materialen.reduce((s, m) => s + m.kost, 0);
     const energie = kwh !== null ? kwh * t.kwh_prijs : (p.verbruik_watt / 1000) * uren * t.kwh_prijs;
     const machine = uren * p.machine_per_uur;
@@ -92,10 +102,10 @@ function berekenRegel(regel, t, stand) {
     const winst = t.nieuw ? t.winst_u * (Math.min(uren, t.winst_grens) + Math.max(0, uren - t.winst_grens) * t.winst_lang / 100) : 0;
     return {
       met_marge: energie + machine + arbeid + bmcu + winst,
-      zonder_marge: materiaal,
+      zonder_marge: materiaal + delen,
       vaste_prijs: false,
       tijd_u: uren,
-      detail: { materialen, materiaal, energie, energie_bron: kwh !== null ? 'gemeten' : 'geschat', machine, arbeid, voorbereiding_min: voorb, nabewerking_min: nabew, bmcu, winst, uren, platen },
+      detail: { materialen, materiaal, onderdelen: delen, onderdelen_lijst: onderdelen, energie, energie_bron: kwh !== null ? 'gemeten' : 'geschat', machine, arbeid, voorbereiding_min: voorb, nabewerking_min: nabew, bmcu, winst, uren, platen },
     };
   }
 
@@ -132,7 +142,7 @@ function telPrijs(po, regel, r, factor, t) {
   const d = r.detail || {};
   po.marge += r.met_marge * (factor - 1);
   if (regel.type === 'printen') {
-    po.materiaal += d.materiaal; po.energie += d.energie; po.machine += d.machine; po.arbeid += d.arbeid; po.bmcu += d.bmcu; po.winst += d.winst || 0;
+    po.materiaal += d.materiaal; po.onderdelen += d.onderdelen || 0; po.energie += d.energie; po.machine += d.machine; po.arbeid += d.arbeid; po.bmcu += d.bmcu; po.winst += d.winst || 0;
     po.gram += (d.materialen || []).reduce((x, m) => x + m.gram, 0); po.uren += d.uren; po.platen += d.platen || 1;
     po.kwh += t.kwh_prijs > 0 ? d.energie / t.kwh_prijs : 0; po.arbeid_min += d.voorbereiding_min + d.nabewerking_min;
   } else if (regel.type === 'ontwerp' || regel.type === 'aanpassing') {
@@ -166,7 +176,7 @@ export function bereken(regels, tarieven, { stand = 'schatting', model = 'nieuw'
   let met = 0, zonder = 0, vast = 0;
   const fouten = [];
   // 15-10: prijsopbouw over alle regels (wat de klant betaalt, per post)
-  const po = { materiaal: 0, energie: 0, machine: 0, arbeid: 0, bmcu: 0, winst: 0, marge: 0, ontwerp: 0, aanpassing: 0, artikelen: 0, extra: 0, handmatig: 0,
+  const po = { materiaal: 0, onderdelen: 0, energie: 0, machine: 0, arbeid: 0, bmcu: 0, winst: 0, marge: 0, ontwerp: 0, aanpassing: 0, artikelen: 0, extra: 0, handmatig: 0,
     korting_materiaal: 0, korting_printuren: 0, korting_regels: 0, korting_totaal: 0,
     gram: 0, uren: 0, kwh: 0, platen: 0, arbeid_min: 0, ontwerp_min: 0, aanpassing_min: 0 };
   const uit = (regels || []).map((regel, i) => {

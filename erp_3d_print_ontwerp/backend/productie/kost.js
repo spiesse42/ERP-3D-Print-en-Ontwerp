@@ -207,7 +207,7 @@ export function runKost(db, r, t = getTarieven(db)) {
 
 // Optellen: bedragen, hoeveelheden en filament per soort.
 export function telOpbouw(lijst) {
-  const som = { filament: 0, energie: 0, machine: 0, bmcu: 0, arbeid: 0, kost: 0, gram: 0, kwh: 0, uren: 0, runs: 0, mislukt: 0, arbeid_min: 0, filamenten: [] };
+  const som = { filament: 0, energie: 0, machine: 0, bmcu: 0, arbeid: 0, onderdelen: 0, kost: 0, gram: 0, kwh: 0, uren: 0, runs: 0, mislukt: 0, arbeid_min: 0, filamenten: [] };
   for (const d of lijst) {
     for (const k of Object.keys(som)) if (k !== 'filamenten') som[k] += Number(d[k]) || 0;
     for (const f of d.filamenten || []) {

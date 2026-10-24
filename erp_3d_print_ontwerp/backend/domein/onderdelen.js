@@ -48,13 +48,13 @@ export function bewaarOnderdelen(db, artikelId, lijst) {
 }
 
 // Bij een verkochte regel: onderdelen eraf. Geeft de tekorten terug (tekst).
-export function boekOnderdelenUit(db, { artikelId, aantal, regelId, notitie }) {
+export function boekOnderdelenUit(db, { artikelId, aantal, regelId, notitie, bronType = 'verkoop_regel' }) {
   const tekort = [];
   for (const o of db.prepare('SELECT onderdeel_id, aantal FROM artikel_onderdelen WHERE artikel_id = ? ORDER BY volgorde').all(artikelId)) {
     const nodig = Math.round(o.aantal * aantal * 1000) / 1000;
     const er = voorraadVan(db, o.onderdeel_id);
     const neem = Math.min(nodig, er);
-    if (neem > 1e-9) boekUit(db, { artikelId: o.onderdeel_id, aantal: neem, reden: 'levering', bronType: 'verkoop_regel', bronId: regelId, notitie });
+    if (neem > 1e-9) boekUit(db, { artikelId: o.onderdeel_id, aantal: neem, reden: 'levering', bronType, bronId: regelId, notitie });
     if (nodig - neem > 1e-9) tekort.push(`${weergaveNaam(db.prepare(NAAM).get(o.onderdeel_id))} (${String(Math.round((nodig - neem) * 1000) / 1000).replace('.', ',')} te weinig in voorraad)`);
   }
   return tekort;

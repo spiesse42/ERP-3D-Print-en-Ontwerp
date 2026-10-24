@@ -4,6 +4,7 @@
 import { getTarieven } from './hulp.js';
 import { bereken } from './rekenmotor.js';
 import { kostPerKg, telOpbouw } from '../productie/kost.js';
+import { leesOnderdelen } from './onderdelen.js';
 
 // Voorbereide opdrachten per databank hergebruiken (29-09): de dossierlijst
 // rekent elk dossier door; opnieuw voorbereiden per regel kostte het meest.
@@ -35,7 +36,10 @@ function prijsgroep(db, { filament_type_id, artikel_id }) {
 // filamentInkoop (04-10, familie & vrienden): het filament aan de INKOOPprijs
 // per kg (gemiddelde van de rollen in voorraad, anders de laatste aankoop —
 // dezelfde prijs als de productiekost) i.p.v. de verkoopprijs van de prijsgroep.
-export function verrijk(db, regels, { filamentInkoop = false } = {}) {
+// onderdelen (24-10): een printregel uit een product (artikel_id) krijgt de
+// onderdelen per stuk van dat product mee (sleutelring, zakje…), aan
+// inkoopprijs. Niet in een voorraaddossier: daar gaan ze pas bij de verkoop af.
+export function verrijk(db, regels, { filamentInkoop = false, onderdelen = true } = {}) {
   const q = sql(db);
   return (Array.isArray(regels) ? regels : []).map(r => {
     if (r?.type === 'printen') {
@@ -49,7 +53,8 @@ export function verrijk(db, regels, { filamentInkoop = false } = {}) {
         const ink = pg ? kostPerKg(db, m) : null;   // 08-10: voor "inkoop × opslag"
         return { ...m, naam: pg?.naam ?? m.naam ?? null, prijs_per_kg: pg ? pg.verkoopprijs_per_kg : null, inkoop_per_kg: ink == null ? null : Math.round(ink * 100) / 100 };
       });
-      return { ...r, printer, materialen };
+      const delen = onderdelen && r.artikel_id ? leesOnderdelen(db, r.artikel_id).map(o => ({ naam: o.naam, aantal: o.aantal, prijs: o.prijs })) : [];
+      return { ...r, printer, materialen, onderdelen: delen };
     }
     if (r?.type === 'artikel') {
       const a = r.artikel_id ? q.artikel.get(r.artikel_id) : null;
@@ -61,9 +66,9 @@ export function verrijk(db, regels, { filamentInkoop = false } = {}) {
 }
 
 // opties.tarieven: al opgehaald (de dossierlijst haalt ze één keer op)
-export function berekenMetDb(db, regels, { tarieven = null, filamentInkoop = false, ...opties } = {}) {
+export function berekenMetDb(db, regels, { tarieven = null, filamentInkoop = false, onderdelen = true, ...opties } = {}) {
   const t = tarieven || getTarieven(db);
-  const verrijkt = verrijk(db, regels, { filamentInkoop });
+  const verrijkt = verrijk(db, regels, { filamentInkoop, onderdelen });
   const uit = bereken(verrijkt, t, opties);
   voegKostToe(db, uit, regels, t);
   // 08-10: ter vergelijking wat de OUDE berekening (getrapte marge) gaf
@@ -83,7 +88,7 @@ function voegKostToe(db, uit, regels, t) {
   const r4 = v => Math.round(v * 10000) / 10000;
   const kwhPrijs = Number(t?.kwh_prijs) || 0;
   const delen = [];
-  let kost = 0, arbeid = 0, bedrag = 0, onvolledig = false, n = 0;
+  let kost = 0, arbeid = 0, bedrag = 0, delenTot = 0, onvolledig = false, n = 0;
   uit.regels.forEach((r, i) => {
     const b = r._berekend;
     if (r.type !== 'printen' || !b || b.fout || !b.detail) return;
@@ -102,16 +107,18 @@ function voegKostToe(db, uit, regels, t) {
     const d = b.detail;
     const k = filament + d.energie + d.machine + d.bmcu;
     const a = Number(String(r.aantal ?? 1).replace(',', '.')) || 1;
-    b.kost = { filament: r4(filament), energie: r4(d.energie), machine: r4(d.machine), bmcu: r4(d.bmcu), kost: r4(k), arbeid: r4(d.arbeid),
-      per_stuk: r4(k / a), winst: r4(b.eindbedrag - k), winst_na_arbeid: r4(b.eindbedrag - k - d.arbeid),
+    // onderdelen (24-10): kost voor jou, maar geen printkost (apart, zoals arbeid)
+    const ond = d.onderdelen || 0;
+    b.kost = { filament: r4(filament), energie: r4(d.energie), machine: r4(d.machine), bmcu: r4(d.bmcu), kost: r4(k), arbeid: r4(d.arbeid), onderdelen: r4(ond),
+      per_stuk: r4(k / a), winst: r4(b.eindbedrag - k - ond), winst_na_arbeid: r4(b.eindbedrag - k - ond - d.arbeid),
       gram: r4(gramTot), kwh: kwhPrijs > 0 ? r4(d.energie / kwhPrijs) : null, uren: r4(d.uren), runs: d.platen || 1,
       arbeid_min: r4((d.voorbereiding_min || 0) + (d.nabewerking_min || 0)), filamenten,
       onvolledig: ontbreekt.length > 0, ontbreekt };
     delen.push(b.kost);
-    kost += k; arbeid += d.arbeid; bedrag += b.eindbedrag; onvolledig ||= ontbreekt.length > 0; n++;
+    kost += k; arbeid += d.arbeid; bedrag += b.eindbedrag; delenTot += ond; onvolledig ||= ontbreekt.length > 0; n++;
   });
   // 15-10: kostenopbouw over alle printregels samen (filament per soort,
   // stroom in kWh, machine, BMCU, arbeid), zoals per regel
-  uit.productiekost = n ? { kost: r4(kost), arbeid: r4(arbeid), bedrag: r4(bedrag), winst: r4(bedrag - kost), winst_na_arbeid: r4(bedrag - kost - arbeid), onvolledig,
+  uit.productiekost = n ? { kost: r4(kost), arbeid: r4(arbeid), onderdelen: r4(delenTot), bedrag: r4(bedrag), winst: r4(bedrag - kost - delenTot), winst_na_arbeid: r4(bedrag - kost - delenTot - arbeid), onvolledig,
     opbouw: telOpbouw(delen) } : null;
 }
