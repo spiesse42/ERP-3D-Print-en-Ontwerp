@@ -375,9 +375,11 @@ label.btn.bezig { opacity:.6; pointer-events:none; }
 fieldset.regeleditor { border:0; margin:0; padding:0; min-width:0; }
 fieldset.regeleditor:disabled .inp { color:var(--ink); border-bottom-color:transparent; }
 fieldset.regeleditor:disabled .regel-kop > button, fieldset.regeleditor:disabled .materiaal > button, fieldset.regeleditor:disabled .linkish { display:none; }
-.kanban { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(240px,1fr); gap:12px; padding:14px 16px 24px; overflow-x:auto; align-items:start; }
+.kanban { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(240px,1fr); gap:12px; padding:0 16px 16px; overflow:auto; align-items:stretch; overscroll-behavior:contain; }
+.kanban .kolom { margin-top:14px; }
 .kolom { background:var(--sunken); border-radius:var(--radius-lg); padding:8px; display:flex; flex-direction:column; gap:8px; min-width:0; }
 .kolom h3 { margin:2px 4px 2px; font-size:13px; display:flex; justify-content:space-between; }
+.kanban .kolom h3 { position:sticky; top:0; z-index:1; background:var(--sunken); margin:-8px -8px 0; padding:10px 12px 6px; border-radius:var(--radius-lg) var(--radius-lg) 0 0; }
 .kkaart { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg); padding:10px 12px; display:flex; flex-direction:column; gap:4px; text-align:left; width:100%; color:inherit; }
 .kkaart:hover { border-color:var(--accent); }
 .kkaart .l1 { display:flex; justify-content:space-between; gap:8px; }
@@ -507,7 +509,9 @@ ul.klein { margin:4px 0 0; padding-left:18px; overflow-wrap:anywhere; }
   table.werkelijk th:nth-child(2), table.werkelijk td:nth-child(2) { display:none; }
   table.werkelijk .inp { width:58px; }
   table.werkelijk th, table.werkelijk td { padding-left:4px; padding-right:4px; }
-  .kanban { grid-auto-flow:row; grid-auto-columns:auto; grid-template-columns:minmax(0,1fr); padding:12px; overflow-x:visible; }
+  .kanban { grid-auto-flow:row; grid-auto-columns:auto; grid-template-columns:minmax(0,1fr); padding:12px; overflow:visible; align-items:start; }
+  .kanban .kolom { margin-top:0; }
+  .kanban .kolom h3 { position:static; }
 }
 @media (min-width: 701px) and (max-width: 1000px) {
   .inlees { grid-template-columns:minmax(0,1fr); }
