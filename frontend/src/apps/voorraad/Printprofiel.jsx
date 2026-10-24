@@ -112,7 +112,7 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
             {(printers || []).filter(p => p.actief).map(p => <option key={p.id} value={p.id}>{p.naam}</option>)}
           </select></div>
         <div><label htmlFor="pp-u">Printtijd per stuk</label>
-          <span className="samen" style={{ display: 'flex', gap: 6 }}><input id="pp-u" className="inp num" inputMode="numeric" placeholder="u" aria-label="Uren per stuk" value={pl.tijd_u} onChange={zet('tijd_u')} /><input className="inp num" inputMode="decimal" placeholder="min" aria-label="Minuten per stuk" value={pl.tijd_m} onChange={zet('tijd_m')} /></span></div>
+          <span className="samen" style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}><input id="pp-u" className="inp num" inputMode="numeric" placeholder="0" aria-label="Uren per stuk" value={pl.tijd_u} onChange={zet('tijd_u')} /><span className="sub">u</span><input className="inp num" inputMode="decimal" placeholder="0" aria-label="Minuten per stuk" value={pl.tijd_m} onChange={zet('tijd_m')} /><span className="sub">min</span></span></div>
         <div><label htmlFor="pp-plaat">Stuks per plaat</label><input id="pp-plaat" className="inp num" inputMode="numeric" placeholder="bv. 8" value={pl.per_plaat} onChange={zet('per_plaat')} /></div>
         <div><label htmlFor="pp-voorb">Voorbereiding per plaat (min)</label><input id="pp-voorb" className="inp num" inputMode="decimal" placeholder="standaard" value={pl.voorbereiding_min} onChange={zet('voorbereiding_min')} /></div>
         <div><label htmlFor="pp-nab">Nabewerking per stuk (min)</label><input id="pp-nab" className="inp num" inputMode="decimal" placeholder="standaard" value={pl.nabewerking_min} onChange={zet('nabewerking_min')} /></div>
