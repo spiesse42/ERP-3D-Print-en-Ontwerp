@@ -88,7 +88,7 @@ function uitProfiel(r, a, eindproducten, k = 0) {
     omschrijving: meer ? `${a.naam} — plaat ${k + 1}/${lijst.length}${p.naam ? ` (${p.naam})` : ''}` : r.omschrijving || a.naam,
     printer_id: p.printer_id ? String(p.printer_id) : r.printer_id,
     voorbereiding_min: alsInvoer(p.voorbereiding_min), nabewerking_min: alsInvoer(p.nabewerking_min),
-    ...(eind ? (laatste ? { artikel_id: String(a.id), plaat_van: null } : { artikel_id: '', plaat_van: a.id }) : {}),
+    ...(eind ? (laatste ? { artikel_id: String(a.id), plaat_van: null } : { artikel_id: '', plaat_van: a.id }) : { artikel_id: laatste ? String(a.id) : '' }),
     materialen: (p.materialen || []).length ? p.materialen.map(m => ({ keuze: m.artikel_id ? `a:${m.artikel_id}` : `p:${m.filament_type_id}`, gram: alsInvoer(m.gram) })) : [{ keuze: '', gram: '' }] };
 }
 export function vanApi(r) {
@@ -117,7 +117,8 @@ export function vanApi(r) {
 
 // Live berekening, 300 ms na de laatste wijziging.
 // filamentInkoop (04-10): familie & vrienden, filament aan inkoopprijs
-export function useBerekening(regels, stand = 'schatting', filamentInkoop = false) {
+// onderdelen (24-10): die van een product meerekenen (niet in een voorraaddossier)
+export function useBerekening(regels, stand = 'schatting', filamentInkoop = false, onderdelen = true) {
   const [uitkomst, setUitkomst] = useState(null);
   const [fout, setFout] = useState(null);
   const volg = useRef(0);
@@ -127,12 +128,12 @@ export function useBerekening(regels, stand = 'schatting', filamentInkoop = fals
     const mijn = ++volg.current;
     const klok = setTimeout(async () => {
       try {
-        const b = await api.post('/bereken', { regels: JSON.parse(sleutel), stand, filament_inkoop: !!filamentInkoop });
+        const b = await api.post('/bereken', { regels: JSON.parse(sleutel), stand, filament_inkoop: !!filamentInkoop, onderdelen });
         if (mijn === volg.current) { setUitkomst(b); setFout(null); }
       } catch (e) { if (mijn === volg.current) setFout(e.message); }
     }, 300);
     return () => clearTimeout(klok);
-  }, [sleutel, stand, filamentInkoop]);
+  }, [sleutel, stand, filamentInkoop, onderdelen]);
   return { uitkomst, fout };
 }
 
@@ -159,6 +160,7 @@ function KostRegel({ k, bedrag, alleenKost = false }) {
     <div className="kostregel" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '0 12px', color: 'var(--pos)' }}>
       <span>productiekost {r(k.kost)}{k.per_stuk !== k.kost ? ` (${r(k.per_stuk)}/stuk)` : ''}: filament {r(k.filament)} · stroom {r(k.energie)} · machine {r(k.machine)} · BMCU {r(k.bmcu)}</span>
       <span>+ arbeid {r(k.arbeid)}</span>
+      {k.onderdelen > 0 && <span>+ onderdelen {r(k.onderdelen)}</span>}
       {!alleenKost && <span>winst {r(k.winst)}{pctVan(k.winst, bedrag)} · na arbeid {r(k.winst_na_arbeid)}</span>}
       {k.onvolledig && <span>ontbreekt: {k.ontbreekt.join(', ')}</span>}
     </div>
@@ -180,7 +182,7 @@ function Detail({ b, type, alleenKost = false }) {
     );
   }
   const delen = type === 'printen'
-    ? [[d.materialen?.some(m => m.prijs_bron === 'inkoop') ? 'materiaal (inkoopprijs)' : 'materiaal', d.materiaal], ['energie', d.energie], ['machine', d.machine], ['arbeid', d.arbeid], ['BMCU/AMS', d.bmcu], ...(d.winst ? [['winst printuren', d.winst]] : [])]
+    ? [[d.materialen?.some(m => m.prijs_bron === 'inkoop') ? 'materiaal (inkoopprijs)' : 'materiaal', d.materiaal], ...(d.onderdelen ? [[`onderdelen (${(d.onderdelen_lijst || []).map(o => `${fmtAantal(o.aantal)} × ${o.naam}`).join(', ')})`, d.onderdelen]] : []), ['energie', d.energie], ['machine', d.machine], ['arbeid', d.arbeid], ['BMCU/AMS', d.bmcu], ...(d.winst ? [['winst printuren', d.winst]] : [])]
     : [];
   return (
     <div className="regeldetail sub">
@@ -212,7 +214,9 @@ function Totaal({ r }) {
 // eindproducten: enkel bij een dossier "Eigen product" — zelf geprinte
 // artikelen waar de goede stuks van een printregel naartoe gaan (stap 6c).
 // alleenKost (23-10): dossier "Voorraad" — geen verkoopprijs, korting of eindbedrag, enkel de productiekost.
-export default function RegelEditor({ regels, onWijzig, uitkomst, printers, filamenten, prijsgroepen, artikelen, tarieven, herkomst, onArtikelGemaakt, alleenLezen = false, eindproducten = null, producten = null, alleenKost = false }) {
+// productKeuze (24-10): enkel bij een klantdossier — het product van een
+// printregel; zijn onderdelen (sleutelring…) tellen mee in prijs en levering.
+export default function RegelEditor({ regels, onWijzig, uitkomst, printers, filamenten, prijsgroepen, artikelen, tarieven, herkomst, onArtikelGemaakt, alleenLezen = false, eindproducten = null, producten = null, alleenKost = false, productKeuze = null }) {
   const actueel = useRef(regels);
   actueel.current = regels;
   const { melding } = useOmgeving();
@@ -269,6 +273,10 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                 {eindproducten && <label>Naar voorraad als<select className="inp" value={r.artikel_id} onChange={e => zet(i, { artikel_id: e.target.value })}>
                   <option value="">— niet naar voorraad —</option>
                   {eindproducten.map(a => <option key={a.id} value={a.id}>{a.weergave}</option>)}
+                </select></label>}
+                {productKeuze && <label title="Het product dat je print: zijn onderdelen per stuk (bv. sleutelring) komen mee in de prijs en gaan bij de levering uit voorraad">Product<select className="inp" value={r.artikel_id} onChange={e => zet(i, { artikel_id: e.target.value })}>
+                  <option value="">— geen —</option>
+                  {productKeuze.map(a => <option key={a.id} value={a.id}>{a.weergave}</option>)}
                 </select></label>}
                 <div className="materialen">
                   {r.materialen.map((m, k) => (

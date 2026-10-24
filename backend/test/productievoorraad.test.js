@@ -47,7 +47,12 @@ test('V1. rol leegmelden: voorstel uit de lopende opdracht, FIFO, ongedaan op de
   // eindproduct enkel bij een eigen product; een niet-zelf-geprint artikel kan niet
   assert.match((await vraag('POST', '/dossiers', { soort: 'eigen', titel: 'x', regels: [{ ...printregel, artikel_id: zwart }] })).data.error, /zelf printen/);
   const kd = ok(await vraag('POST', '/dossiers', { soort: 'klant', klant_id: klant, titel: 'Klant', regels: [printregel] }), 201);
-  assert.equal(kd.regels[0].artikel_id, null, 'klantopdracht: geen eindproduct');
+  // 24-10: klantopdracht onthoudt het product (voor zijn onderdelen), maar boekt niets in voorraad
+  assert.equal(kd.regels[0].artikel_id, hond, 'klantopdracht: product bewaard');
+  assert.equal(kd.productie.regels[0].eindproduct, null, 'klantopdracht: geen eindproduct naar voorraad');
+  const ko = ok(await vraag('POST', '/productie/opdrachten', { printer_id: mini, dossier_regel_id: kd.regels[0].id }), 201);
+  assert.equal(ko.eindproduct_id ?? null, null);
+  ok(await vraag('DELETE', `/productie/opdrachten/${ko.id}`));
   dos = ok(await vraag('POST', '/dossiers', { soort: 'eigen', titel: 'Hondjes', regels: [printregel] }), 201);
   regel = dos.regels[0];
   assert.equal(regel.artikel_id, hond);

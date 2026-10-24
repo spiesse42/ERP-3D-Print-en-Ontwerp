@@ -82,6 +82,7 @@ export function Prijsopbouw({ p, k, totaal, open = true }) {
   const rij = (l, hoeveel, prijs, kost, toon = true) => (toon ? { l, hoeveel, prijs, kost } : null);
   const rijen = [
     rij('Filament', `${g(p.gram)} g`, p.materiaal, o.filament, p.gram > 0 || p.materiaal > 0),
+    rij('Onderdelen (bij het product)', '', p.onderdelen, o.onderdelen ?? p.onderdelen, (p.onderdelen || 0) > 0),
     rij('Stroom', `${g(p.kwh, 2)} kWh`, p.energie, o.energie, p.uren > 0),
     rij('Machine (printuren)', uren(p.uren), p.machine, o.machine, p.uren > 0),
     rij('BMCU / AMS', `${g(p.platen, 0)} platen`, p.bmcu, o.bmcu, p.platen > 0),

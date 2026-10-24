@@ -443,6 +443,8 @@ export function productieOverzicht(db, dossierId, regels) {
   const printregels = regels.filter(r => r.type === 'printen');
   const ops = leesOpdrachten(db, { dossier_id: dossierId });
   const goed = goedPerRegel(ops);
+  // 24-10: enkel een voorraaddossier boekt het product in (klant: product voor de onderdelen)
+  const voorraadDossier = db.prepare('SELECT soort FROM dossiers WHERE id = ?').get(dossierId)?.soort === 'eigen';
   return {
     status: statusUit(printregels, ops),
     aantal_opdrachten: ops.length,
@@ -451,7 +453,7 @@ export function productieOverzicht(db, dossierId, regels) {
     regels: printregels.map(r => {
       const eigen = ops.filter(o => o.dossier_regel_id === r.id);
       const open = eigen.filter(o => !o.voltooid_op && !o.geannuleerd_op);
-      const eindproduct = r.artikel_id ? db.prepare('SELECT id, naam FROM artikelen WHERE id = ?').get(r.artikel_id) : null;
+      const eindproduct = voorraadDossier && r.artikel_id ? db.prepare('SELECT id, naam FROM artikelen WHERE id = ?').get(r.artikel_id) : null;
       // automatische flow: nog te plannen (regel zonder printer) of te veel geprint
       const v = verdeling(r, ops);
       const teVeel = Math.max(0, v.bijdrage - v.besteld);

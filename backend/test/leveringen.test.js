@@ -127,3 +127,33 @@ test('G5. enkel de laatste levering ongedaan; voorraad terug op dezelfde partije
   const e = (await vraag('POST', '/dossiers', { titel: 'Eigen', soort: 'eigen', regels: [{ type: 'artikel', artikel_id: hond, aantal: 1 }] })).data;
   assert.match((await vraag('POST', `/dossiers/${e.id}/leveringen`, { datum: vandaag, regels: [] })).data.error, /Enkel een klantopdracht/);
 });
+
+test('G6. printregel uit een product: onderdelen in de prijs (klant, niet voorraad) en uit voorraad bij de levering', async () => {
+  const kh = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Sleutelhanger rechthoek', zelf_geprint: true, wordt_verkocht: true, verkoopprijs: 1.5 })).data.id;
+  const r = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Ring G6', wordt_gekocht: true })).data.id;
+  const bk = await vraag('POST', `/voorraad/artikelen/${r}/boeking`, { richting: 'in', aantal: 3, prijs_per_eenheid: 0.12, reden: 'ontvangst' });
+  assert.equal(bk.status, 200, JSON.stringify(bk.data));
+  assert.equal((await vraag('PUT', `/producten/${kh}/onderdelen`, { onderdelen: [{ onderdeel_id: r, aantal: 1 }] })).status, 200);
+  const regel = { type: 'printen', omschrijving: 'Sleutelhangers', printer_id: 1, aantal: 4, tijd_min: 60, artikel_id: kh };
+  const zonder = (await vraag('POST', '/bereken', { regels: [{ ...regel, artikel_id: null }] })).data;
+  const met = (await vraag('POST', '/bereken', { regels: [regel] })).data;
+  assert.equal(met.regels[0]._berekend.detail.onderdelen, 0.48, '4 stuks × 1 ring × € 0,12');
+  assert.equal(Math.round((met.totaal - zonder.totaal) * 100) / 100, 0.48);
+  assert.equal(met.prijsopbouw.onderdelen, 0.48);
+  assert.equal(met.regels[0]._berekend.kost.onderdelen, 0.48);
+  assert.equal(met.productiekost.opbouw.onderdelen, 0.48);
+  assert.equal(Math.round((zonder.regels[0]._berekend.kost.winst - met.regels[0]._berekend.kost.winst) * 100) / 100, 0, 'onderdelen aan kostprijs: winst gelijk');
+  const vr = (await vraag('POST', '/bereken', { regels: [regel], onderdelen: false })).data;
+  assert.equal(vr.totaal, zonder.totaal, 'voorraaddossier: niet meegerekend');
+
+  const e = (await vraag('POST', '/dossiers', { titel: 'Voorraad G6', soort: 'eigen', regels: [regel] })).data;
+  assert.equal(e.berekening.regels[0]._berekend.detail.onderdelen, 0);
+  let k = (await vraag('POST', '/dossiers', { titel: 'Sleutelhangers G6', klant_id: klant, regels: [regel] })).data;
+  assert.equal(k.berekening.regels[0]._berekend.detail.onderdelen, 0.48);
+  const lv = k.leverbaar.find(x => x.type === 'printen');
+  k = (await vraag('POST', `/dossiers/${k.id}/leveringen`, { datum: vandaag, regels: [{ regel_id: lv.regel_id, aantal: 4 }] })).data;
+  assert.equal(await voorraad(r), 0, '3 ringen eraf, 1 te weinig');
+  assert.match(getDb().prepare(`SELECT tekst o FROM gebeurtenissen WHERE entiteit = 'dossier' AND entiteit_id = ? AND tekst LIKE 'Geleverd%' ORDER BY id DESC`).get(k.id)?.o || '', /Ring G6 \(1 te weinig/);
+  k = (await vraag('DELETE', `/leveringen/${k.leveringen[0].id}`)).data;
+  assert.equal(await voorraad(r), 3, 'ongedaan: ringen terug');
+});

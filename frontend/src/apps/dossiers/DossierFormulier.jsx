@@ -67,7 +67,7 @@ export default function DossierFormulier() {
     const k = setInterval(() => { if (document.visibilityState === 'visible') herlaad(); }, 15000);
     return () => clearInterval(k);
   }, [volgt, herlaad]);
-  const { uitkomst: live } = useBerekening(form.regels, 'schatting', form.kop.filament_inkoop);
+  const { uitkomst: live } = useBerekening(form.regels, 'schatting', form.kop.filament_inkoop, form.kop.soort === 'klant');
   // Tot de live-berekening binnen is: de berekening die de backend meestuurde.
   const uitkomst = live || (!nieuw && d && !vuil ? d.berekening : null);
   const tarieven = useMemo(() => Object.fromEntries((tarievenLijst || []).map(t => [t.sleutel, t.waarde])), [tarievenLijst]);
@@ -301,7 +301,8 @@ export default function DossierFormulier() {
                   filamenten={artikelenZicht.filter(a => a.type === 'filament')} prijsgroepen={prijsgroepen}
                   artikelen={artikelenZicht.filter(a => a.type !== 'filament' && a.wordt_verkocht)}
                   herkomst="dossier" onArtikelGemaakt={herlaadArtikelen} alleenKost={form.kop.soort === 'eigen'}
-                  eindproducten={form.kop.soort === 'eigen' ? artikelenZicht.filter(a => a.type === 'artikel' && a.zelf_geprint) : null} producten={producten} />
+                  eindproducten={form.kop.soort === 'eigen' ? artikelenZicht.filter(a => a.type === 'artikel' && a.zelf_geprint) : null}
+                  productKeuze={form.kop.soort === 'klant' ? artikelenZicht.filter(a => a.type === 'artikel' && a.zelf_geprint) : null} producten={producten} />
                 {!kopVast && (
                   <div className="toevoegen">
                     {TYPES.filter(([w]) => w !== 'korting' || form.kop.soort !== 'eigen').map(([w, l]) => <button key={w} type="button" className="btn" onClick={() => setForm(f => ({ ...f, regels: [...f.regels, nieuweRegel(w)] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}
