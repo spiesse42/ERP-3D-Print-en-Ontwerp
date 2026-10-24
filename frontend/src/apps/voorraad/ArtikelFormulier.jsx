@@ -93,20 +93,27 @@ function Winst({ prijs, kost }) {
   const w = prijs - kost;
   return <span className={w < 0 ? 'regelfout' : 'sub'} style={{ display: 'inline' }}> · winst {euro(Math.round(w * 100) / 100)}{prijs > 0 ? ` (${Math.round(w / prijs * 100)} %)` : ''}</span>;
 }
-function Productiekost({ id, verkoopprijs }) {
-  const { data } = useData(`/productie/productiekost/${id}`);
-  if (!data) return null;
-  const l = data.laatste, g = data.gemiddeld;
+// 24-10: één kost per stuk (zelfde als in de lijsten): gemeten (gemiddelde
+// van de voorraadprints), anders geschat uit het printprofiel, anders zelf
+// ingevuld. Onderdelen (sleutelring…) telkens inbegrepen.
+const BRON = { gemeten: 'gemeten', geschat: 'geschat uit het printprofiel', 'zelf ingevuld': 'zelf ingevuld' };
+function KostPerStuk({ id, verkoopprijs, zelfVeld }) {
+  const { data: k } = useData(id ? `/producten/${id}/kost` : null);
+  const { data: m } = useData(id ? `/productie/productiekost/${id}` : null);
+  const p = k?.per_stuk, l = m?.laatste;
+  const metArbeid = p?.bron === 'gemeten' ? k.gemeten.arbeid : p?.bron === 'geschat' ? k.schatting.arbeid : null;
   return (
-    <Veld label="Productiekost (gemeten)" hint={l ? 'Filament aan inkoopprijs, gemeten elektriciteit, machinetarief, BMCU en mislukte pogingen, per goed stuk. Arbeid = voorbereiding + nabewerking.' : null}>
-      {!l ? <span className="sub">Nog niet gemeten: plan het via een dossier "Voorraad" (printregel → naar voorraad als dit artikel).</span> : (
+    <Veld label="Kost per stuk" hint={p?.bron === 'gemeten' ? 'Filament aan inkoopprijs, gemeten elektriciteit, machinetarief, BMCU en mislukte pogingen, per goed stuk, plus de onderdelen. Arbeid apart.'
+      : p?.bron === 'geschat' ? 'Wordt "gemeten" zodra je dit product via een dossier Voorraad print en bevestigt.' : null}>
+      {p ? (
         <div className="pk">
-          <div>Laatste: <b className="num">{euro(l.productiekost_stuk)}</b><Winst prijs={verkoopprijs} kost={l.productiekost_stuk} />
-            {l.kost_onvolledig ? <span className="badge b-warn" style={{ marginLeft: 6 }}>onvolledig</span> : null}
-            <div className="sub">met arbeid {euro(Math.round((l.productiekost_stuk + (l.arbeid_stuk || 0)) * 10000) / 10000)}<Winst prijs={verkoopprijs} kost={l.productiekost_stuk + (l.arbeid_stuk || 0)} /> · <Link naar={`/dossiers/${l.dossier_id}?tab=productie`}><span className="mono">{l.dossier_nummer}</span></Link></div></div>
-          {g && g.opdrachten > 1 && <div className="sub">Gemiddeld over {g.opdrachten} opdrachten ({aantal(g.stuks)} stuks): {euro(g.per_stuk)}, met arbeid {euro(Math.round((g.per_stuk + (g.arbeid_stuk || 0)) * 10000) / 10000)}</div>}
+          <div><b className="num">{euro(p.bedrag)}</b> <span className="sub">{BRON[p.bron]}{p.stuks ? ` (gemiddelde van ${aantal(p.stuks)} stuks)` : ''}</span>
+            {p.onvolledig ? <span className="badge b-warn" style={{ marginLeft: 6 }}>onvolledig</span> : null}<Winst prijs={verkoopprijs} kost={p.bedrag} /></div>
+          {metArbeid != null && <div className="sub">met arbeid {euro(Math.round((p.bedrag + metArbeid) * 100) / 100)}<Winst prijs={verkoopprijs} kost={p.bedrag + metArbeid} />{k.schatting.onderdelen ? ` · waarvan onderdelen ${euro(k.schatting.onderdelen)}` : ''}</div>}
+          {l && <div className="sub">Laatste print: {euro(l.productiekost_stuk)} per stuk (zonder onderdelen) · <Link naar={`/dossiers/${l.dossier_id}?tab=productie`}><span className="mono">{l.dossier_nummer}</span></Link></div>}
         </div>
-      )}
+      ) : <span className="sub">Nog onbekend: geef het een printprofiel (tab Printprofiel) of vul hieronder zelf een kost in.</span>}
+      {zelfVeld && (!k || (!k.profiel && !k.gemeten)) && <div style={{ marginTop: 6 }}>{zelfVeld}</div>}
     </Veld>
   );
 }
@@ -351,12 +358,8 @@ export default function ArtikelFormulier() {
                     <Vinkje id="a-vast" aan={form.vaste_prijs} onWijzig={zet('vaste_prijs')}>Zonder marge en buiten de btw-grondslag (bv. verzending)</Vinkje>
                   </Veld>
                 )}
-                {form.zelf_geprint && (
-                  <Veld label="Productieprijs" id="a-prod" hint="Informatief: wat het ons kost om te maken.">
-                    <Bedrag id="a-prod" waarde={form.productieprijs} onWijzig={zet('productieprijs')} eenheid={`€/${form.eenheid || 'eenheid'}`} />
-                  </Veld>
-                )}
-                {!nieuw && form.zelf_geprint && <Productiekost id={id} verkoopprijs={art?.verkoopprijs} />}
+                {form.zelf_geprint && <KostPerStuk id={nieuw ? null : id} verkoopprijs={art?.verkoopprijs}
+                  zelfVeld={<label className="sub" htmlFor="a-prod">Zelf ingevuld (enkel zolang er geen printprofiel of meting is)<Bedrag id="a-prod" waarde={form.productieprijs} onWijzig={zet('productieprijs')} eenheid={`€/${form.eenheid || 'eenheid'}`} /></label>} />}
                 {!nieuw && heeftVoorraad && art.gem_prijs != null && (
                   <Veld label="Kostprijs voorraad"><span className="num">{euro(art.gem_prijs)}</span> <span className="sub">gemiddeld · waarde {euro(art.waarde)}</span></Veld>
                 )}

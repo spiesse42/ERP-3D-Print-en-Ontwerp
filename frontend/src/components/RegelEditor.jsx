@@ -216,11 +216,23 @@ function Totaal({ r }) {
 // alleenKost (23-10): dossier "Voorraad" — geen verkoopprijs, korting of eindbedrag, enkel de productiekost.
 // productKeuze (24-10): enkel bij een klantdossier — het product van een
 // printregel; zijn onderdelen (sleutelring…) tellen mee in prijs en levering.
-export default function RegelEditor({ regels, onWijzig, uitkomst, printers, filamenten, prijsgroepen, artikelen, tarieven, herkomst, onArtikelGemaakt, alleenLezen = false, eindproducten = null, producten = null, alleenKost = false, productKeuze = null }) {
+export default function RegelEditor({ regels, onWijzig, uitkomst, printers, filamenten, prijsgroepen, artikelen, tarieven, herkomst, onArtikelGemaakt, alleenLezen = false, eindproducten = null, producten = null, alleenKost = false, productKeuze = null, onProfielBewaard = null }) {
   const actueel = useRef(regels);
   actueel.current = regels;
-  const { melding } = useOmgeving();
-  const [nieuwVoor, setNieuwVoor] = useState(null);   // sleutel van de regel die een nieuw artikel krijgt
+  const { melding, bevestig } = useOmgeving();
+  const [nieuwVoor, setNieuwVoor] = useState(null);
+  // 24-10: deze printregel bewaren als printprofiel van het product
+  async function naarProfiel(r) {
+    const a = (productKeuze || eindproducten || []).find(x => String(x.id) === String(r.artikel_id));
+    if (!a) return;
+    const heeft = (producten || []).some(p => p.id === a.id);
+    if (!await bevestig({ titel: 'Printprofiel van het product', tekst: `De printtijd, het filament, de printer en de stuks per plaat van deze regel worden het printprofiel van "${a.weergave}" (per stuk)${r.slicer_bijlage_id ? ', met het slicerbestand erbij' : ''}.${heeft ? ' Het huidige profiel wordt vervangen.' : ''}`, bevestigLabel: heeft ? 'Profiel vervangen' : 'Profiel bewaren' })) return;
+    try {
+      await api.post(`/productie/printprofiel/${a.id}/uit-regel`, { regel: naarApi(r) });
+      melding(`Printprofiel van "${a.weergave}" bewaard. Volgende keer: "Uit product".`);
+      onProfielBewaard?.();
+    } catch (e) { melding(e.message, 'fout'); }
+  }   // sleutel van de regel die een nieuw artikel krijgt
   const [open, setOpen] = useState({});   // 15-10: regels waar de kortingvelden open staan
   const zet = (i, w) => onWijzig(regels.map((r, j) => (j === i ? { ...r, ...w } : r)));
   async function artikelGemaakt(id) {
@@ -278,6 +290,9 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                   <option value="">— geen —</option>
                   {productKeuze.map(a => <option key={a.id} value={a.id}>{a.weergave}</option>)}
                 </select></label>}
+                {(productKeuze || eindproducten) && r.artikel_id && !alleenLezen && (
+                  <button type="button" className="linkish" style={{ alignSelf: 'end', marginBottom: 6 }} title="Tijd, filament, printer en stuks per plaat van deze regel als printprofiel (per stuk) bij het product bewaren" onClick={() => naarProfiel(r)}>Als printprofiel van het product bewaren</button>
+                )}
                 <div className="materialen">
                   {r.materialen.map((m, k) => (
                     <div className="materiaal" key={k}>

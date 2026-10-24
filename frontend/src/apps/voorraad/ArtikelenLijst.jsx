@@ -47,11 +47,11 @@ function FotoPopup({ a, onSluit }) {
     </div>
   );
 }
-const KOST_UITLEG = { gemeten: 'productiekost per stuk, gemeten', schatting: 'productiekost per stuk, geschat uit het printprofiel', inkoop: 'inkoopprijs' };
+const KOST_UITLEG = { gemeten: 'kost per stuk, gemeten', geschat: 'kost per stuk, geschat uit het printprofiel', 'zelf ingevuld': 'kost per stuk, zelf ingevuld op het artikel', inkoop: 'inkoopprijs' };
 function KostCel({ a }) {
   const k = a.kost;
   if (!k) return <span className="sub">—</span>;
-  return <span title={KOST_UITLEG[k.soort]}>{euro(k.bedrag)}{k.per ? `/${k.per}` : ''}<div className="sub">{k.soort === 'schatting' ? `geschat${k.onvolledig ? ' (onvolledig)' : ''}` : k.soort}</div></span>;
+  return <span title={KOST_UITLEG[k.soort]}>{euro(k.bedrag)}{k.per ? `/${k.per}` : ''}<div className="sub">{k.soort === 'geschat' ? `geschat${k.onvolledig ? ' (onvolledig)' : ''}` : k.soort}</div></span>;
 }
 
 // 10-10: verkoopprijs meteen in de lijst invullen of wijzigen (klik of

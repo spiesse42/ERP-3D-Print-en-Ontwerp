@@ -17,7 +17,11 @@ import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wi
   zetOpEenPlaat, haalVanPlaat, bevestigPlaat, herprintSamen } from '../productie/opdrachten.js';
 import { productiekost } from '../productie/kost.js';
 import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct } from '../productie/materiaal.js';
-import { artikelMetProfiel, bewaarProfiel, leesProfielen } from '../productie/printprofiel.js';
+import { artikelMetProfiel, bewaarProfiel, leesProfielen, profielUitRegel } from '../productie/printprofiel.js';
+import path from 'path';
+import crypto from 'crypto';
+import { bijlagenMap } from '../db/index.js';
+import { logGebeurtenis } from '../domein/historiek.js';
 
 const r = Router();
 function metFouten(fn) {
@@ -417,6 +421,35 @@ r.get('/printprofiel/:artikel', metFouten((req, res) => res.json({ profiel: arti
 r.put('/printprofiel/:artikel', metFouten((req, res) => {
   const db = getDb();
   res.json({ profiel: db.transaction(() => bewaarProfiel(db, req.params.artikel, req.body?.profiel ?? null))() });
+}));
+// 24-10: een printregel uit een dossier (bv. uit een slicerbestand) bewaren
+// als printprofiel van het product; het slicerbestand gaat mee (kopie bij het artikel).
+r.post('/printprofiel/:artikel/uit-regel', metFouten((req, res) => {
+  const db = getDb();
+  const regel = req.body?.regel;
+  if (!regel || regel.type !== 'printen') throw new DomeinFout('Geen printregel meegegeven');
+  const a = artikelMetProfiel(db, req.params.artikel);
+  if (a.type !== 'artikel' || !a.zelf_geprint) throw new DomeinFout('Een printprofiel hoort bij een artikel dat we zelf printen.');
+  const b = regel.slicer_bijlage_id ? db.prepare(`SELECT * FROM bijlagen WHERE id = ? AND entiteit = 'dossier'`).get(Number(regel.slicer_bijlage_id)) : null;
+  let kopie = null;
+  if (b && fs.existsSync(path.join(bijlagenMap(), b.pad))) {
+    const naam = `artikel-${a.id}-${crypto.randomUUID()}${path.extname(b.pad)}`;
+    fs.copyFileSync(path.join(bijlagenMap(), b.pad), path.join(bijlagenMap(), naam));
+    kopie = { naam, b };
+  }
+  try {
+    const profiel = db.transaction(() => {
+      const id = kopie ? Number(db.prepare('INSERT INTO bijlagen (entiteit, entiteit_id, bestandsnaam, pad, mimetype, grootte) VALUES (?,?,?,?,?,?)')
+        .run('artikel', a.id, kopie.b.bestandsnaam, kopie.naam, kopie.b.mimetype, kopie.b.grootte).lastInsertRowid) : null;
+      const p = bewaarProfiel(db, a.id, profielUitRegel(regel, { slicer_bijlage_id: id }));
+      logGebeurtenis(db, 'artikel', a.id, 'gewijzigd', `Printprofiel overgenomen uit een printregel${kopie ? ` (slicerbestand ${kopie.b.bestandsnaam})` : ''}`);
+      return p;
+    })();
+    res.json({ profiel, naam: a.naam, vervangen: !!a.profiel });
+  } catch (e) {
+    if (kopie) try { fs.unlinkSync(path.join(bijlagenMap(), kopie.naam)); } catch { /* al weg */ }
+    throw e;
+  }
 }));
 r.post('/eigen-product', metFouten((req, res) => {
   const db = getDb();

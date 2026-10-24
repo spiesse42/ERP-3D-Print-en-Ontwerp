@@ -160,17 +160,35 @@ export function verwijderLevering(db, levering) {
 // Bij afrekenen / bonnetje / gratis geleverd / losse verkoop (29-09): de
 // artikelen uit VOORRAAD die nog niet geleverd zijn, automatisch leveren
 // (pakbon), zodat de voorraad klopt en de kost in de marge staat. Printwerk
-// blijft buiten (geen voorraad). Te weinig voorraad blokkeert het afrekenen
+// blijft buiten (geen voorraad), behalve een product met onderdelen (zie
+// hieronder). Te weinig voorraad blokkeert het afrekenen
 // niet: die regel wordt overgeslagen en in de historiek vermeld.
+// 24-10: ook een printregel van een product MET onderdelen (sleutelring…):
+// het al goed geprinte deel dat nog niet geleverd is, gaat mee op die
+// pakbon, zodat de onderdelen uit voorraad gaan. Wat nog niet geprint is,
+// blijft open (geen geplande printopdrachten weg).
+function geprintNogTeLeveren(db, dossier, alle) {
+  if (dossier.soort !== 'klant') return [];
+  const product = new Map((dossier.regels || []).filter(r => r.type === 'printen' && r.artikel_id).map(r => [r.id, r.artikel_id]));
+  const heeftDelen = db.prepare('SELECT 1 FROM artikel_onderdelen WHERE artikel_id = ? LIMIT 1');
+  const goed = db.prepare(`SELECT COALESCE(SUM(aantal_goed), 0) n FROM printopdrachten WHERE dossier_regel_id = ? AND voltooid_op IS NOT NULL AND geannuleerd_op IS NULL`);
+  return alle.filter(x => x.type === 'printen' && x.rest > 1e-9 && product.has(x.regel_id) && heeftDelen.get(product.get(x.regel_id)))
+    .map(x => ({ ...x, rest: r3(Math.min(x.rest, Math.max(0, goed.get(x.regel_id).n - x.geleverd))) }))
+    .filter(x => x.rest > 1e-9);
+}
+
 export function leverRestUitVoorraad(db, dossier, datum, waarom) {
-  const lijst = leverbaar(db, dossier.id, dossier.regels).filter(x => x.boekt_voorraad && x.rest > 1e-9);
-  if (!lijst.length) return null;
+  const alle = leverbaar(db, dossier.id, dossier.regels);
+  const lijst = alle.filter(x => x.boekt_voorraad && x.rest > 1e-9);
+  const geprint = geprintNogTeLeveren(db, dossier, alle);
+  if (!lijst.length && !geprint.length) return null;
   const over = new Map();   // artikel → nog beschikbaar (twee regels met hetzelfde artikel)
   const ok = [], tekort = [];
   for (const x of lijst) {
     const beschikbaar = over.has(x.artikel_id) ? over.get(x.artikel_id) : (x.voorraad ?? 0);
     if (beschikbaar + 1e-9 >= x.rest) { ok.push(x); over.set(x.artikel_id, beschikbaar - x.rest); } else tekort.push(x);
   }
+  ok.push(...geprint);
   let nummer = null;
   if (ok.length) {
     const id = maakLevering(db, dossier, { datum, regels: ok.map(x => ({ regel_id: x.regel_id, aantal: x.rest })), opmerking: `Automatisch ${waarom}` });

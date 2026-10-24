@@ -157,3 +157,47 @@ test('G6. printregel uit een product: onderdelen in de prijs (klant, niet voorra
   k = (await vraag('DELETE', `/leveringen/${k.leveringen[0].id}`)).data;
   assert.equal(await voorraad(r), 3, 'ongedaan: ringen terug');
 });
+
+test('G7. afrekenen: het geprinte deel van een product met onderdelen gaat mee op de automatische pakbon', async () => {
+  const kh = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Sleutelhanger G7', zelf_geprint: true, wordt_verkocht: true, verkoopprijs: 1.5 })).data.id;
+  const r = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Ring G7', wordt_gekocht: true })).data.id;
+  await vraag('POST', `/voorraad/artikelen/${r}/boeking`, { richting: 'in', aantal: 10, prijs_per_eenheid: 0.1, reden: 'ontvangst' });
+  await vraag('PUT', `/producten/${kh}/onderdelen`, { onderdelen: [{ onderdeel_id: r, aantal: 1 }] });
+  let k = (await vraag('POST', '/dossiers', { titel: 'G7', klant_id: klant, regels: [{ type: 'printen', omschrijving: 'Hangers', printer_id: 1, aantal: 4, tijd_min: 60, artikel_id: kh }] })).data;
+  k = (await vraag('POST', `/dossiers/${k.id}/starten`)).data;
+  const o = getDb().prepare('SELECT id FROM printopdrachten WHERE dossier_regel_id = ?').get(k.regels[0].id);
+  const iso = u => new Date(Date.now() - u * 3600e3).toISOString();
+  const run = (await vraag('POST', '/productie/runs', { printer_id: 1, gestart_op: iso(3), geeindigd_op: iso(1), uitkomst: 'klaar', kwh: 0.1 })).data;
+  assert.equal((await vraag('POST', `/productie/runs/${run.id}/koppel`, { printopdracht_id: o.id })).status, 200);
+  assert.equal((await vraag('POST', `/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: 3 })).status, 200);
+  k = (await vraag('POST', `/dossiers/${k.id}/afrekenen`, { soort: 'factuur', nummer: 'G7-1', datum: vandaag })).data;
+  assert.equal(await voorraad(r), 7, '3 geprinte stuks geleverd → 3 ringen eraf');
+  assert.equal(k.leverbaar[0].geleverd, 3);
+  assert.equal(k.leverbaar[0].rest, 1, 'nog niet geprint = niet geleverd');
+  assert.ok(getDb().prepare(`SELECT 1 FROM printopdrachten WHERE dossier_regel_id = ? AND voltooid_op IS NULL AND geannuleerd_op IS NULL`).get(k.regels[0].id), 'de rest blijft gepland');
+});
+
+test('G8. printregel → printprofiel van het product; één kost per stuk (zelf ingevuld → geschat)', async () => {
+  const kh = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Sleutelhanger G8', zelf_geprint: true, wordt_verkocht: true, verkoopprijs: 1.5, productieprijs: 0.6 })).data.id;
+  let kost = (await vraag('GET', `/producten/${kh}/kost`)).data.per_stuk;
+  assert.deepEqual([kost.bron, kost.bedrag], ['zelf ingevuld', 0.6]);
+  const pg = getDb().prepare('SELECT id FROM filament_types LIMIT 1').get()?.id
+    ?? (await vraag('POST', '/filament/types', { merk_id: 1, materiaal_id: 1, verkoopprijs_per_kg: 25 })).data.id;
+  // één plaat met 20 stuks (zonder "per stuk"): totalen van de plaat
+  const regel = { type: 'printen', printer_id: 1, aantal: 20, per_stuk: false, tijd_min: 751, voorbereiding_min: 10, nabewerking_min: 10, materialen: [{ filament_type_id: pg, gram: 171 }] };
+  const p = (await vraag('POST', `/productie/printprofiel/${kh}/uit-regel`, { regel })).data;
+  assert.equal(p.vervangen, false);
+  assert.deepEqual([p.profiel.tijd_min, p.profiel.per_plaat, p.profiel.voorbereiding_min, p.profiel.nabewerking_min, p.profiel.materialen[0].gram, p.profiel.printer_id], [37.55, 20, 10, 0.5, 8.55, 1]);
+  kost = (await vraag('GET', `/producten/${kh}/kost`)).data.per_stuk;
+  assert.equal(kost.bron, 'geschat');
+  const lijst = (await vraag('GET', '/voorraad/artikelen')).data.find(a => a.id === kh);
+  assert.equal(lijst.kost.soort, 'geschat');
+  assert.equal(lijst.kost.bedrag, Math.round(kost.bedrag * 1e4) / 1e4);
+  const prod = (await vraag('GET', '/producten')).data.find(a => a.id === kh);
+  assert.equal(prod.kost_bron, 'geschat');
+  // per stuk met stuks per plaat: voorbereiding per plaat, rest per stuk
+  const p2 = (await vraag('POST', `/productie/printprofiel/${kh}/uit-regel`, { regel: { ...regel, aantal: 100, per_stuk: true, per_plaat: 20, tijd_min: 3755, voorbereiding_min: 50, nabewerking_min: 50 } })).data;
+  assert.equal(p2.vervangen, true);
+  assert.deepEqual([p2.profiel.tijd_min, p2.profiel.voorbereiding_min, p2.profiel.nabewerking_min], [37.55, 10, 0.5]);
+  assert.equal((await vraag('POST', `/productie/printprofiel/${hond}/uit-regel`, { regel: { type: 'ontwerp' } })).status, 400);
+});
