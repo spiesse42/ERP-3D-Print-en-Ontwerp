@@ -47,7 +47,7 @@ function afbeelding(v, nr) {
 // ── invoer ──────────────────────────────────────────────────────────────
 export function leesKop(body) {
   const soort = body?.soort ?? 'klant';
-  if (!SOORTEN[soort]) throw new DomeinFout('Soort moet klantopdracht, eigen product of intern zijn');
+  if (!SOORTEN[soort]) throw new DomeinFout('Soort moet klantopdracht, voorraad of intern zijn');
   const titel = tekst(body?.titel);
   if (!titel) throw new DomeinFout('Geef het dossier een titel (bv. "Naamplaatje fiets")');
   // filament_inkoop: undefined = niet meegegeven (nieuw dossier: volgt de klant)
