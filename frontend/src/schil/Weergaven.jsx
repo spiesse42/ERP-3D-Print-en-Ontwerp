@@ -1,5 +1,5 @@
 // Herbruikbare Odoo-bouwstenen voor lijsten en formulieren.
-import { Fragment } from 'react';
+import { Fragment, useLayoutEffect, useRef, useState } from 'react';
 import Icoon from './Icoon.jsx';
 import { Link } from './Schil.jsx';
 import { useOmgeving } from './Omgeving.jsx';
@@ -120,9 +120,26 @@ export function Lijst({ kolommen, groepen, sleutel, onOpen, kaart, sortering, on
 /* ── Kanban met kolommen (bv. dossiers per fase) ── */
 // kolommen: [{ id, titel, rijen }]; kaart(r) → { titel, regel, rechts, badges }
 export function Kanban({ kolommen, sleutel, onOpen, kaart, leeg }) {
-  if (!kolommen.some(k => k.rijen.length)) return <div className="leeg">{leeg}</div>;
+  // 24-10: het bord is zo hoog als wat er van het scherm overblijft en scrolt
+  // zelf — de kolomkoppen blijven staan en de schuifbalk naar rechts is altijd
+  // in beeld (niet pas helemaal onderaan). Op gsm staan de kolommen onder elkaar.
+  const ref = useRef(null);
+  const [hoogte, setHoogte] = useState(null);
+  const leegBord = !kolommen.some(k => k.rijen.length);
+  useLayoutEffect(() => {
+    const zet = () => {
+      const el = ref.current;
+      if (!el || window.matchMedia('(max-width: 700px)').matches) { setHoogte(null); return; }
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      setHoogte(Math.max(320, Math.floor(window.innerHeight - top)));
+    };
+    zet();
+    window.addEventListener('resize', zet);
+    return () => window.removeEventListener('resize', zet);
+  }, [leegBord]);
+  if (leegBord) return <div className="leeg">{leeg}</div>;
   return (
-    <div className="kanban">
+    <div className="kanban" ref={ref} style={hoogte ? { maxHeight: hoogte } : undefined}>
       {kolommen.map(k => (
         <section key={k.id} className="kolom" aria-label={k.titel}>
           <h3>{k.titel} <span className="sub num">{k.rijen.length}</span></h3>
