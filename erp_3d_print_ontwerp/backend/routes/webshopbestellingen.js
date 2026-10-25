@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { getDb } from '../db/index.js';
 import { DomeinFout } from '../domein/hulp.js';
 import { bewaarBestellingen, leesBestellingen, zetAfgehandeld } from '../domein/webshopbestellingen.js';
+import { maakDossierUitBestelling } from '../domein/webshopdossier.js';
 import { sanityQuery } from '../integraties/sanity.js';
 import { haalBetaaldeBestellingen, supabaseIngesteld, SupabaseFout } from '../integraties/supabase.js';
 
@@ -34,6 +35,11 @@ r.post('/ophalen', metFouten(async (req, res) => {
   const orders = await haalBetaaldeBestellingen();
   const db = getDb();
   res.json({ nieuw: db.transaction(() => bewaarBestellingen(db, orders))() });
+}));
+// 25-10: klant + klantdossier met de printregels; body { items: [index…] } (leeg = standaardkeuze)
+r.post('/:id/dossier', metFouten(async (req, res) => {
+  const k = await kleuren();
+  res.status(201).json(maakDossierUitBestelling(getDb(), req.params.id, { items: req.body?.items ?? null, kleuren: k }));
 }));
 r.post('/:id/afgehandeld', metFouten((req, res) => { zetAfgehandeld(getDb(), req.params.id, req.body?.aan !== false); res.json({ ok: true }); }));
 
