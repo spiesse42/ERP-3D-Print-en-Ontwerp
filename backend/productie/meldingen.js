@@ -33,10 +33,17 @@ export async function testMelding(db) {
 
 // Wat er te melden valt na één lezing van een printer.
 // vorig = status bij de vorige lezing (undefined na een herstart: niets melden)
+// 25-10: een fout wordt METEEN gemeld, bij de eerste lezing met die status
+// (niet pas als de run na de wachttijd afgesloten wordt); al gemeld = bij het
+// afsluiten niet nog eens.
+const foutGemeld = new Set();   // printer-ids met een gemelde fout sinds de laatste lopende print
 export function meldingVoor(db, printer, vorig, lezing, gesloten) {
   const wat = lezing.bestand ? ` (${lezing.bestand})` : '';
   const ruw = lezing.ruwe_status ? ` · ${lezing.ruwe_status}` : '';
-  if (gesloten === 'mislukt') return { titel: `❌ ${printer.naam}: print mislukt`, tekst: `De print is mislukt of gestopt${wat}${ruw}.`, dringend: true };
+  const fout = { titel: `❌ ${printer.naam}: fout, print gestopt`, tekst: `De printer meldt een fout${wat}${ruw}. Ga kijken (verstopping, filament, bed…).`, dringend: true };
+  if (lezing.status === 'bezig') foutGemeld.delete(printer.id);
+  if (vorig !== undefined && vorig !== 'mislukt' && lezing.status === 'mislukt' && !foutGemeld.has(printer.id)) { foutGemeld.add(printer.id); return fout; }
+  if (gesloten === 'mislukt') { if (foutGemeld.has(printer.id)) return null; foutGemeld.add(printer.id); return fout; }
   if (gesloten === 'klaar' && instelling(db, 'gsm_melding_klaar') === '1') return { titel: `✅ ${printer.naam}: print klaar`, tekst: `De print is klaar${wat}.` };
   if (vorig === 'bezig' && lezing.status === 'pauze') return { titel: `⏸ ${printer.naam}: print gepauzeerd`, tekst: `De print staat stil${wat}${ruw}. Fout, filament op, of zelf gepauzeerd?`, dringend: true };
   return null;
