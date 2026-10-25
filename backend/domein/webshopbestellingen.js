@@ -40,16 +40,19 @@ const SYMBOLEN = { geen: 'geen', hartje: 'hartje ♥', ster: 'ster ★', pootje:
 export function leesBestellingen(db, { alles = false, kleuren = null } = {}) {
   const kleur = k => kleuren?.get(String(k).trim().toLowerCase()) || null;   // 11-10: filament bij de gekozen kleur
   const art = db.prepare(ART);
-  const rijen = db.prepare(`SELECT b.*, v.nummer AS verkoop_nummer, v.id AS verkoop_id FROM webshop_bestellingen b
+  const rijen = db.prepare(`SELECT b.*, v.nummer AS verkoop_nummer, v.id AS verkoop_id, d.nummer AS dossier_nummer FROM webshop_bestellingen b
     LEFT JOIN verkopen v ON v.webshop_bestelling = b.id AND v.geannuleerd_op IS NULL
+    LEFT JOIN dossiers d ON d.id = b.dossier_id
     ${alles ? '' : `WHERE b.afgehandeld_op IS NULL OR b.besteld_op >= date('now', '-30 days')`}
     ORDER BY b.besteld_op DESC`).all();
   return rijen.map(b => {
-    const items = JSON.parse(b.items || '[]').map(i => {
+    // 25-10: lijnen die in het klantdossier van deze bestelling zitten
+    const inDossier = new Set(b.dossier_id ? JSON.parse(b.dossier_items || '[]') : []);
+    const items = JSON.parse(b.items || '[]').map((i, idx) => {
       const a = art.get(i.slug, i.variantLabel ?? '') || null;
       const uit = { slug: i.slug, naam: i.name, aantal: i.quantity, prijs: i.price, variant: i.variantLabel ?? null,
         kleuren: i.colors || (i.color ? [i.color] : []), tekst: i.text ?? null, lettertype: i.font ?? null, symbool: SYMBOLEN[i.symbol] ?? i.symbol ?? null, artikel: a };
-      return { ...uit, kleur_info: uit.kleuren.map(k => ({ label: k, filament: kleur(k)?.filamentName || null, hex: kleur(k)?.hex || null })) };
+      return { ...uit, in_dossier: inDossier.has(idx), kleur_info: uit.kleuren.map(k => ({ label: k, filament: kleur(k)?.filamentName || null, hex: kleur(k)?.hex || null })) };
     });
     const klant = b.email ? db.prepare('SELECT id FROM klanten WHERE lower(email) = lower(?) LIMIT 1').get(b.email) : null;
     return { ...b, items, klant_id: klant?.id ?? null, afgehandeld: !!b.afgehandeld_op };

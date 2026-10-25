@@ -66,14 +66,18 @@ function NieuweVerkoop() {
   useEffect(() => {
     const b = wsData?.bestellingen?.find(x => x.id === webshopId);
     if (!b || wsGeladen) return;
+    // 25-10: bestelling met een klantdossier → het dossier als één regel (prijs: wacht op de kandidaten)
+    const d = b.dossier_id ? (kand?.dossiers || []).find(x => x.id === b.dossier_id) : null;
+    if (b.dossier_id && !kand) return;
     setWsGeladen(true);
     setF(x => ({ ...x, omschrijving: `Webshop: ${b.klant_naam || ''}`.trim(), klant_id: b.klant_id ? String(b.klant_id) : x.klant_id }));
     setRegels([
-      ...b.items.map(i => ({ ...nieuweRegel(i.artikel ? 'artikel' : 'vrij'), artikel_id: i.artikel ? String(i.artikel.id) : '', aantal: naarInvoer(i.aantal), prijs: naarInvoer(i.prijs),
+      ...(d ? [{ ...nieuweRegel('dossier'), dossier_id: String(d.id), aantal: '1', prijs: d.bedrag != null ? naarInvoer(d.bedrag) : '' }] : []),
+      ...b.items.filter(i => !(d && i.in_dossier)).map(i => ({ ...nieuweRegel(i.artikel ? 'artikel' : 'vrij'), artikel_id: i.artikel ? String(i.artikel.id) : '', aantal: naarInvoer(i.aantal), prijs: naarInvoer(i.prijs),
         omschrijving: i.artikel && !i.kleuren.length ? '' : [i.artikel ? i.artikel.naam : i.naam, i.kleuren.length ? `(${i.kleuren.join(' / ')})` : ''].filter(Boolean).join(' ') })),
       ...(b.verzendkost > 0 ? [{ ...nieuweRegel('vrij'), omschrijving: `Verzending${b.verzending ? ` (${b.verzending})` : ''}`, aantal: '1', prijs: naarInvoer(b.verzendkost) }] : []),
     ]);
-  }, [wsData, webshopId, wsGeladen]);
+  }, [wsData, webshopId, wsGeladen, kand]);
   const [naarKlant, setNaarKlant] = useState(false);
   const [mail, setMail] = useState(null);
   const [bezig, setBezig] = useState(false);

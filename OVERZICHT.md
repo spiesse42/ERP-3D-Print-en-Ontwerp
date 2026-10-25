@@ -17,6 +17,13 @@ Bijgehouden tijdens de ontwikkeling. Wat hier staat is (nog) niet gebouwd.
 - Onderdelen per stuk (sleutelring, zakje…), afgeboekt bij de verkoop.
 - Overzicht Producten: kost per stuk (geschat of gemeten), marge, voorraad, verkocht.
 
+## Gebouwd: webshopbestelling → klant + dossier (25-10-2026)
+
+- Verkoop → Webshop → "Klant + dossier maken": klant op e-mailadres (anders nieuw, adres enkel
+  bij levering aan huis), klantdossier met per gekozen lijn een printregel uit het printprofiel
+  (slicerbestand, filament van de kleur als het gekend is, webshopprijs als eindbedrag).
+  Zonder profiel of artikel: regel + waarschuwing. "Verkoop maken" neemt het dossier als één regel.
+
 ## Ideeën / later
 
 - ~~Onderdelen bij een klantdossier dat een product print~~ — gebouwd 24-10 (prijs + levering).
