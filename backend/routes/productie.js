@@ -16,7 +16,7 @@ import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wi
   voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer, herbereken, leesMaterialen, zetMaterialen,
   zetOpEenPlaat, haalVanPlaat, bevestigPlaat, herprintSamen } from '../productie/opdrachten.js';
 import { productiekost } from '../productie/kost.js';
-import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct } from '../productie/materiaal.js';
+import { filamentVoorPrinter, rolLeeg, rolLeegOngedaan, maakEigenProduct, nieuwProductUitRun } from '../productie/materiaal.js';
 import { artikelMetProfiel, bewaarProfiel, leesProfielen, profielUitRegel } from '../productie/printprofiel.js';
 import path from 'path';
 import crypto from 'crypto';
@@ -113,6 +113,19 @@ r.post('/runs/:id/koppel', metFouten((req, res) => {
   const x = run(db, req.params.id);
   db.transaction(() => koppelRun(db, x, req.body || {}))();
   res.json(runInfo(db, run(db, x.id), null));
+}));
+// 25-10: nieuw product (artikel + printprofiel + dossier Voorraad) uit deze run, en meteen koppelen
+r.post('/runs/:id/nieuw-product', metFouten((req, res) => {
+  const db = getDb();
+  const x = run(db, req.params.id);
+  if (!x.printer_id) throw new DomeinFout('Deze run heeft geen printer.');
+  const p = db.transaction(() => {
+    const p = nieuwProductUitRun(db, x, req.body || {});
+    if (!p.opdracht_id) throw new DomeinFout('Er kon geen printopdracht gemaakt worden.');
+    koppelRun(db, run(db, x.id), { printopdracht_id: p.opdracht_id });
+    return p;
+  })();
+  res.status(201).json({ ...p, run: runInfo(db, run(db, x.id), null) });
 }));
 r.post('/runs/:id/ontkoppel', metFouten((req, res) => {
   const db = getDb();

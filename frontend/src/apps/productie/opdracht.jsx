@@ -318,23 +318,36 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
   const { data } = useData('/productie/opdrachten?open=1');
   const open = (data?.lijst || []).filter(o => !o.runs.some(r => r.uitkomst === 'bezig' && r.id !== run.id));
   const [gekozenKeuze, setKeuze] = useState(run.voorstel ? 'voorstel' : null);
-  const keuze = gekozenKeuze ?? (open.length ? 'andere' : 'nieuw');
+  const keuze = gekozenKeuze ?? (open.length ? 'andere' : 'product');
   const [andere, setAndere] = useState('');
   const [nieuw, setNieuw] = useState({ naam: run.bestand ? run.bestand.replace(/(\.gcode)?\.(gcode|3mf|bgcode)$/i, '') : '', aantal: '1', soort: 'eigen' });
   // 26-09: filament meteen meegeven (gewicht van de printer als voorstel)
   const gemeld = run.gewicht_g > 0 ? naarInvoer(Math.round(run.gewicht_g * 10) / 10) : '';
   const [nieuwMat, setNieuwMat] = useState(() => legeMat(gemeld));
   const [intern, setIntern] = useState('kalibratie');
+  // 25-10: nieuw product uit deze run (artikel + printprofiel + dossier Voorraad)
+  const [product, setProduct] = useState({ naam: nieuw.naam, aantal: '1', tijd_min: run.uitkomst !== 'bezig' && run.duur_min > 0 ? String(run.duur_min) : '', verkoopprijs: '' });
+  const [productMat, setProductMat] = useState(() => legeMat(gemeld));
   const [bezig, setBezig] = useState(false);
   const gekozen = open.find(o => String(o.id) === andere);
   async function ok() {
+    if (keuze === 'product') {
+      setBezig(true);
+      try {
+        const r = await api.post(`/productie/runs/${run.id}/nieuw-product`, { ...product, materialen: matVoorApi(productMat) });
+        melding(`Product "${product.naam.trim()}" aangemaakt met printprofiel; run gekoppeld (dossier ${r.nummer}). Bevestig de goede stuks: ze gaan in voorraad.`);
+        await onKlaar();
+      } catch (e) { melding(e.message, 'fout'); setBezig(false); }
+      return;
+    }
     const body = keuze === 'voorstel' ? { printopdracht_id: run.voorstel.id } : keuze === 'andere' ? { printopdracht_id: Number(andere) }
       : keuze === 'nieuw' ? { nieuw: { ...nieuw, materialen: matVoorApi(nieuwMat) } } : { intern };
     setBezig(true);
     try { await api.post(`/productie/runs/${run.id}/koppel`, body); melding(keuze === 'intern' ? 'Run gemarkeerd als intern.' : 'Run gekoppeld.'); await onKlaar(); }
     catch (e) { melding(e.message, 'fout'); setBezig(false); }
   }
-  const kan = keuze === 'voorstel' ? !!run.voorstel : keuze === 'andere' ? !!andere : keuze === 'nieuw' ? !!nieuw.naam.trim() : true;
+  const kan = keuze === 'voorstel' ? !!run.voorstel : keuze === 'andere' ? !!andere : keuze === 'nieuw' ? !!nieuw.naam.trim()
+    : keuze === 'product' ? !!product.naam.trim() && Number(product.aantal) > 0 : true;
   const perPrinter = [...new Set(open.map(o => o.printer))];
   return (
     <Dialoog titel="Run koppelen" onSluit={onSluit} breed
@@ -363,8 +376,22 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
             {gekozen && run.printer_id && gekozen.printer_id !== run.printer_id && <p className="sub">Deze opdracht staat bij {gekozen.printer}; ze verhuist naar {run.printer || 'deze printer'}.</p>}
           </div>
         )}
+        <label className="keuze"><input type="radio" name="kp" checked={keuze === 'product'} onChange={() => setKeuze('product')} />
+          <span>Nieuw product <span className="sub">(bestaat nog niet: artikel + printprofiel uit deze plaat, de stuks gaan in voorraad)</span></span></label>
+        {keuze === 'product' && (
+          <div className="keuze-sub fgrid">
+            <div><label htmlFor="kp-pnaam">Naam van het product</label><input id="kp-pnaam" className="inp" value={product.naam} onChange={e => setProduct(x => ({ ...x, naam: e.target.value }))} /></div>
+            <div><label htmlFor="kp-paantal">Stuks op deze plaat</label><input id="kp-paantal" className="inp num" inputMode="numeric" value={product.aantal} onChange={e => setProduct(x => ({ ...x, aantal: e.target.value }))} /></div>
+            <div><label htmlFor="kp-ptijd">Printtijd van de plaat (min)</label><input id="kp-ptijd" className="inp num" inputMode="decimal" placeholder={run.uitkomst === 'bezig' ? 'zie de slicer' : ''} value={product.tijd_min} onChange={e => setProduct(x => ({ ...x, tijd_min: e.target.value }))} /></div>
+            <div><label htmlFor="kp-pprijs">Verkoopprijs per stuk (optioneel)</label><input id="kp-pprijs" className="inp num" inputMode="decimal" value={product.verkoopprijs} onChange={e => setProduct(x => ({ ...x, verkoopprijs: e.target.value }))} /></div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <FilamentInvoer rijen={productMat} onWijzig={setProductMat} id="kp-pfil" />
+              <p className="sub" style={{ margin: '4px 0 0' }}>Filament en tijd van de <b>hele plaat</b>: het ERP deelt door het aantal stuks voor het printprofiel.{gemeld ? ` Gewicht zoals de printer het meldde: ${gemeld} g.` : ''}{run.uitkomst === 'bezig' ? ' De run loopt nog: neem de printtijd uit de slicer.' : ''} Foto, categorie en webshop vul je daarna aan op het artikel.</p>
+            </div>
+          </div>
+        )}
         <label className="keuze"><input type="radio" name="kp" checked={keuze === 'nieuw'} onChange={() => setKeuze('nieuw')} />
-          <span>Nieuwe printopdracht (voorraad of intern)</span></label>
+          <span>Nieuwe printopdracht zonder product (voorraad of intern)</span></label>
         {keuze === 'nieuw' && (
           <div className="keuze-sub fgrid">
             <div><label htmlFor="kp-naam">Naam</label><input id="kp-naam" className="inp" value={nieuw.naam} onChange={e => setNieuw(x => ({ ...x, naam: e.target.value }))} /></div>

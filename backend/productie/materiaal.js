@@ -10,11 +10,11 @@
 //   artikel) en plant meteen de printopdracht.
 import { DomeinFout } from '../domein/hulp.js';
 import { boekUit, voorraadVan } from '../domein/voorraad.js';
-import { weergaveNaam } from '../domein/artikelen.js';
+import { weergaveNaam, maakArtikel } from '../domein/artikelen.js';
 import { volgendNummer } from '../domein/nummering.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { maakOpdracht } from './opdrachten.js';
-import { artikelMetProfiel, regelsUitProfiel, platenVan } from './printprofiel.js';
+import { artikelMetProfiel, regelsUitProfiel, platenVan, bewaarProfiel } from './printprofiel.js';
 import { start } from '../domein/uitvoering.js';
 
 const FILAMENT = `SELECT a.id, a.type, a.filament_type_id, m.naam AS merk, mat.naam AS materiaal, k.naam AS kleur,
@@ -138,4 +138,31 @@ export function maakEigenProduct(db, { artikel_id, aantal, printer_id, personali
   }
   const opdrachten = db.prepare(`SELECT COUNT(*) n FROM printopdrachten WHERE dossier_regel_id IN (${regelIds.map(() => '?').join(',')})`).get(...regelIds).n;
   return { dossier_id: dossierId, nummer, opdracht_id: opdrachtId, opdrachten, sjabloon: !!sjabloon, profiel: !!profiel };
+}
+
+// ── Nieuw product uit een run (25-10) ─────────────────────────────────────
+// Een bestand dat naar de printer gestuurd werd en nog geen product is:
+// artikel (zelf geprint, verkocht) + printprofiel uit deze plaat (printer
+// van de run, printtijd en filament ÷ stuks op de plaat) + een dossier
+// Voorraad met de printopdracht. De run wordt daaraan gekoppeld; bij het
+// bevestigen gaan de goede stuks in voorraad aan de gemeten kost.
+export function nieuwProductUitRun(db, run, b) {
+  const naam = String(b?.naam ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (!naam) throw new DomeinFout('Geef het product een naam');
+  if (db.prepare('SELECT 1 FROM artikelen WHERE naam = ? COLLATE NOCASE').get(naam)) throw new DomeinFout(`Er bestaat al een artikel "${naam}". Kies een andere naam, of koppel de run aan een printopdracht van dat artikel.`);
+  const n = Number(String(b?.aantal ?? 1).replace(',', '.'));
+  if (!Number.isInteger(n) || n <= 0) throw new DomeinFout('Stuks op de plaat: een heel getal groter dan 0');
+  const tijd = Number(String(b?.tijd_min ?? '').replace(',', '.'));
+  const prijs = b?.verkoopprijs === '' || b?.verkoopprijs == null ? null : Number(String(b.verkoopprijs).replace(',', '.'));
+  if (prijs !== null && (!Number.isFinite(prijs) || prijs < 0)) throw new DomeinFout('Verkoopprijs: een getal vanaf 0');
+  const r4 = v => Math.round(v * 10000) / 10000;
+  const artikelId = maakArtikel(db, { type: 'artikel', wordt_gekocht: 0, wordt_verkocht: 1, zelf_geprint: 1, categorie_id: b?.categorie_id ? Number(b.categorie_id) : null, naam,
+    filament_type_id: null, kleur_id: null, eenheid: 'stuks', verkoopprijs: prijs, inkoopprijs: null, marge_pct: null, productieprijs: null,
+    vaste_prijs: 0, min_voorraad: null, max_voorraad: null, locatie: null, notities: run.bestand ? `Bestand: ${run.bestand}` : null }, `Aangemaakt uit een run op de printer${run.bestand ? ` (${run.bestand})` : ''}`);
+  bewaarProfiel(db, artikelId, {
+    printer_id: run.printer_id, tijd_min: Number.isFinite(tijd) && tijd > 0 ? r4(tijd / n) : 0, per_plaat: n,
+    materialen: (Array.isArray(b?.materialen) ? b.materialen : []).map(m => ({ ...m, gram: r4((Number(String(m.gram ?? 0).replace(',', '.')) || 0) / n) })),
+  });
+  const p = maakEigenProduct(db, { artikel_id: artikelId, aantal: n, printer_id: run.printer_id });
+  return { artikel_id: artikelId, ...p };
 }
