@@ -113,9 +113,12 @@ test('H4b. meldingen op de gsm: pauze en mislukt (dringend), klaar enkel als aan
   assert.match(meldingen()[0].title, /gepauzeerd/); assert.match(meldingen()[0].message, /draak\.3mf/); assert.equal(meldingen()[0].data.priority, 'high');
   await tik(); await wacht();
   assert.equal(meldingen().length, 1, 'pauze maar één keer gemeld');
-  zet({ [`${A1}printstatus`]: 'failed' }); await tik(); await tik(); await wacht();
+  zet({ [`${A1}printstatus`]: 'failed' }); await tik(); await wacht();
+  assert.equal(runs().at(-1).uitkomst, 'bezig', 'run nog niet afgesloten (wachttijd)…');
+  assert.equal(meldingen().length, 2, '…maar de fout is meteen gemeld'); assert.match(meldingen()[1].title, /fout/); assert.equal(meldingen()[1].data.priority, 'high');
+  await tik(); await wacht();
   assert.equal(runs().at(-1).uitkomst, 'mislukt');
-  assert.equal(meldingen().length, 2); assert.match(meldingen()[1].title, /mislukt/);
+  assert.equal(meldingen().length, 2, 'bij het afsluiten niet nog eens');
   zet({ [`${A1}printstatus`]: 'running', [`${A1}taaknaam`]: 'egel.3mf' }); await tik();
   zet({ [`${A1}printstatus`]: 'finish' }); await tik(); await tik(); await wacht();
   assert.equal(meldingen().length, 2, 'klaar: standaard geen melding');
