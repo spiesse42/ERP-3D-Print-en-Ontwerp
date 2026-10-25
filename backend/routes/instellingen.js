@@ -4,6 +4,8 @@ import { getDb } from '../db/index.js';
 import { mailIngesteld, mailServer } from '../documenten/mail.js';
 import { vindBrowser } from '../documenten/pdf.js';
 import { haIngesteld } from '../integraties/homeassistant.js';
+import { testMelding } from '../productie/meldingen.js';
+import { DomeinFout } from '../domein/hulp.js';
 
 const r = Router();
 
@@ -17,6 +19,7 @@ const INSTELLING_SLEUTELS = new Set([
   'bedrijf_bic', 'bedrijf_telefoon', 'bedrijf_rekeninghouder', 'factuur_betaaltermijn',   // 29-09: factuur door het ERP
   'offerte_geldig_dagen',   // stap 5b: standaard geldigheid van een offerte
   'bedrijf_startdatum', 'drempel_omzet_jaar', 'drempel_winst_jaar',   // stap 7: drempels bijberoep
+  'gsm_melding_dienst', 'gsm_melding_klaar',   // 25-10: meldingen van de printers op de gsm
 ]);
 // Eenvoudige controle per sleutel (stap 7); leeg mag altijd.
 const CONTROLE = {
@@ -24,6 +27,8 @@ const CONTROLE = {
   drempel_omzet_jaar: w => (Number.isFinite(parseFloat(w.replace(',', '.'))) && parseFloat(w.replace(',', '.')) > 0 ? null : 'Drempel btw-vrijstelling moet een bedrag zijn'),
   drempel_winst_jaar: w => (Number.isFinite(parseFloat(w.replace(',', '.'))) && parseFloat(w.replace(',', '.')) > 0 ? null : 'Drempel sociale bijdragen moet een bedrag zijn'),
   factuur_betaaltermijn: w => (/^\d+$/.test(w) && Number(w) <= 120 ? null : 'Betaaltermijn factuur: een aantal dagen (0 tot 120)'),
+  gsm_melding_dienst: w => (/^(notify\.)?[a-z0-9_]+$/.test(w) ? null : 'Notify-dienst: bv. mobile_app_pixel_8 (kleine letters, cijfers en _)'),
+  gsm_melding_klaar: w => (['0', '1'].includes(w) ? null : 'Melding bij klaar: 0 of 1'),
   offerte_geldig_dagen: w => (/^\d+$/.test(w) && Number(w) > 0 ? null : 'Offerte geldig: een aantal dagen'),
 };
 
@@ -58,6 +63,11 @@ r.put('/', (req, res) => {
 
 // Status van de koppelingen, zonder ooit een geheim terug te geven: enkel
 // of het ingesteld is (via de add-on-configuratie / omgevingsvariabelen).
+// 25-10: testmelding naar de gsm
+r.post('/gsm-test', async (req, res) => {
+  try { await testMelding(getDb()); res.json({ ok: true }); }
+  catch (e) { res.status(e instanceof DomeinFout ? 400 : 500).json({ error: e.message }); }
+});
 r.get('/integraties', (req, res) => {
   res.json({
     home_assistant: haIngesteld(),   // adres + token (add-on of HA_URL/HA_TOKEN)

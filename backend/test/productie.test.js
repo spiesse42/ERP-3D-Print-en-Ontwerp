@@ -97,6 +97,36 @@ test('H4. valse annulatie herstelt zichzelf; echte annulatie niet', async () => 
   assert.equal(runs().at(-1).uitkomst, 'klaar');
 });
 
+test('H4b. meldingen op de gsm: pauze en mislukt (dringend), klaar enkel als aangezet; testmelding', async () => {
+  const wacht = () => new Promise(r => setImmediate(r));
+  const meldingen = () => diensten.filter(d => d.pad === 'services/notify/mobile_app_test').map(d => d.body);
+  assert.match((await vraag('POST', '/instellingen/gsm-test')).data.error, /notify-dienst/);
+  assert.equal((await vraag('PUT', '/instellingen', { gsm_melding_dienst: 'notify.Fout!' })).status, 400);
+  assert.equal((await vraag('PUT', '/instellingen', { gsm_melding_dienst: 'notify.mobile_app_test', gsm_melding_klaar: '0' })).status, 200);
+  assert.equal((await vraag('POST', '/instellingen/gsm-test')).status, 200);
+  assert.match(meldingen().at(-1).message, /Testmelding/);
+  diensten.length = 0;
+  zet({ [`${A1}printstatus`]: 'running', [`${A1}taaknaam`]: 'draak.3mf' }); await tik(); await tik(); await wacht();
+  assert.equal(meldingen().length, 0, 'gewoon printen: geen melding');
+  zet({ [`${A1}printstatus`]: 'pause' }); await tik(); await wacht();
+  assert.equal(meldingen().length, 1);
+  assert.match(meldingen()[0].title, /gepauzeerd/); assert.match(meldingen()[0].message, /draak\.3mf/); assert.equal(meldingen()[0].data.priority, 'high');
+  await tik(); await wacht();
+  assert.equal(meldingen().length, 1, 'pauze maar één keer gemeld');
+  zet({ [`${A1}printstatus`]: 'failed' }); await tik(); await tik(); await wacht();
+  assert.equal(runs().at(-1).uitkomst, 'mislukt');
+  assert.equal(meldingen().length, 2); assert.match(meldingen()[1].title, /mislukt/);
+  zet({ [`${A1}printstatus`]: 'running', [`${A1}taaknaam`]: 'egel.3mf' }); await tik();
+  zet({ [`${A1}printstatus`]: 'finish' }); await tik(); await tik(); await wacht();
+  assert.equal(meldingen().length, 2, 'klaar: standaard geen melding');
+  assert.equal((await vraag('PUT', '/instellingen', { gsm_melding_klaar: '1' })).status, 200);
+  zet({ [`${A1}printstatus`]: 'running', [`${A1}taaknaam`]: 'uil.3mf' }); await tik();
+  zet({ [`${A1}printstatus`]: 'finish' }); await tik(); await tik(); await wacht();
+  assert.equal(meldingen().length, 3); assert.match(meldingen()[2].title, /klaar/);
+  assert.equal((await vraag('PUT', '/instellingen', { gsm_melding_dienst: '', gsm_melding_klaar: '0' })).status, 200);
+  zet({ [`${A1}printstatus`]: 'idle' }); await tik(); await tik();
+});
+
 test('H5. Kobra (Anycubic S1 MQTT Bridge): printer_state is leidend', () => {
   const p = { koppeling: 'anycubic_ha', ha_prefix: 'sensor.kobra_' };
   const s = o => new Map(Object.entries(o).map(([k, v]) => [`sensor.kobra_${k}`, { state: v }]));

@@ -279,6 +279,47 @@ function Bedrijf() {
 }
 
 /* ── Integraties ──────────────────────────────────────────────────────── */
+// 25-10: meldingen van de printers op de gsm (via de Home Assistant-app)
+function GsmMeldingen() {
+  const { data, herlaad } = useData('/instellingen');
+  const { melding } = useOmgeving();
+  const waarde = k => (data || []).find(x => x.sleutel === k)?.waarde ?? '';
+  const [f, setF] = useState(null);
+  useEffect(() => { if (data && !f) setF({ dienst: waarde('gsm_melding_dienst'), klaar: waarde('gsm_melding_klaar') === '1' }); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [bezig, setBezig] = useState(false);
+  if (!f) return null;
+  async function bewaar() {
+    setBezig(true);
+    try { await api.put('/instellingen', { gsm_melding_dienst: f.dienst.trim(), gsm_melding_klaar: f.klaar ? '1' : '0' }); await herlaad(); melding('Bewaard.'); }
+    catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
+  async function test() {
+    setBezig(true);
+    try { await api.post('/instellingen/gsm-test'); melding('Testmelding verstuurd: kijk op je gsm.'); }
+    catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
+  const gewijzigd = f.dienst.trim() !== waarde('gsm_melding_dienst') || f.klaar !== (waarde('gsm_melding_klaar') === '1');
+  return (
+    <div className="panel" style={{ marginTop: 12 }}>
+      <h3>Meldingen op je gsm</h3>
+      <div className="pbody">
+        <p className="sub" style={{ marginTop: 0 }}>Via de Home Assistant-app op je gsm. Je krijgt een melding als een print <b>pauzeert</b> (Bambu pauzeert zelf bij een fout of als het filament op is) of <b>mislukt</b>. Vind de naam van je gsm in Home Assistant: Ontwikkelhulpmiddelen → Acties → typ <span className="mono">notify.mobile_app</span>.</p>
+        <div className="fgrid">
+          <div><label htmlFor="gsm-dienst">Notify-dienst van je gsm</label>
+            <input id="gsm-dienst" className="inp mono" placeholder="bv. mobile_app_pixel_8" value={f.dienst} onChange={e => setF(x => ({ ...x, dienst: e.target.value }))} /></div>
+          <div style={{ alignSelf: 'end' }}><label className="vinkje"><input type="checkbox" checked={f.klaar} onChange={e => setF(x => ({ ...x, klaar: e.target.checked }))} /> Ook een melding als een print klaar is</label></div>
+        </div>
+        <div className="tabacties" style={{ marginTop: 10 }}>
+          <button type="button" className="btn primary" disabled={bezig || !gewijzigd} onClick={bewaar}>Bewaren</button>
+          <button type="button" className="btn" disabled={bezig || gewijzigd || !f.dienst.trim()} title={gewijzigd ? 'Eerst bewaren' : undefined} onClick={test}>Testmelding sturen</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Integraties() {
   const { data, fout } = useData('/instellingen/integraties');
   if (fout) return <Fout tekst={fout} />;
@@ -298,6 +339,7 @@ function Integraties() {
           </tbody>
         </table>
       </div>
+      <GsmMeldingen />
     </div>
   );
 }
