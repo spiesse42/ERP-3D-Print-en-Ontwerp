@@ -167,3 +167,25 @@ test('PV-pers. bijprinten met personalisatie: naam en lettertype in de titel, de
   const o = getDb().prepare('SELECT naam FROM printopdrachten WHERE dossier_regel_id = ?').get(d.regels[0].id);
   assert.match(o.naam, /Lotte/);
 });
+
+test('V-run. nieuw product uit een run: artikel + printprofiel per stuk + dossier Voorraad, run gekoppeld, bevestigen → voorraad', async () => {
+  const db = getDb();
+  const pg = db.prepare('SELECT id FROM filament_types LIMIT 1').get().id;
+  const r = ok(await vraag('POST', '/productie/runs', { printer_id: mini, gestart_op: iso(104), geeindigd_op: iso(102), uitkomst: 'klaar', kwh: 0.2, bestand: 'Draak_PLA_2h.gcode' }), 201);
+  const p = ok(await vraag('POST', `/productie/runs/${r.id}/nieuw-product`, { naam: 'Draak', aantal: 4, tijd_min: 120, verkoopprijs: '6,5', materialen: [{ filament_type_id: pg, gram: '80' }] }), 201);
+  const a = db.prepare('SELECT * FROM artikelen WHERE id = ?').get(p.artikel_id);
+  assert.deepEqual([a.naam, a.zelf_geprint, a.wordt_verkocht, a.verkoopprijs], ['Draak', 1, 1, 6.5]);
+  const prof = JSON.parse(a.printprofiel);
+  assert.deepEqual([prof.printer_id, prof.tijd_min, prof.per_plaat, prof.materialen[0].gram], [mini, 30, 4, 20], 'per stuk: 120 min en 80 g ÷ 4');
+  const o = db.prepare('SELECT * FROM printopdrachten WHERE id = ?').get(p.opdracht_id);
+  assert.equal(o.aantal, 4);
+  assert.equal(db.prepare('SELECT printopdracht_id FROM printruns WHERE id = ?').get(r.id).printopdracht_id, p.opdracht_id, 'run gekoppeld');
+  assert.equal(db.prepare('SELECT d.soort FROM dossiers d JOIN dossier_regels dr ON dr.dossier_id = d.id WHERE dr.id = ?').get(o.dossier_regel_id).soort, 'eigen');
+  ok(await vraag('POST', `/productie/opdrachten/${p.opdracht_id}/bevestig`, { aantal_goed: 4 }));
+  assert.equal(voorraad(p.artikel_id), 4);
+  // zelfde naam nog eens → fout, niets aangemaakt
+  const r2 = ok(await vraag('POST', '/productie/runs', { printer_id: mini, gestart_op: iso(101.5), geeindigd_op: iso(101), uitkomst: 'klaar', kwh: 0.1 }), 201);
+  const n = db.prepare('SELECT COUNT(*) n FROM artikelen').get().n;
+  assert.match((await vraag('POST', `/productie/runs/${r2.id}/nieuw-product`, { naam: 'draak', aantal: 1 })).data.error, /bestaat al/);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM artikelen').get().n, n);
+});

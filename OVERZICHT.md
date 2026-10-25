@@ -24,6 +24,11 @@ Bijgehouden tijdens de ontwikkeling. Wat hier staat is (nog) niet gebouwd.
   (slicerbestand, filament van de kleur als het gekend is, webshopprijs als eindbedrag).
   Zonder profiel of artikel: regel + waarschuwing. "Verkoop maken" neemt het dossier als één regel.
 
+## Gebouwd: nieuw product uit een run (25-10-2026)
+
+- Run koppelen → "Nieuw product": artikel + printprofiel (tijd en filament van de plaat ÷ stuks)
+  + dossier Voorraad met printopdracht; de run hangt eraan, bevestigen = stuks in voorraad.
+
 ## Ideeën / later
 
 - ~~Onderdelen bij een klantdossier dat een product print~~ — gebouwd 24-10 (prijs + levering).
