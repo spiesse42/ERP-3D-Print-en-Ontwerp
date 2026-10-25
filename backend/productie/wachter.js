@@ -13,6 +13,7 @@
 //   run loopt verder)
 // - wattmeting bij elke tik; kWh = verschil van de kWh-meter, anders de
 //   trapeziumregel over de wattmetingen (gaten > 120 s tellen niet mee)
+import { meldingVoor, stuurMelding } from './meldingen.js';
 import { getDb } from '../db/index.js';
 import { haStaten, haIngesteld, meterOp, haAfbeelding, haCameraBeeld } from '../integraties/homeassistant.js';
 import { bewaarRunFoto } from './runfoto.js';
@@ -112,6 +113,7 @@ function verwerk(db, printer, lezing) {
   const actief = lezing.status === 'bezig' || lezing.status === 'pauze';
   const einde = ['klaar', 'vrij', 'mislukt', 'geannuleerd'].includes(lezing.status);
   let runId = run?.id ?? null;
+  let gesloten = null;   // 25-10: uitkomst als de run nu afgesloten werd (meldingen)
 
   if (!actief && lezing.status !== 'offline' && lezing.status !== 'onbekend') laatstVrij.set(printer.id, nu());
   if (actief) {
@@ -150,12 +152,14 @@ function verwerk(db, printer, lezing) {
       sluitRun(db, run, uitkomst, lezing.kwh_meter);
       eindTeller.delete(printer.id);
       runId = null;
+      gesloten = uitkomst;
     }
   }
   // wattmeting bij een lopende run (ook een manueel gestarte)
   if (runId && lezing.watt != null && lezing.watt >= 0) {
     db.prepare('INSERT INTO wattmetingen (run_id, tijdstip, watt) VALUES (?,?,?)').run(runId, nu(), lezing.watt);
   }
+  return gesloten;
 }
 
 export async function tik() {
@@ -181,7 +185,11 @@ export async function tik() {
         const run = openRun(db, p.id);
         if (run && lezing.watt != null) db.prepare('INSERT INTO wattmetingen (run_id, tijdstip, watt) VALUES (?,?,?)').run(run.id, nu(), lezing.watt);
       } else {
-        db.transaction(() => verwerk(db, p, lezing))();
+        const vorig = cache.get(p.id)?.lezing?.status;
+        const gesloten = db.transaction(() => verwerk(db, p, lezing))();
+        // 25-10: melding op de gsm (pauze, mislukt, eventueel klaar)
+        const m = meldingVoor(db, p, vorig, lezing, gesloten);
+        if (m) stuurMelding(db, m).catch(e => console.error('[printerwachter] melding', e.message));
       }
       cache.set(p.id, { lezing, bijgewerkt_op: nu(), fout: null });
       await runFoto(db, p, staten);
