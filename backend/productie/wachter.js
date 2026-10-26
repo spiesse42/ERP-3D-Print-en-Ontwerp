@@ -17,7 +17,7 @@ import { meldingVoor, stuurMelding } from './meldingen.js';
 import { getDb } from '../db/index.js';
 import { haStaten, haIngesteld, meterOp, haAfbeelding, haCameraBeeld } from '../integraties/homeassistant.js';
 import { bewaarRunFoto } from './runfoto.js';
-import { leesPrinter } from './adapters.js';
+import { leesPrinter, werkendeEntiteit } from './adapters.js';
 
 export const INTERVAL_MS = () => Number(process.env.PRINTERWACHTER_MS) || 15000;
 const MAX_GAT_S = 120;
@@ -229,7 +229,7 @@ async function runFoto(db, p, staten) {
     .get(p.id, new Date(Date.now() - 15 * 60000).toISOString());
   if (klaar && !fotoGeprobeerd.has(`c${klaar.id}`)) {
     fotoGeprobeerd.add(`c${klaar.id}`);
-    try { bewaarRunFoto(db, klaar.id, await haCameraBeeld(p.camera_entity)); }
+    try { bewaarRunFoto(db, klaar.id, await haCameraBeeld(werkendeEntiteit(p.camera_entity, staten))); }
     catch (e) { console.error('[printerwachter] camerabeeld', e.message); }
   }
 }

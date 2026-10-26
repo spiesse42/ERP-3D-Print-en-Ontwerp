@@ -10,7 +10,7 @@ import fs from 'fs';
 import { getDb } from '../db/index.js';
 import { DomeinFout } from '../domein/hulp.js';
 import { haStaten, haDienst, haCameraBeeld, haIngesteld, HaFout, meterOp } from '../integraties/homeassistant.js';
-import { leesPrinter, entiteitenVan, KOPPELINGEN } from '../productie/adapters.js';
+import { leesPrinter, werkendeEntiteitenVan, werkendeEntiteit, KOPPELINGEN } from '../productie/adapters.js';
 import { liveCache, openRun, kwhVanRun, kwhUitMetingen, startRun, sluitRun, tik, INTERVAL_MS, vulAan } from '../productie/wachter.js';
 import { OPDRACHT_STATUS, INTERN, leesOpdrachten, leesOpdracht, maakOpdracht, wijzigOpdracht, verschuif, bevestig, heropen, annuleer, verwijder, verwijderMetRegel,
   voorstelVoorRun, volgendeOpdracht, koppelRun, ontkoppelRun, synchroniseer, herbereken, leesMaterialen, zetMaterialen,
@@ -355,7 +355,8 @@ r.post('/printers/:id/:actie(pauze|hervat|annuleer)', metFouten(async (req, res)
   const p = printer(db, req.params.id);
   const entity = p[KNOP[req.params.actie]];
   if (!entity) throw new DomeinFout(`Geen ${req.params.actie}knop ingesteld voor ${p.naam} (Instellingen → Printers).`);
-  await haDienst(entity.split('.')[0], 'press', { entity_id: entity });
+  const id = werkendeEntiteit(entity, await haStaten().catch(() => null));
+  await haDienst(id.split('.')[0], 'press', { entity_id: id });
   res.json({ ok: true });
 }));
 
@@ -386,7 +387,7 @@ r.post('/printers/:id/stop', metFouten(async (req, res) => {
 r.get('/printers/:id/camera', metFouten(async (req, res) => {
   const p = printer(getDb(), req.params.id);
   if (!p.camera_entity) throw new DomeinFout('Geen camera ingesteld');
-  const b = await haCameraBeeld(p.camera_entity);
+  const b = await haCameraBeeld(werkendeEntiteit(p.camera_entity, await haStaten().catch(() => null)));
   res.set({ 'Content-Type': b.type, 'Cache-Control': 'no-store' }).send(b.data);
 }));
 
@@ -396,8 +397,9 @@ r.post('/koppeling-testen', metFouten(async (req, res) => {
   if (!haIngesteld()) throw new DomeinFout('Home Assistant is niet ingesteld (HA_URL en HA_TOKEN, of de add-on).');
   const p = { koppeling: req.body?.koppeling || 'manueel', ha_prefix: req.body?.ha_prefix, watt_entity: req.body?.watt_entity, kwh_entity: req.body?.kwh_entity };
   const staten = await haStaten();
-  const e = entiteitenVan(p);
-  const extra = ['camera_entity', 'pauze_entity', 'hervat_entity', 'annuleer_entity'].map(k => req.body?.[k]).filter(Boolean);
+  // 26-10: met de werkende versie ("_2"…) als de ingestelde niet beschikbaar is
+  const e = werkendeEntiteitenVan(p, staten);
+  const extra = ['camera_entity', 'pauze_entity', 'hervat_entity', 'annuleer_entity'].map(k => req.body?.[k]).filter(Boolean).map(id => werkendeEntiteit(id, staten));
   const lezing = leesPrinter(p, staten);
   res.json({
     gevonden: [...Object.values(e), ...extra].filter(id => staten.has(id)),
