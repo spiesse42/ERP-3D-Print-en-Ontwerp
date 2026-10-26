@@ -77,9 +77,30 @@ function normaalStatus(ruw) {
   return 'onbekend';
 }
 
+// 26-10: werd een integratie opnieuw toegevoegd (bv. na een nieuw IP-adres),
+// dan geeft Home Assistant de nieuwe entiteiten "_2", "_3"… achteraan en
+// blijven de oude "niet beschikbaar". Is de ingestelde entiteit weg of niet
+// beschikbaar, dan nemen we de werkende versie met het hoogste volgnummer.
+export function werkendeEntiteit(id, staten) {
+  if (!id || !staten) return id;
+  const s = staten.get(id);
+  if (s && s.state !== 'unavailable') return id;
+  const re = new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_(\\d+)$`);
+  let beste = null, nr = -1;
+  for (const [k, v] of staten) {
+    const m = k.match(re);
+    if (m && v?.state !== 'unavailable' && Number(m[1]) > nr) { beste = k; nr = Number(m[1]); }
+  }
+  return beste || id;
+}
+// Alle entiteiten van een printer, met de werkende versie (zie hierboven).
+export function werkendeEntiteitenVan(p, staten) {
+  return Object.fromEntries(Object.entries(entiteitenVan(p)).map(([k, id]) => [k, werkendeEntiteit(id, staten)]));
+}
+
 // staten: Map entity_id → { state, attributes }
 export function leesPrinter(p, staten) {
-  const e = entiteitenVan(p);
+  const e = werkendeEntiteitenVan(p, staten);
   const st = k => (e[k] ? staten.get(e[k]) : undefined);
   const w = k => st(k)?.state;
   const uit = { status: 'onbekend', ruwe_status: null, voortgang: null, bestand: null, resterend_min: null, verstreken_min: null,
