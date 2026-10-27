@@ -40,5 +40,6 @@ import * as m037 from './037_koppeling_moonraker.js';
 import * as m038 from './038_plaat_van.js';
 import * as m039 from './039_plaat_groep.js';
 import * as m040 from './040_webshop_dossier.js';
+import * as m041 from './041_reviews.js';
 
-export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021, m022, m023, m024, m025, m026, m027, m028, m029, m030, m031, m032, m033, m034, m035, m036, m037, m038, m039, m040];
+export const MIGRATIES = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019, m020, m021, m022, m023, m024, m025, m026, m027, m028, m029, m030, m031, m032, m033, m034, m035, m036, m037, m038, m039, m040, m041];

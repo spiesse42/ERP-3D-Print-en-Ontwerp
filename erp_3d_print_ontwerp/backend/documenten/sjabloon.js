@@ -26,7 +26,8 @@ export const VRIJSTELLING = 'Vrijstelling van belasting op basis van artikel 56b
 export const VRIJSTELLING_FACTUUR = 'Bijzondere vrijstellingsregeling kleine ondernemingen - btw niet van toepassing';
 export const LANDEN = { BE: 'België', NL: 'Nederland', FR: 'Frankrijk', DE: 'Duitsland', LU: 'Luxemburg', ES: 'Spanje', IT: 'Italië', AT: 'Oostenrijk',
   PT: 'Portugal', IE: 'Ierland', DK: 'Denemarken', SE: 'Zweden', FI: 'Finland', PL: 'Polen', CZ: 'Tsjechië', GB: 'Verenigd Koninkrijk', CH: 'Zwitserland', NO: 'Noorwegen', US: 'Verenigde Staten' };
-export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerking, concept = false, toonUren = false, btwKolom = false, factuur = null }) {
+// review (27-10): { google, facebook, google_kort, facebook_kort, qr } → blok "laat een review achter" (pakbon, bonnetje)
+export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerking, concept = false, toonUren = false, btwKolom = false, factuur = null, review = null }) {
   const { bedrijf = {}, klant, dossier, regels, totaal, vast } = inhoud;
   const k = klant;
   const buitenland = k?.land && k.land !== 'BE' ? (LANDEN[k.land] || k.land) : null;
@@ -75,6 +76,9 @@ export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerkin
   .betaling{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-top:16px;padding:14px 18px;border:1px solid #e5e7eb;border-radius:8px;line-height:1.6}
   .betaling h3{margin:0 0 4px;font-size:.68rem;text-transform:uppercase;letter-spacing:1.5px;color:#16345a}
   .qr{text-align:center}.qr svg{width:120px;height:120px;display:block}
+  .review{display:flex;align-items:center;gap:16px;margin-top:22px;padding:12px 16px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;page-break-inside:avoid}
+  .review svg{width:84px;height:84px;display:block;flex:none}
+  .review strong{color:#16345a}
   .concept{position:fixed;top:40%;left:0;right:0;text-align:center;font-size:110px;font-weight:900;color:rgba(200,40,40,.12);transform:rotate(-24deg)}
 </style></head>
 <body>
@@ -119,6 +123,7 @@ ${factuur ? `<div class="btw-regel">${esc(factuur.tekst || VRIJSTELLING_FACTUUR)
   ${factuur.qr ? `<div class="qr">${factuur.qr}<div class="sub">Betaal met je bank-app</div></div>` : ''}
 </div>` : ''}
 ${opmerking ? `<div class="opmerking">${nl(opmerking)}</div>` : ''}
+${review ? `<div class="review">${review.qr}<div><strong>Tevreden over je bestelling?</strong> Laat een review achter${review.google ? ' op Google' : ''}: het helpt ons enorm. Scan de code${review.google_kort ? ` of ga naar ${esc(review.google_kort)}` : review.facebook_kort ? ` of ga naar ${esc(review.facebook_kort)}` : ''}.${review.google && review.facebook_kort ? `<div class="sub">Of op Facebook: ${esc(review.facebook_kort)}</div>` : ''} <div class="sub">Bedankt!</div></div></div>` : ''}
 <div class="footer">
   ${factuur ? esc(factuur.tekst || VRIJSTELLING_FACTUUR) : btwKolom ? esc(VRIJSTELLING) : 'Vrijgesteld van btw — art. 56bis Btw-wetboek'}
   ${bedrijf.iban && !factuur ? `<br>IBAN: ${esc(bedrijf.iban)}` : ''}
@@ -131,8 +136,8 @@ export const dmjDatum = dmj;
 
 // Pakbon: wat er nu geleverd wordt, ZONDER prijzen (beslist 25-09), met
 // eerder geleverd en wat nog volgt.
-export function pakbonHtml({ nummer, datum, inhoud, regels, opmerking }) {
-  const basis = documentHtml({ soort: 'PAKBON', nummer, datum, inhoud: { ...inhoud, regels: [], totaal: null, vast: 0 }, opmerking });
+export function pakbonHtml({ nummer, datum, inhoud, regels, opmerking, review = null }) {
+  const basis = documentHtml({ soort: 'PAKBON', nummer, datum, inhoud: { ...inhoud, regels: [], totaal: null, vast: 0 }, opmerking, review });
   const rijen = regels.map(r => `
     <tr>
       <td>${esc(r.omschrijving)}</td>

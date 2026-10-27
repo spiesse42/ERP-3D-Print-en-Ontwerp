@@ -6,6 +6,9 @@ import { vindBrowser } from '../documenten/pdf.js';
 import { haIngesteld } from '../integraties/homeassistant.js';
 import { testMelding } from '../productie/meldingen.js';
 import { DomeinFout } from '../domein/hulp.js';
+import { reviewInfo } from '../documenten/review.js';
+import { kaartjeHtml } from '../documenten/reviewkaartje.js';
+import { htmlNaarPdf } from '../documenten/pdf.js';
 
 const r = Router();
 
@@ -20,6 +23,7 @@ const INSTELLING_SLEUTELS = new Set([
   'offerte_geldig_dagen',   // stap 5b: standaard geldigheid van een offerte
   'bedrijf_startdatum', 'drempel_omzet_jaar', 'drempel_winst_jaar',   // stap 7: drempels bijberoep
   'gsm_melding_dienst', 'gsm_melding_klaar',   // 25-10: meldingen van de printers op de gsm
+  'review_google', 'review_facebook',   // 27-10: reviewlink + QR op pakbon en bonnetje
 ]);
 // Eenvoudige controle per sleutel (stap 7); leeg mag altijd.
 const CONTROLE = {
@@ -28,6 +32,8 @@ const CONTROLE = {
   drempel_winst_jaar: w => (Number.isFinite(parseFloat(w.replace(',', '.'))) && parseFloat(w.replace(',', '.')) > 0 ? null : 'Drempel sociale bijdragen moet een bedrag zijn'),
   factuur_betaaltermijn: w => (/^\d+$/.test(w) && Number(w) <= 120 ? null : 'Betaaltermijn factuur: een aantal dagen (0 tot 120)'),
   gsm_melding_dienst: w => (/^(notify\.)?[a-z0-9_]+$/.test(w) ? null : 'Notify-dienst: bv. mobile_app_pixel_8 (kleine letters, cijfers en _)'),
+  review_google: w => (/^https:\/\/\S+$/.test(w) ? null : 'Reviewlink Google: een volledige link (https://…)'),
+  review_facebook: w => (/^https:\/\/\S+$/.test(w) ? null : 'Reviewlink Facebook: een volledige link (https://…)'),
   gsm_melding_klaar: w => (['0', '1'].includes(w) ? null : 'Melding bij klaar: 0 of 1'),
   offerte_geldig_dagen: w => (/^\d+$/.test(w) && Number(w) > 0 ? null : 'Offerte geldig: een aantal dagen'),
 };
@@ -63,6 +69,16 @@ r.put('/', (req, res) => {
 
 // Status van de koppelingen, zonder ooit een geheim terug te geven: enkel
 // of het ingesteld is (via de add-on-configuratie / omgevingsvariabelen).
+// 27-10: reviewkaartjes om in de pakjes te steken (PDF, A4 om te knippen)
+r.get('/reviewkaartje.pdf', async (req, res) => {
+  try {
+    const review = reviewInfo(getDb());
+    if (!review) throw new DomeinFout('Vul eerst een reviewlink in (Instellingen → Bedrijfsgegevens).');
+    const formaat = req.query.formaat === 'visite' ? 'visite' : 'a6';
+    const pdf = await htmlNaarPdf(kaartjeHtml(review, { formaat }));
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="Reviewkaartjes ${formaat === 'visite' ? 'visitekaartje' : 'A6'}.pdf"` }).send(pdf);
+  } catch (e) { res.status(e instanceof DomeinFout ? 400 : 500).json({ error: e.message }); }
+});
 // 25-10: testmelding naar de gsm
 r.post('/gsm-test', async (req, res) => {
   try { await testMelding(getDb()); res.json({ ok: true }); }
