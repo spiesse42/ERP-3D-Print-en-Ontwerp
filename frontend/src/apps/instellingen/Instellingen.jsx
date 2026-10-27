@@ -230,6 +230,9 @@ const BEDRIJF_VELDEN = [
   ['bedrijf_telefoon', 'Telefoon (op de factuur)', '+32 …'],
   ['factuur_betaaltermijn', 'Betaaltermijn factuur (dagen)', '7'],
   ['offerte_geldig_dagen', 'Offerte geldig (dagen)', '30'],   // stap 5b
+  // 27-10: reviewlink + QR onderaan de pakbon en het bonnetje (leeg = geen)
+  ['review_google', 'Reviewlink Google (QR op pakbon en bonnetje)', 'https://g.page/r/…/review'],
+  ['review_facebook', 'Reviewlink Facebook', 'https://www.facebook.com/…'],
   // stap 7: drempels bijberoep (Financiën → Overzicht); leeg = standaard
   ['bedrijf_startdatum', 'Startdatum onderneming (JJJJ-MM-DD)', 'bv. 2025-07-01'],
   ['drempel_omzet_jaar', 'Drempel btw-vrijstelling (omzet per jaar, €)', '25000'],
@@ -273,6 +276,13 @@ function Bedrijf() {
               <input id={`b-${s}`} className="inp" value={w[s] ?? ''} placeholder={ph} onChange={e => setW(x => ({ ...x, [s]: e.target.value }))} /></div>
           ))}
         </div>
+        {/* 27-10: reviewkaartjes om in de pakjes te steken (QR naar de Google-review) */}
+        {(origineel.review_google || origineel.review_facebook) && (
+          <p className="sub" style={{ marginBottom: 0 }}>Reviewkaartjes afdrukken (A4, om te knippen):{' '}
+            <a href={`${BASE}/instellingen/reviewkaartje.pdf?formaat=a6`} target="_blank" rel="noopener noreferrer">4 kaartjes A6</a> ·{' '}
+            <a href={`${BASE}/instellingen/reviewkaartje.pdf?formaat=visite`} target="_blank" rel="noopener noreferrer">10 visitekaartjes</a>
+            {vuil && ' (eerst opslaan)'}</p>
+        )}
       </div>
     </div>
   );

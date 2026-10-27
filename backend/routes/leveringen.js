@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 // Leveringen + pakbon (stap 5c) — gemount op /api
 // ═══════════════════════════════════════════════════════════════════════
+import { reviewInfo } from '../documenten/review.js';
 import { Router } from 'express';
 import { getDb } from '../db/index.js';
 import { DomeinFout, getBedrijfsgegevens } from '../domein/hulp.js';
@@ -73,7 +74,7 @@ function pakbon(db, l, d) {
     const b = besteld.get(lr.dossier_regel_id) ?? lr.aantal;
     return { omschrijving: lr.omschrijving, besteld: b, nu: lr.aantal, eerder: e, rest: Math.max(0, Math.round((b - e - lr.aantal) * 1000) / 1000) };
   });
-  return pakbonHtml({ nummer: l.nummer, datum: l.datum, opmerking: l.opmerking, regels,
+  return pakbonHtml({ nummer: l.nummer, datum: l.datum, opmerking: l.opmerking, regels, review: reviewInfo(db),
     inhoud: { bedrijf: getBedrijfsgegevens(db), klant: d.klant_gegevens, dossier: { nummer: d.nummer, titel: d.titel } } });
 }
 r.get('/leveringen/:id/pdf', metFouten(async (req, res) => {
