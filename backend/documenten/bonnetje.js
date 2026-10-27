@@ -12,6 +12,7 @@ import { documentHtml, dmjDatum } from './sjabloon.js';
 import { htmlNaarPdf } from './pdf.js';
 import { verstuurMail, geldigAdres } from './mail.js';
 import { DomeinFout } from '../domein/hulp.js';
+import { reviewInfo } from './review.js';
 
 export const accountableAdres = () => String(process.env.ACCOUNTABLE_INKOMSTEN || 'inkomsten@accountable.eu').trim();
 export const afzender = () => String(process.env.SMTP_FROM || process.env.SMTP_USER || '').trim() || null;
@@ -22,7 +23,7 @@ const euro = n => `€ ${Number(n).toLocaleString('nl-BE', { minimumFractionDigi
 
 export function bonnetjeHtml({ inhoud, nummer, datum, concept = false }) {
   return documentHtml({ soort: 'BONNETJE', nummer: kaalNummer(nummer), datum, concept, inhoud, btwKolom: true,
-    info: [['Betaald op', dmjDatum(datum)]] });
+    info: [['Betaald op', dmjDatum(datum)]], review: reviewInfo() });
 }
 
 // Mailt het bonnetje. Gooit een fout als er niets verstuurd kon worden; de
