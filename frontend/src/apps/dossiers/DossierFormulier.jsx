@@ -20,6 +20,8 @@ import LeveringenTab from './LeveringenTab.jsx';
 import ProductieTab from './ProductieTab.jsx';
 import VolgendeStap from './VolgendeStap.jsx';
 import SlicerDialoog from './SlicerDialoog.jsx';
+import LettersDialoog from './LettersDialoog.jsx';
+import LettersTab from './LettersTab.jsx';
 import SamenvoegDialoog from './SamenvoegDialoog.jsx';
 import DossierFotos, { bewaarFotos, bewaarBestand } from './DossierFotos.jsx';
 
@@ -67,7 +69,7 @@ export default function DossierFormulier() {
     const k = setInterval(() => { if (document.visibilityState === 'visible') herlaad(); }, 15000);
     return () => clearInterval(k);
   }, [volgt, herlaad]);
-  const { uitkomst: live } = useBerekening(form.regels, 'schatting', form.kop.filament_inkoop, form.kop.soort === 'klant');
+  const { uitkomst: live } = useBerekening(form.regels, 'schatting', form.kop.filament_inkoop, form.kop.soort === 'klant', form.kop.soort === 'klant' ? form.kop.klant_id : null);
   // Tot de live-berekening binnen is: de berekening die de backend meestuurde.
   const uitkomst = live || (!nieuw && d && !vuil ? d.berekening : null);
   const tarieven = useMemo(() => Object.fromEntries((tarievenLijst || []).map(t => [t.sleutel, t.waarde])), [tarievenLijst]);
@@ -286,7 +288,7 @@ export default function DossierFormulier() {
           </div>
 
           {!nieuw && fase !== 'samengevoegd' && <DossierFotos key={versie} id={id} onGewijzigd={() => setVersie(v => v + 1)} />}
-          <Tabs tabs={[['regels', `Regels (${form.regels.length})`], ...(nieuw ? [] : [...(d.soort === 'klant' ? [['offertes', `Offertes (${d.offertes.length})`]] : []), ...(d.productie?.regels.length ? [['productie', <>Productie ({d.productie.aantal_opdrachten}){d.productie.te_koppelen_runs?.length > 0 && <span className="tab-stip" title="Run(s) te koppelen" aria-label="runs te koppelen" />}</>]] : []), ['werkbon', 'Werkbon'], ...(d.soort === 'klant' ? [['leveringen', `Leveringen (${d.leveringen.length})`]] : []), ['bijlagen', 'Bijlagen']]), ['notities', 'Notities']]} actief={tab} onKies={setTab} />
+          <Tabs tabs={[['regels', `Regels (${form.regels.length})`], ...(nieuw ? [] : [...(d.soort === 'klant' ? [['offertes', `Offertes (${d.offertes.length})`]] : []), ...(d.productie?.regels.length ? [['productie', <>Productie ({d.productie.aantal_opdrachten}){d.productie.te_koppelen_runs?.length > 0 && <span className="tab-stip" title="Run(s) te koppelen" aria-label="runs te koppelen" />}</>]] : []), ['werkbon', 'Werkbon'], ...(d.soort === 'klant' ? [['leveringen', `Leveringen (${d.leveringen.length})`]] : []), ...(d.letters?.length ? [['letters', 'Letters']] : []), ['bijlagen', 'Bijlagen']]), ['notities', 'Notities']]} actief={tab} onKies={setTab} />
           <div className="tabpanel">
             {tab === 'regels' && (
               <>
@@ -307,6 +309,7 @@ export default function DossierFormulier() {
                   <div className="toevoegen">
                     {TYPES.filter(([w]) => w !== 'korting' || form.kop.soort !== 'eigen').map(([w, l]) => <button key={w} type="button" className="btn" onClick={() => setForm(f => ({ ...f, regels: [...f.regels, nieuweRegel(w)] }))}><Icoon naam="plus" maat={14} /> {l}</button>)}
                     <button type="button" className="btn" title="Printregels uit een geslicet 3mf-bestand van Bambu Studio" onClick={() => { setSlicerBoven(false); setDialoog('slicer'); }}><Icoon naam="plus" maat={14} /> Uit slicerbestand</button>
+                    {!nieuw && producten?.some(a => a.letters) && <button type="button" className="btn" title="Een lijst met letters (per naam of per kleur), bv. bubble letters" onClick={() => setDialoog('letters')}><Icoon naam="plus" maat={14} /> Letters…</button>}
                     {producten?.length > 0 && <select className="inp" style={{ width: 'auto' }} aria-label="Printregel uit een product (printprofiel)" value="" onChange={e => {
                       const a = producten.find(x => String(x.id) === e.target.value);
                       if (a) setForm(f => ({ ...f, regels: [...f.regels, ...regelsUitProduct(a, f.kop.soort === 'eigen' ? artikelenZicht.filter(x => x.type === 'artikel' && x.zelf_geprint) : null)] }));
@@ -322,6 +325,7 @@ export default function DossierFormulier() {
               </>
             )}
             {tab === 'offertes' && !nieuw && <OffertesTab d={d} vuil={vuil} herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} bedrijf={bedrijfNaam} />}
+            {tab === 'letters' && !nieuw && <LettersTab d={d} />}
             {tab === 'productie' && !nieuw && <ProductieTab d={d} vuil={vuil} herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} />}
             {tab === 'werkbon' && !nieuw && <WerkbonTab d={d} vuil={vuil} herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} bedrijf={bedrijfNaam} />}
             {tab === 'leveringen' && !nieuw && <LeveringenTab d={d} vuil={vuil} herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} bedrijf={bedrijfNaam} />}
@@ -352,6 +356,9 @@ export default function DossierFormulier() {
       {dialoog === 'bonnetje' && <BonnetjeDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onBevestig={bonnetjeMaken} />}
       {dialoog === 'factuur' && <BonnetjeDialoog soort="factuur" dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onBevestig={f => bonnetjeMaken(f, 'factuur')} />}
       {dialoog === 'bonnetje-mail' && <BonnetjeMailDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onVerstuur={bonnetjeMailen} />}
+      {dialoog === 'letters' && <LettersDialoog dossierId={id} producten={(producten || []).filter(a => a.letters)} vuil={vuil}
+        filamenten={artikelenZicht.filter(a => a.type === 'filament' && !a.gearchiveerd)} onSluit={() => setDialoog(null)}
+        onKlaar={async () => { await herlaad(); setVersie(v => v + 1); setDialoog(null); setTab('letters'); }} />}
       {dialoog === 'slicer' && <SlicerDialoog printers={printers} filamenten={artikelenZicht.filter(a => a.type === 'filament')} prijsgroepen={prijsgroepen}
         onSluit={() => setDialoog(null)}
         onToevoegen={async (nieuwe, fotos, bestand) => {

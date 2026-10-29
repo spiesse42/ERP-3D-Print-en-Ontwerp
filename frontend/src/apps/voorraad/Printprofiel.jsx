@@ -15,25 +15,26 @@ const nr = v => (String(v ?? '').trim() === '' ? null : String(v).trim().replace
 // 21-10: een artikel kan uit meerdere platen bestaan → het formulier heeft
 // altijd een lijst platen; met één plaat wordt het de vlakke vorm van vroeger.
 const leegPlaat = { naam: '', printer_id: '', tijd_u: '', tijd_m: '', per_plaat: '', voorbereiding_min: '', nabewerking_min: '', slicer_plaat: null, materialen: [{ keuze: '', gram: '' }] };
-const leeg = { slicer_bijlage_id: null, platen: [leegPlaat] };
+const leeg = { letters: false, slicer_bijlage_id: null, platen: [leegPlaat] };
 const platenVan = p => (!p ? [] : Array.isArray(p.platen) && p.platen.length ? p.platen : [p]);
 function plaatNaarForm(p) {
   const t = Number(p.tijd_min) || 0, u = Math.floor(t / 60), m = Math.round((t - u * 60) * 100) / 100;
-  return { naam: p.naam || '', printer_id: p.printer_id ? String(p.printer_id) : '', tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: alsInvoer(p.per_plaat),
+  return { naam: p.naam || '', letter: p.letter || '', printer_id: p.printer_id ? String(p.printer_id) : '', tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: alsInvoer(p.per_plaat),
     voorbereiding_min: alsInvoer(p.voorbereiding_min), nabewerking_min: alsInvoer(p.nabewerking_min), slicer_plaat: p.slicer_plaat ?? null,
     materialen: p.materialen?.length ? p.materialen.map(x => ({ keuze: x.artikel_id ? `a:${x.artikel_id}` : `p:${x.filament_type_id}`, gram: alsInvoer(x.gram) })) : leegPlaat.materialen };
 }
 function naarForm(p) {
   if (!p) return leeg;
-  return { slicer_bijlage_id: p.slicer_bijlage_id ?? null, platen: platenVan(p).map(plaatNaarForm) };
+  return { letters: !!p.letters, slicer_bijlage_id: p.slicer_bijlage_id ?? null, platen: platenVan(p).map(plaatNaarForm) };
 }
 function plaatNaarBody(f) {
-  return { naam: f.naam || null, printer_id: f.printer_id || null, tijd_min: Number(nr(f.tijd_u) ?? 0) * 60 + Number(nr(f.tijd_m) ?? 0), per_plaat: nr(f.per_plaat),
+  return { naam: f.naam || null, ...(f.letter ? { letter: f.letter } : {}), printer_id: f.printer_id || null, tijd_min: Number(nr(f.tijd_u) ?? 0) * 60 + Number(nr(f.tijd_m) ?? 0), per_plaat: nr(f.per_plaat),
     voorbereiding_min: nr(f.voorbereiding_min), nabewerking_min: nr(f.nabewerking_min), slicer_plaat: f.slicer_plaat,
     materialen: f.materialen.filter(m => m.keuze).map(m => { const [s, id] = m.keuze.split(':'); return { [s === 'a' ? 'artikel_id' : 'filament_type_id']: Number(id), gram: nr(m.gram) ?? 0 }; }) };
 }
 function naarBody(f) {
   const platen = f.platen.map(plaatNaarBody);
+  if (f.letters) return { letters: true, platen, slicer_bijlage_id: f.slicer_bijlage_id };
   return platen.length === 1 ? { ...platen[0], slicer_bijlage_id: f.slicer_bijlage_id } : { platen, slicer_bijlage_id: f.slicer_bijlage_id };
 }
 
@@ -82,9 +83,16 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
     // 21-10: één of meer platen uit het bestand
     const nieuw = x.platen.map(q => {
       const u = Math.floor(q.tijd_min / 60), m = Math.round((q.tijd_min - u * 60) * 100) / 100;
-      return { ...leegPlaat, naam: q.naam || '', printer_id: q.printer_id || '', tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: q.per_plaat,
+      return { ...leegPlaat, naam: q.naam || '', letter: q.letter || '', printer_id: q.printer_id || '', tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '', per_plaat: q.per_plaat,
         materialen: q.materialen, slicer_plaat: bijlage ? q.plaat : null };
     });
+    // 29-10: elke plaat is een letter → letterprofiel
+    if (x.letters) {
+      setF(v => ({ letters: true, slicer_bijlage_id: bijlage ?? v.slicer_bijlage_id, platen: nieuw }));
+      setSlicer(false);
+      melding(`${nieuw.length} letters overgenomen. Kijk de letters en het filament na en klik op "Profiel bewaren".`);
+      return;
+    }
     setF(v => (x.platen.length > 1 ? { slicer_bijlage_id: bijlage ?? v.slicer_bijlage_id, platen: nieuw }
       : { slicer_bijlage_id: bijlage ?? v.slicer_bijlage_id, platen: v.platen.map((q, j) => (j === i ? { ...q, ...nieuw[0], naam: q.naam || nieuw[0].naam, printer_id: nieuw[0].printer_id || q.printer_id } : q)) }));
     if (x.platen.length > 1) setNr(0);
@@ -98,6 +106,7 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
   return (
     <>
       <p className="note" style={{ marginTop: 0 }}>Vul de printtijd en het gewicht van <b>één stuk</b> in (bv. uit Bambu Studio: tijd en gram van de plaat ÷ aantal stuks op de plaat). In een dossier kies je dan bij een printregel "Uit product" en vul je enkel het aantal in; Bijprinten maakt meteen één printopdracht per plaat.</p>
+      {f.letters ? <LetterTabel f={f} setF={setF} printers={printers} filamenten={filamenten} groepen={groepen} /> : <>
       <div className="chips" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
         {meer && f.platen.map((q, j) => <button key={j} type="button" className={`btn${j === i ? ' primary' : ''}`} onClick={() => setNr(j)}>Plaat {j + 1}{q.naam ? ` · ${q.naam}` : ''}</button>)}
         <button type="button" className="linkish" onClick={() => { setF(x => ({ ...x, platen: [...x.platen, { ...leegPlaat, printer_id: pl.printer_id }] })); setNr(f.platen.length); }}>+ plaat (dit artikel bestaat uit meerdere platen)</button>
@@ -132,11 +141,12 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
         ))}
         <button type="button" className="linkish" onClick={() => zetPl({ materialen: [...pl.materialen, { keuze: '', gram: '' }] })}>+ kleur (multicolor)</button>
       </div>
+      </>}
       {gewicht != null && <p className="sub">Gewicht volgens de webshop: {fmtAantal(gewicht)} g per stuk (zonder steunmateriaal en afval).</p>}
       {f.slicer_bijlage_id && <p className="sub">Slicerbestand: <a href={`${BASE}/bijlagen/bestand/${f.slicer_bijlage_id}`} title="Downloaden (openen in Bambu Studio)">{(bijlagen || []).find(x => x.id === f.slicer_bijlage_id)?.bestandsnaam || nieuwBestand || 'slicerbestand'}</a>{pl.slicer_plaat ? ` · plaat ${pl.slicer_plaat}` : ''}{vuil ? ' (wordt gekoppeld bij "Profiel bewaren")' : ''}</p>}
       {kost?.advies && <p className="sub">Adviesprijs volgens de rekenmotor: <b>{euro(kost.advies.stuk)}</b> voor 1 stuk{kost.advies.plaat_stuk != null ? <> · <b>{euro(kost.advies.plaat_stuk)}</b> per stuk bij een volle plaat ({kost.advies.per_plaat} stuks)</> : null}. Vergelijk met je verkoopprijs (webshop: aanpassen in Sanity).</p>}
       {kost?.profiel && <p className="sub">Geschatte kost per stuk: <b>{euro(kost.schatting.kost)}</b> (filament {euro(kost.schatting.filament)}, stroom {euro(kost.schatting.energie)}, machine {euro(kost.schatting.machine)}, BMCU {euro(kost.schatting.bmcu)}{kost.schatting.onderdelen ? `, onderdelen ${euro(kost.schatting.onderdelen)}` : ''}) + arbeid {euro(kost.schatting.arbeid)}{kost.schatting.onvolledig ? ` · ontbreekt: ${kost.schatting.ontbreekt.join(', ')}` : ''}{kost.gemeten ? ` · gemeten: ${euro(kost.gemeten.kost)} (${fmtAantal(kost.gemeten.stuks)} stuks)` : ''}</p>}
-      {b.per_plaat && (b.tijd_min > 0 || gram > 0) && <p className="sub">Volle plaat: {b.per_plaat} stuks · {Math.floor(b.tijd_min * b.per_plaat / 60)} u {Math.round(b.tijd_min * b.per_plaat % 60)} min · {fmtAantal(Math.round(gram * b.per_plaat * 10) / 10)} g</p>}
+      {!f.letters && b.per_plaat && (b.tijd_min > 0 || gram > 0) && <p className="sub">Volle plaat: {b.per_plaat} stuks · {Math.floor(b.tijd_min * b.per_plaat / 60)} u {Math.round(b.tijd_min * b.per_plaat % 60)} min · {fmtAantal(Math.round(gram * b.per_plaat * 10) / 10)} g</p>}
       <div className="tabacties" style={{ marginTop: 12 }}>
         <button type="button" className="btn primary" disabled={bezig || !vuil} onClick={() => bewaar(naarBody(f))}>Profiel bewaren</button>
         <button type="button" className="btn" disabled={bezig} onClick={() => setSlicer(true)}>Uit slicerbestand…</button>
@@ -144,6 +154,55 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
         {data.profiel && <button type="button" className="btn ghost" disabled={bezig} onClick={wis}>Wissen</button>}
       </div>
       {slicer && <ProfielUitSlicer naam={naam} onOvernemen={uitSlicer} onSluit={() => setSlicer(false)} />}
+    </>
+  );
+}
+
+// 29-10: letterprofiel (bv. bubble letters): elke plaat is één letter of
+// teken. Printer, voorbereiding, nabewerking en filament (voor de kost)
+// gelden voor alle letters; tijd en gram per letter komen uit het 3mf.
+function LetterTabel({ f, setF, printers, filamenten, groepen }) {
+  const p0 = f.platen[0] || leegPlaat;
+  const zetAlle = w => setF(x => ({ ...x, platen: x.platen.map(q => ({ ...q, ...w })) }));
+  const zetRij = (j, w) => setF(x => ({ ...x, platen: x.platen.map((q, k) => (k === j ? { ...q, ...w } : q)) }));
+  const min = q => Number(nr(q.tijd_u) ?? 0) * 60 + Number(nr(q.tijd_m) ?? 0);
+  const g = q => q.materialen.reduce((t, m) => t + Number(nr(m.gram) ?? 0), 0);
+  const fil = p0.materialen?.[0]?.keuze || '';
+  const n = f.platen.length || 1;
+  const dubbel = new Set(f.platen.map(q => q.letter.trim().toLocaleUpperCase('nl-BE')).filter((l, i, a) => l && a.indexOf(l) !== i));
+  return (
+    <>
+      <p className="sub" style={{ marginTop: 0 }}><b>Letterprofiel:</b> {f.platen.length} letters, gemiddeld {Math.round(f.platen.reduce((t, q) => t + min(q), 0) / n)} min en {fmtAantal(Math.round(f.platen.reduce((t, q) => t + g(q), 0) / n * 10) / 10)} g per letter. Een stuk = één letter; de kleur kies je per bestelling (dossier → "Letters toevoegen").</p>
+      <div className="fgrid">
+        <div><label htmlFor="lp-printer">Printer</label>
+          <select id="lp-printer" className="inp" value={p0.printer_id} onChange={e => zetAlle({ printer_id: e.target.value })}>
+            <option value="">— geen voorkeur —</option>
+            {(printers || []).filter(p => p.actief).map(p => <option key={p.id} value={p.id}>{p.naam}</option>)}
+          </select></div>
+        <div><label htmlFor="lp-fil">Filament (voor de kost)</label>
+          <select id="lp-fil" className="inp" value={fil} onChange={e => setF(x => ({ ...x, platen: x.platen.map(q => ({ ...q, materialen: [{ keuze: e.target.value, gram: alsInvoer(Math.round(g(q) * 100) / 100) }] })) }))}>
+            <option value="">Filament kiezen…</option>
+            <optgroup label="Enkel prijsgroep (kleur per bestelling)">{(groepen || []).map(x => <option key={`p${x.id}`} value={`p:${x.id}`}>{x.merk} {x.materiaal}</option>)}</optgroup>
+            <optgroup label="Filament (merk · type · kleur)">{(filamenten || []).map(a => <option key={`a${a.id}`} value={`a:${a.id}`}>{a.weergave}</option>)}</optgroup>
+          </select></div>
+        <div><label htmlFor="lp-voorb">Voorbereiding per plaat (min)</label><input id="lp-voorb" className="inp num" inputMode="decimal" placeholder="standaard" value={p0.voorbereiding_min} onChange={e => zetAlle({ voorbereiding_min: e.target.value })} /></div>
+        <div><label htmlFor="lp-nab">Nabewerking per letter (min)</label><input id="lp-nab" className="inp num" inputMode="decimal" placeholder="standaard" value={p0.nabewerking_min} onChange={e => zetAlle({ nabewerking_min: e.target.value })} /></div>
+      </div>
+      <div className="tabelvak" style={{ maxHeight: 360, overflowY: 'auto', marginTop: 10 }}>
+        <table className="mini">
+          <thead><tr><th>Letter</th><th>Plaat</th><th className="r">Tijd</th><th className="r">Gram</th><th /></tr></thead>
+          <tbody>{f.platen.map((q, j) => (
+            <tr key={j}>
+              <td><input className={`inp${!q.letter.trim() || dubbel.has(q.letter.trim().toLocaleUpperCase('nl-BE')) ? ' let-op' : ''}`} style={{ width: 56 }} aria-label={`Letter van plaat ${q.slicer_plaat || j + 1}`} value={q.letter} onChange={e => zetRij(j, { letter: e.target.value })} /></td>
+              <td className="sub">{q.slicer_plaat ? `plaat ${q.slicer_plaat}` : ''}{q.naam ? ` · ${q.naam}` : ''}</td>
+              <td className="r num">{Math.round(min(q))} min</td>
+              <td className="r num">{fmtAantal(Math.round(g(q) * 10) / 10)} g</td>
+              <td><button type="button" className="btn klein ghost" aria-label={`Letter ${q.letter || j + 1} weghalen`} onClick={() => setF(x => ({ ...x, platen: x.platen.filter((_, k) => k !== j) }))}>×</button></td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+      {dubbel.size > 0 && <p className="regelfout">Dubbele letters: {[...dubbel].join(' ')}. Elke letter mag maar één keer.</p>}
+      {f.platen.some(q => !q.letter.trim()) && <p className="regelfout">Vul bij elke plaat de letter in.</p>}
     </>
   );
 }
