@@ -29,6 +29,14 @@ Bijgehouden tijdens de ontwikkeling. Wat hier staat is (nog) niet gebouwd.
 - Run koppelen → "Nieuw product": artikel + printprofiel (tijd en filament van de plaat ÷ stuks)
   + dossier Voorraad met printopdracht; de run hangt eraan, bevestigen = stuks in voorraad.
 
+## Gebouwd: letterbestellingen (29-10-2026)
+
+- Klantfiche → Prijsafspraken (vaste prijs per artikel per klant, bv. € 1,75 per letter).
+- Letterprofiel: Printprofiel → Uit slicerbestand → "Elke plaat is een letter" (letter uit de plaatnaam).
+- Dossier → "Letters…": lijst per naam of per kleur plakken → controle (kleur → filament via
+  het webshoppalet, onthouden) → printregels per letter × kleur. Tab Letters: per kleur met
+  voortgang, inpaklijst per naam, afdrukken.
+
 ## Ideeën / later
 
 - ~~Onderdelen bij een klantdossier dat een product print~~ — gebouwd 24-10 (prijs + levering).

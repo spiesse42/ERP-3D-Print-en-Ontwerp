@@ -93,6 +93,7 @@ export function Prijsopbouw({ p, k, totaal, open = true }) {
     rij('Aanpassing', `${g(p.aanpassing_min, 0)} min`, p.aanpassing, 0, p.aanpassing > 0),
     rij('Artikelen / diensten', '', p.artikelen, null, Math.abs(p.artikelen) >= 0.005),
     rij('Extra kosten', '', p.extra, 0, Math.abs(p.extra) >= 0.005),
+    rij('Prijsafspraak klant', '', p.afspraak, 0, Math.abs(p.afspraak || 0) >= 0.005),
     rij('Handmatig aangepast', '', p.handmatig, 0, Math.abs(p.handmatig) >= 0.005),
     rij('Korting filament', '', p.korting_materiaal, 0, Math.abs(p.korting_materiaal || 0) >= 0.005),
     rij('Korting printuren', '', p.korting_printuren, 0, Math.abs(p.korting_printuren || 0) >= 0.005),

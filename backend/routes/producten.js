@@ -9,7 +9,7 @@ import { leesArtikelen } from '../domein/artikelen.js';
 import { leesOnderdelen, bewaarOnderdelen } from '../domein/onderdelen.js';
 import { webshopRijen, vergelijk, neemOver, ontkoppel } from '../domein/webshop.js';
 import { haalProducten, WebshopFout } from '../integraties/sanity.js';
-import { artikelMetProfiel, schatKost, regelsUitProfiel, platenVan } from '../productie/printprofiel.js';
+import { artikelMetProfiel, schatKost, regelsUitProfiel, stukPlaten } from '../productie/printprofiel.js';
 import { berekenMetDb } from '../domein/berekening.js';
 import { leesWebshop, bewaarWebshop, pushWebshop, keuzes, maakKeuzeArtikel, maakAlleKeuzeArtikels, voorraadNaarKeuze } from '../domein/webshoppush.js';
 
@@ -53,7 +53,7 @@ export function kostVanArtikel(db, a, { advies = true } = {}) {
 // een printregel in een dossier): voor 1 stuk en per stuk bij een volle plaat,
 // plus de onderdelen aan inkoopprijs.
 function adviesprijs(db, profiel, onderdelen = 0) {
-  const platen = platenVan(profiel);
+  const platen = stukPlaten(profiel);
   if (!platen.length || platen.some(x => !x.printer_id)) return null;
   // 21-10: alle platen samen (een stuk kan uit meerdere platen bestaan)
   const voor = n => {

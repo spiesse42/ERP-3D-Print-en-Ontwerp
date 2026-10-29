@@ -5,6 +5,7 @@ import { getTarieven } from './hulp.js';
 import { bereken } from './rekenmotor.js';
 import { kostPerKg, telOpbouw } from '../productie/kost.js';
 import { leesOnderdelen } from './onderdelen.js';
+import { afsprakenVan } from './klantprijzen.js';
 
 // Voorbereide opdrachten per databank hergebruiken (29-09): de dossierlijst
 // rekent elk dossier door; opnieuw voorbereiden per regel kostte het meest.
@@ -39,8 +40,11 @@ function prijsgroep(db, { filament_type_id, artikel_id }) {
 // onderdelen (24-10): een printregel uit een product (artikel_id) krijgt de
 // onderdelen per stuk van dat product mee (sleutelring, zakje…), aan
 // inkoopprijs. Niet in een voorraaddossier: daar gaan ze pas bij de verkoop af.
-export function verrijk(db, regels, { filamentInkoop = false, onderdelen = true } = {}) {
+// klantId (29-10): prijsafspraken van die klant → regel.afspraak (prijs per stuk)
+export function verrijk(db, regels, { filamentInkoop = false, onderdelen = true, klantId = null } = {}) {
   const q = sql(db);
+  const afspraken = afsprakenVan(db, klantId);
+  const metAfspraak = r => (r?.artikel_id && afspraken.has(Number(r.artikel_id)) ? { afspraak: afspraken.get(Number(r.artikel_id)) } : {});
   return (Array.isArray(regels) ? regels : []).map(r => {
     if (r?.type === 'printen') {
       const printer = r.printer_id ? q.printer.get(r.printer_id) ?? null : null;
@@ -54,21 +58,21 @@ export function verrijk(db, regels, { filamentInkoop = false, onderdelen = true 
         return { ...m, naam: pg?.naam ?? m.naam ?? null, prijs_per_kg: pg ? pg.verkoopprijs_per_kg : null, inkoop_per_kg: ink == null ? null : Math.round(ink * 100) / 100 };
       });
       const delen = onderdelen && r.artikel_id ? leesOnderdelen(db, r.artikel_id).map(o => ({ naam: o.naam, aantal: o.aantal, prijs: o.prijs })) : [];
-      return { ...r, printer, materialen, onderdelen: delen };
+      return { ...r, printer, materialen, onderdelen: delen, ...metAfspraak(r) };
     }
     if (r?.type === 'artikel') {
       const a = r.artikel_id ? q.artikel.get(r.artikel_id) : null;
       if (!a || a.type === 'filament' || !a.wordt_verkocht) return { ...r, naam: a?.naam ?? r.naam, prijs: null, vaste_prijs: false };
-      return { ...r, naam: a.naam, prijs: a.verkoopprijs, vaste_prijs: !!a.vaste_prijs };
+      return { ...r, naam: a.naam, prijs: a.verkoopprijs, vaste_prijs: !!a.vaste_prijs, ...metAfspraak(r) };
     }
     return r;
   });
 }
 
 // opties.tarieven: al opgehaald (de dossierlijst haalt ze één keer op)
-export function berekenMetDb(db, regels, { tarieven = null, filamentInkoop = false, onderdelen = true, ...opties } = {}) {
+export function berekenMetDb(db, regels, { tarieven = null, filamentInkoop = false, onderdelen = true, klantId = null, ...opties } = {}) {
   const t = tarieven || getTarieven(db);
-  const verrijkt = verrijk(db, regels, { filamentInkoop, onderdelen });
+  const verrijkt = verrijk(db, regels, { filamentInkoop, onderdelen, klantId });
   const uit = bereken(verrijkt, t, opties);
   voegKostToe(db, uit, regels, t);
   // 08-10: ter vergelijking wat de OUDE berekening (getrapte marge) gaf

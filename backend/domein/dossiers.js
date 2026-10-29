@@ -185,8 +185,9 @@ export function leesRegelsVan(db, dossierId) {
 
 // filamentInkoop (04-10): familie & vrienden — filament aan inkoopprijs
 // soort (24-10): onderdelen van een product enkel in een klantdossier
-export function berekenDossier(db, regels, stand = 'schatting', tarieven = null, filamentInkoop = false, soort = 'klant') {
-  try { return berekenMetDb(db, regels, { stand, tarieven, filamentInkoop: !!filamentInkoop, onderdelen: soort === 'klant' }); }
+// klantId (29-10): prijsafspraken van die klant
+export function berekenDossier(db, regels, stand = 'schatting', tarieven = null, filamentInkoop = false, soort = 'klant', klantId = null) {
+  try { return berekenMetDb(db, regels, { stand, tarieven, filamentInkoop: !!filamentInkoop, onderdelen: soort === 'klant', klantId: soort === 'klant' ? klantId : null }); }
   catch (e) { return { fout: e.message, totaal: null, volledig: false, regels: [] }; }
 }
 
@@ -198,7 +199,7 @@ export function leesDossier(db, dossierId) {
     FROM dossiers d LEFT JOIN klanten k ON k.id = d.klant_id WHERE d.id = ?`).get(dossierId);
   if (!d) return null;
   const regels = leesRegelsVan(db, dossierId);
-  const berekening = berekenDossier(db, regels, 'schatting', null, d.filament_inkoop, d.soort);
+  const berekening = berekenDossier(db, regels, 'schatting', null, d.filament_inkoop, d.soort, d.klant_id);
   const klant_gegevens = d.klant_id ? db.prepare(`SELECT type, naam, voornaam, bedrijfsnaam, email, telefoon, gsm, straat, huisnummer,
     postcode, gemeente, land, btw_nummer, peppol_id FROM klanten WHERE id = ?`).get(d.klant_id) : null;
   const offertes = offertesVan(db, dossierId);
@@ -220,7 +221,7 @@ export function leesDossier(db, dossierId) {
     uren: r.werkelijk?.uren ?? (g?.geslaagd.runs ? g.geslaagd.uren : null),
     kwh: r.werkelijk?.kwh ?? (g?.geslaagd.runs && !g.geslaagd.kwh_onbekend ? g.geslaagd.kwh : null) } }));
   if (werkbon && !werkbon.definitief_op) {
-    const metingen = berekenDossier(db, regelsWerkelijk, 'werkelijk', null, d.filament_inkoop, d.soort);
+    const metingen = berekenDossier(db, regelsWerkelijk, 'werkelijk', null, d.filament_inkoop, d.soort, d.klant_id);
     werkbon.berekening = metingen;                       // kost volgens de metingen
     if (aanvaardeOfferte) {
       Object.assign(werkbon, { basis: 'offerte', offerte: aanvaardeOfferte.weergave, bedrag: aanvaardeOfferte.totaal, volledig: true,
@@ -236,7 +237,7 @@ export function leesDossier(db, dossierId) {
   // tonen, voor het standaardbedrag in het afrekenvenster.
   const zonder_werkbon = werkbon || d.soort !== 'klant' || d.afgerekend_op ? null
     : aanvaardeOfferte ? { bedrag: aanvaardeOfferte.totaal, volledig: true }
-    : (m => ({ bedrag: m.totaal, volledig: !!m.volledig }))(berekenDossier(db, regelsWerkelijk, 'werkelijk', null, d.filament_inkoop, d.soort));
+    : (m => ({ bedrag: m.totaal, volledig: !!m.volledig }))(berekenDossier(db, regelsWerkelijk, 'werkelijk', null, d.filament_inkoop, d.soort, d.klant_id));
   // Overnamefiche: wat er afgerekend wordt = de werkbon (definitief of concept), anders de schatting.
   const overname = werkbon?.document || werkbon?.concept_document
     || (berekening.regels?.length ? documentInhoud(db, basis, berekening) : null);
@@ -257,6 +258,8 @@ export function leesDossier(db, dossierId) {
   const samengevoegd_uit = db.prepare('SELECT id, nummer, titel, samengevoegd_op FROM dossiers WHERE samengevoegd_in = ? ORDER BY id').all(dossierId);
   const uit = { ...d, klant_gegevens, samengevoegd_in_nummer, samengevoegd_uit, fase: faseVan(d, { offerte, lever, prod }), stappen: stappenVan(d, { lever, prod }), acties: actiesVan(d, opts),
     leverbaar: lever_lijst, lever_status: lever, leveringen, productie,
+    // 29-10: letterbestellingen (namen/kleuren) voor de overzichten
+    letters: (() => { try { return JSON.parse(d.letters || '[]'); } catch { return []; } })(),
     regels, berekening, offertes: offertes.map(({ regels_api: _r, document: _doc, ...o }) => o), werkbon, zonder_werkbon, wijkt_af_van_offerte, overname };
   // afgerekend via een losse verkoop (26-09): enkel daar ongedaan te maken
   uit.afgerekend_via = db.prepare(`SELECT v.id, v.nummer, v.gemaild_op, v.soort, v.betaald_op, v.vervaldatum FROM verkoop_regels vr JOIN verkopen v ON v.id = vr.verkoop_id
@@ -392,7 +395,7 @@ export function leesDossiers(db, { archief = '0', klant_id = null } = {}) {
     ${waar.length ? `WHERE ${waar.join(' AND ')}` : ''} ORDER BY d.id DESC`).all(...par);
   const tarieven = getTarieven(db);   // één keer voor de hele lijst
   return rijen.map(d => {
-    const b = d.aantal_regels ? berekenDossier(db, leesRegelsVan(db, d.id), 'schatting', tarieven, d.filament_inkoop, d.soort) : { totaal: 0, volledig: true };
+    const b = d.aantal_regels ? berekenDossier(db, leesRegelsVan(db, d.id), 'schatting', tarieven, d.filament_inkoop, d.soort, d.klant_id) : { totaal: 0, volledig: true };
     const offerte = laatsteVerstuurde(offertesVan(db, d.id));
     const lever = d.soort === 'klant' ? leverStatusVan(db, d.id) : null;
     const prod = productieVan(db, d.id);

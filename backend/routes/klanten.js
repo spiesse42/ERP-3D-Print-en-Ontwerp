@@ -3,6 +3,7 @@ import { getDb } from '../db/index.js';
 import { logGebeurtenis, beschrijfWijzigingen, wisHistoriek } from '../domein/historiek.js';
 import { zoekKlant } from '../domein/peppol.js';
 import { DomeinFout } from '../domein/hulp.js';
+import { leesKlantPrijzen, bewaarKlantPrijzen } from '../domein/klantprijzen.js';
 
 const r = Router();
 
@@ -56,6 +57,16 @@ r.get('/opzoeken', async (req, res) => {
   catch (e) { res.status(e instanceof DomeinFout ? 400 : 502).json({ error: e.message }); }
 });
 
+// 29-10: prijsafspraken (bv. wederverkoper: bubble letter € 1,75)
+r.get('/:id/prijzen', (req, res) => res.json(leesKlantPrijzen(getDb(), req.params.id)));
+r.put('/:id/prijzen', (req, res) => {
+  const db = getDb();
+  try {
+    const uit = db.transaction(() => bewaarKlantPrijzen(db, req.params.id, req.body?.prijzen))();
+    logGebeurtenis(db, 'klant', Number(req.params.id), 'gewijzigd', `Prijsafspraken: ${uit.length ? uit.map(x => `${x.naam} € ${String(x.prijs).replace('.', ',')}`).join(', ') : 'geen'}`);
+    res.json(uit);
+  } catch (e) { res.status(e instanceof DomeinFout ? e.status || 400 : 500).json({ error: e.message }); }
+});
 r.get('/:id', (req, res) => {
   const klant = getDb().prepare(`SELECT k.*, (SELECT COUNT(*) FROM dossiers d WHERE d.klant_id = k.id) AS aantal_dossiers
     FROM klanten k WHERE k.id = ?`).get(req.params.id);

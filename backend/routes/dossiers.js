@@ -15,6 +15,8 @@ import { rekenAf, maakAfrekeningOngedaan } from '../domein/afrekening.js';
 import { voegSamen } from '../domein/samenvoegen.js';
 import { vandaag } from '../domein/status/offerte.js';
 import { leverRestUitVoorraad } from '../domein/leveringen.js';
+import { voorbeeldLetters, voegLettersToe } from '../domein/letters.js';
+import { kleurenPalet } from '../integraties/kleurenpalet.js';
 import { SOORTEN, leesKop, leesRegels, bewaarRegels, leesDossier, leesDossiers, leesAfrekening, datumOk, leesRegelsVan } from '../domein/dossiers.js';
 
 const r = Router();
@@ -80,6 +82,26 @@ const VAST = {
   afgerekend: 'Dit dossier is afgerekend en ligt vast. Maak de afrekening eerst ongedaan als je nog iets moet wijzigen.',
 };
 const LABELS = { soort: 'Soort', klant: 'Klant', titel: 'Titel', notities: 'Notities' };
+// 29-10: letterbestelling (bv. bubble letters) — lijst inlezen (voorbeeld) en regels toevoegen
+r.post('/letters/voorbeeld', async (req, res) => {
+  try { res.json(voorbeeldLetters(getDb(), { tekst: req.body?.tekst, artikel_id: Number(req.body?.artikel_id) || null }, await kleurenPalet())); }
+  catch (e) { res.status(e.status || (e instanceof DomeinFout ? 400 : 500)).json({ error: e.message }); }
+});
+r.post('/:id/letters', async (req, res) => {
+  const palet = await kleurenPalet();
+  const db = getDb();
+  try {
+    const id = idVan(req);
+    const d = haal(db, id);
+    if (!d.acties.bewerken) throw new DomeinFout(VAST[d.fase] || VAST.afgerekend);
+    const uit = voegLettersToe(db, d, { tekst: req.body?.tekst, artikel_id: Number(req.body?.artikel_id) || null, kleuren: req.body?.kleuren || {} }, palet);
+    db.transaction(() => synchroniseer(db, id, { oudeRegels: d.regels }))();
+    res.status(201).json({ ...uit, dossier: leesDossier(db, id) });
+  } catch (e) {
+    if (isFkFout(e)) return res.status(400).json({ error: 'Onbekende printer, artikel of filament' });
+    res.status(e.status || (e instanceof DomeinFout ? 400 : 500)).json({ error: e.message });
+  }
+});
 r.put('/:id', (req, res) => {
   const db = getDb();
   try {

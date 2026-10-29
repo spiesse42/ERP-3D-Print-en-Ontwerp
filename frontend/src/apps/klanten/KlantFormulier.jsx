@@ -238,9 +238,9 @@ export default function KlantFormulier() {
               </Veld>
             </div>
           </div>
-          <Tabs tabs={[['notities', 'Notities'], ...(!nieuw && klant?.email ? [['mails', 'Mails']] : [])]} actief={tab} onKies={setTab} />
+          <Tabs tabs={[['notities', 'Notities'], ...(!nieuw ? [['prijzen', 'Prijsafspraken']] : []), ...(!nieuw && klant?.email ? [['mails', 'Mails']] : [])]} actief={tab} onKies={setTab} />
           <div className="tabpanel">
-            {tab === 'mails' && !nieuw && klant?.email ? <KlantMails adres={klant.email} /> : <>
+            {tab === 'prijzen' && !nieuw ? <Prijsafspraken klantId={id} onBewaard={() => setVersie(v => v + 1)} /> : tab === 'mails' && !nieuw && klant?.email ? <KlantMails adres={klant.email} /> : <>
               <label className="sr-only" htmlFor="k-notities">Notities</label>
               <textarea id="k-notities" className="inp" rows={4} value={form.notities || ''} onChange={e => zet('notities')(e.target.value)} placeholder="Vaste afspraken, voorkeuren, …" />
             </>}
@@ -277,5 +277,49 @@ function KlantMails({ adres }) {
         </table>
       )}
     </>
+  );
+}
+
+// Prijsafspraken (29-10): vaste prijs per artikel voor deze klant (bv. een
+// wederverkoper: bubble letter € 1,75). In een dossier van deze klant krijgt
+// elke regel met dat artikel (ook een printregel met dat product) die prijs.
+function Prijsafspraken({ klantId, onBewaard }) {
+  const { melding } = useOmgeving();
+  const { data, herlaad } = useData(`/klanten/${klantId}/prijzen`);
+  const { data: artikelen } = useData('/voorraad/artikelen');
+  const [rijen, setRijen] = useState(null);
+  const [bezig, setBezig] = useState(false);
+  useEffect(() => { if (data) setRijen(data.map(x => ({ artikel_id: String(x.artikel_id), prijs: String(x.prijs).replace('.', ',') }))); }, [data]);
+  if (!rijen) return <Laden />;
+  const keuze = (artikelen || []).filter(a => a.type !== 'filament' && a.wordt_verkocht && !a.gearchiveerd);
+  const zet = (i, w) => setRijen(r => r.map((x, j) => (j === i ? { ...x, ...w } : x)));
+  async function bewaar() {
+    setBezig(true);
+    try { await api.put(`/klanten/${klantId}/prijzen`, { prijzen: rijen.filter(r => r.artikel_id) }); await herlaad(); melding('Prijsafspraken bewaard.'); onBewaard?.(); }
+    catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
+  return (
+    <div>
+      <p className="sub" style={{ marginTop: 0 }}>Een vaste prijs per stuk voor deze klant. In een dossier van deze klant krijgt elke regel met dat artikel (ook een printregel met dat product) automatisch die prijs × het aantal. Een zelf ingevuld eindbedrag gaat voor.</p>
+      {rijen.map((r, i) => {
+        const a = keuze.find(x => String(x.id) === r.artikel_id);
+        return (
+          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+            <select className="inp" style={{ flex: '1 1 260px' }} aria-label={`Artikel ${i + 1}`} value={r.artikel_id} onChange={e => zet(i, { artikel_id: e.target.value })}>
+              <option value="">— kies een artikel —</option>
+              {keuze.map(x => <option key={x.id} value={x.id}>{x.weergave}</option>)}
+            </select>
+            <input className="inp num" style={{ width: 100 }} inputMode="decimal" aria-label={`Prijs ${i + 1}`} placeholder="€/stuk" value={r.prijs} onChange={e => zet(i, { prijs: e.target.value })} />
+            {a?.verkoopprijs != null && <span className="sub">gewoon € {String(a.verkoopprijs).replace('.', ',')}</span>}
+            <button type="button" className="btn klein ghost" aria-label={`Afspraak ${i + 1} weg`} onClick={() => setRijen(x => x.filter((_, j) => j !== i))}>×</button>
+          </div>
+        );
+      })}
+      <div className="tabacties" style={{ marginTop: 8 }}>
+        <button type="button" className="btn" onClick={() => setRijen(x => [...x, { artikel_id: '', prijs: '' }])}>+ afspraak</button>
+        <button type="button" className="btn primary" disabled={bezig} onClick={bewaar}>Bewaren</button>
+      </div>
+    </div>
   );
 }

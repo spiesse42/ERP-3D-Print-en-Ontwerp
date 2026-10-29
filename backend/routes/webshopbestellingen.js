@@ -4,7 +4,7 @@ import { getDb } from '../db/index.js';
 import { DomeinFout } from '../domein/hulp.js';
 import { bewaarBestellingen, leesBestellingen, zetAfgehandeld } from '../domein/webshopbestellingen.js';
 import { maakDossierUitBestelling } from '../domein/webshopdossier.js';
-import { sanityQuery } from '../integraties/sanity.js';
+import { kleurenPalet } from '../integraties/kleurenpalet.js';
 import { haalBetaaldeBestellingen, supabaseIngesteld, SupabaseFout } from '../integraties/supabase.js';
 
 const r = Router();
@@ -16,19 +16,8 @@ const metFouten = fn => async (req, res) => {
   }
 };
 
-// 11-10: kleuren uit de webshop (Sanity) → filament bij de gekozen kleur;
-// 10 min in het geheugen; niet bereikbaar = geen filament, geen fout
-let kleurCache = { t: 0, map: null };
-async function kleuren() {
-  if (kleurCache.map && Date.now() - kleurCache.t < 10 * 60000) return kleurCache.map;
-  try {
-    const lijst = await sanityQuery('*[_type == "color" && !(_id in path("drafts.**"))]{ label, "slug": slug.current, hex, filamentName }', {}, { metToken: false }) || [];
-    const map = new Map();
-    for (const c of lijst) for (const k of [c.label, c.slug]) if (k) map.set(String(k).trim().toLowerCase(), c);
-    kleurCache = { t: Date.now(), map };
-  } catch { /* webshop niet bereikbaar */ }
-  return kleurCache.map;
-}
+// 11-10: kleuren uit de webshop (Sanity) → filament bij de gekozen kleur
+const kleuren = () => kleurenPalet();
 r.get('/', metFouten(async (req, res) => res.json({ ingesteld: supabaseIngesteld(),
   bestellingen: leesBestellingen(getDb(), { alles: req.query.alles === '1', kleuren: await kleuren() }) })));
 r.post('/ophalen', metFouten(async (req, res) => {

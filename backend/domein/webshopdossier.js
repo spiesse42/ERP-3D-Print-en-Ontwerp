@@ -21,16 +21,16 @@ import { logGebeurtenis } from './historiek.js';
 import { volgendNummer } from './nummering.js';
 import { leesRegels, bewaarRegels } from './dossiers.js';
 import { leesBestellingen } from './webshopbestellingen.js';
-import { artikelMetProfiel, platenVan, regelsUitProfiel } from '../productie/printprofiel.js';
+import { artikelMetProfiel, stukPlaten, regelsUitProfiel } from '../productie/printprofiel.js';
 
-const norm = t => String(t ?? '').toLowerCase().replace(/[—–·\-_,()]/g, ' ').replace(/\s+/g, ' ').trim();
+export const norm = t => String(t ?? '').toLowerCase().replace(/[—–·\-_,()]/g, ' ').replace(/\s+/g, ' ').trim();
 const r2 = v => Math.round(v * 100) / 100;
 
 // Welke lijnen standaard in het dossier horen: gepersonaliseerd, niet
 // gekoppeld, of te weinig op voorraad.
 export const moetPrinten = i => !!(i.tekst || i.lettertype || i.symbool) || !i.artikel || i.artikel.voorraad < i.aantal;
 
-function filamentKaart(db) {
+export function filamentKaart(db) {
   const rijen = db.prepare(`SELECT a.id, fm.naam AS merk, fmat.naam AS materiaal, k.naam AS kleur FROM artikelen a
     JOIN filament_types ft ON ft.id = a.filament_type_id JOIN filament_merken fm ON fm.id = ft.merk_id
     JOIN filament_materialen fmat ON fmat.id = ft.materiaal_id JOIN filament_kleuren k ON k.id = a.kleur_id
@@ -121,7 +121,7 @@ export function maakDossierUitBestelling(db, bestellingId, { items = null, kleur
           regels.push({ type: 'printen', omschrijving, aantal: i.aantal, per_stuk: true, artikel_id: zelf ? a.id : null, handmatig_bedrag: bedrag, materialen: [] });
           continue;
         }
-        const platen = platenVan(a.profiel);
+        const platen = stukPlaten(a.profiel);
         // filament van de gekozen kleur(en): enkel bij één plaat, en als elke kleur gekend is
         const kleurIds = (i.kleur_info || []).map(k => (k.filament ? filament.get(norm(k.filament)) : null));
         const kleurOk = platen.length === 1 && kleurIds.length > 0 && kleurIds.every(Boolean) && kleurIds.length === (platen[0].materialen || []).length;
