@@ -148,7 +148,7 @@ export function marges(db, jaar) {
   // ook "gratis geleverd" (25-09): bedrag € 0, soort 'gratis', waarde = werkbon
   const dossiers = db.prepare(`SELECT d.id, d.nummer, d.titel, COALESCE(d.afgerekend_op, d.gratis_op) AS afgerekend_op,
       CASE WHEN d.gratis_op IS NOT NULL THEN 0 ELSE d.afgerekend_bedrag END AS afgerekend_bedrag,
-      CASE WHEN d.gratis_op IS NOT NULL THEN 'gratis' ELSE d.afgerekend_soort END AS afgerekend_soort, d.gratis_waarde AS waarde, d.filament_inkoop, d.soort, ${KLANTNAAM} klant
+      CASE WHEN d.gratis_op IS NOT NULL THEN 'gratis' ELSE d.afgerekend_soort END AS afgerekend_soort, d.gratis_waarde AS waarde, d.filament_inkoop, d.soort, d.klant_id, ${KLANTNAAM} klant
     FROM dossiers d LEFT JOIN klanten k ON k.id = d.klant_id
     WHERE (d.afgerekend_op IS NOT NULL OR d.gratis_op IS NOT NULL) AND substr(COALESCE(d.afgerekend_op, d.gratis_op), 1, 4) = ?
     ORDER BY COALESCE(d.afgerekend_op, d.gratis_op) DESC, d.id DESC`).all(String(jaar));
@@ -180,7 +180,7 @@ export function marges(db, jaar) {
     let nieuw = null;
     if (d.afgerekend_soort !== 'gratis') {
       try {
-        const b = berekenMetDb(db, leesRegelsVan(db, d.id), { stand: 'schatting', filamentInkoop: !!d.filament_inkoop, onderdelen: d.soort === 'klant', vergelijk: false });
+        const b = berekenMetDb(db, leesRegelsVan(db, d.id), { stand: 'schatting', filamentInkoop: !!d.filament_inkoop, onderdelen: d.soort === 'klant', klantId: d.soort === 'klant' ? d.klant_id : null, vergelijk: false });
         if (b.model === 'printuur' && b.volledig) nieuw = b.totaal;
       } catch { /* tarieven onvolledig: geen vergelijking */ }
     }

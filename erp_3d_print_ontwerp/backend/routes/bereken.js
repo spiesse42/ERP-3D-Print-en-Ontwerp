@@ -8,7 +8,7 @@ const r = Router();
 r.post('/', (req, res) => {
   const stand = req.body?.stand === 'werkelijk' ? 'werkelijk' : 'schatting';
   if (req.body?.regels !== undefined && !Array.isArray(req.body.regels)) return res.status(400).json({ error: 'Regels moeten een lijst zijn' });
-  try { res.json(berekenMetDb(getDb(), req.body?.regels || [], { stand, filamentInkoop: !!req.body?.filament_inkoop, onderdelen: req.body?.onderdelen !== false })); }
+  try { res.json(berekenMetDb(getDb(), req.body?.regels || [], { stand, filamentInkoop: !!req.body?.filament_inkoop, onderdelen: req.body?.onderdelen !== false, klantId: Number(req.body?.klant_id) || null })); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 export default r;

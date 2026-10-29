@@ -37,9 +37,41 @@ export function artikelMetProfiel(db, artikelId) {
 // { platen: [...], slicer_bijlage_id }. Altijd lezen via platenVan().
 export const platenVan = p => (!p ? [] : Array.isArray(p.platen) && p.platen.length ? p.platen : [p]);
 
+// 29-10: LETTERPROFIEL (bv. bubble letters): elke plaat is één letter of
+// teken (A, B, É, &…) — een stuk is ÉÉN letter, niet alle platen samen.
+// { letters: true, platen: [{ letter, naam, tijd_min, materialen… }] }.
+// Voor de kost per stuk en "Uit product" geldt de gemiddelde letter; een
+// letterbestelling neemt per letter de eigen plaat (letterPlaat).
+export const isLetterProfiel = p => !!(p && p.letters && Array.isArray(p.platen) && p.platen.length);
+export const normLetter = l => String(l ?? '').trim().toLocaleUpperCase('nl-BE');
+export function letterPlaat(p, letter) {
+  if (!isLetterProfiel(p)) return null;
+  const l = normLetter(letter);
+  return p.platen.find(x => normLetter(x.letter) === l) || null;
+}
+const r4 = v => Math.round(v * 10000) / 10000;
+function gemiddeldePlaat(p) {
+  const n = p.platen.length, eerste = p.platen[0];
+  const mat = new Map();
+  for (const x of p.platen) {
+    for (const m of x.materialen || []) {
+      const k = m.artikel_id ? `a${m.artikel_id}` : `p${m.filament_type_id}`;
+      const v = mat.get(k) || { ...(m.artikel_id ? { artikel_id: m.artikel_id } : { filament_type_id: m.filament_type_id }), gram: 0 };
+      v.gram += Number(m.gram) || 0;
+      mat.set(k, v);
+    }
+  }
+  return { printer_id: eerste.printer_id ?? null, tijd_min: r4(p.platen.reduce((t, x) => t + (Number(x.tijd_min) || 0), 0) / n), per_plaat: 1,
+    voorbereiding_min: eerste.voorbereiding_min ?? null, nabewerking_min: eerste.nabewerking_min ?? null,
+    materialen: [...mat.values()].map(m => ({ ...m, gram: r4(m.gram / n) })) };
+}
+// De platen van ÉÉN stuk: bij een letterprofiel de gemiddelde letter.
+export const stukPlaten = p => (isLetterProfiel(p) ? [gemiddeldePlaat(p)] : platenVan(p));
+
 function leesPlaat(db, b, wat) {
   const p = {
     ...(String(b?.naam ?? '').trim() ? { naam: String(b.naam).trim().slice(0, 80) } : {}),
+    ...(normLetter(b?.letter) ? { letter: normLetter(b.letter).slice(0, 4) } : {}),
     printer_id: heel(b?.printer_id, `${wat}Printer`),
     tijd_min: nietNeg(b?.tijd_min, `${wat}Printtijd per stuk`) ?? 0,
     per_plaat: heel(b?.per_plaat, `${wat}Stuks per plaat`),
@@ -63,11 +95,21 @@ function leesPlaat(db, b, wat) {
 export function leesProfiel(db, b) {
   if (b === null) return null;
   const invoer = Array.isArray(b?.platen) && b.platen.length ? b.platen : [b];
-  const platen = invoer.map((x, i) => leesPlaat(db, x, invoer.length > 1 ? `Plaat ${i + 1}: ` : ''));
+  const letters = !!b?.letters;
+  const platen = invoer.map((x, i) => leesPlaat(db, x, letters ? `Letter ${normLetter(x?.letter) || i + 1}: ` : invoer.length > 1 ? `Plaat ${i + 1}: ` : ''));
+  if (letters) {
+    const gezien = new Set();
+    platen.forEach((x, i) => {
+      if (!x.letter) throw new DomeinFout(`Plaat ${i + 1}${x.naam ? ` (${x.naam})` : ''}: vul de letter of het teken in`);
+      if (gezien.has(x.letter)) throw new DomeinFout(`De letter ${x.letter} staat er twee keer in`);
+      gezien.add(x.letter);
+    });
+  } else platen.forEach(x => delete x.letter);
   // 09-10: het slicerbestand (bijlage bij het artikel) waaruit het profiel komt
   let bijlage = heel(b?.slicer_bijlage_id, 'Slicerbestand');
   if (bijlage && !db.prepare(`SELECT 1 FROM bijlagen WHERE id = ? AND entiteit = 'artikel'`).get(bijlage)) bijlage = null;
   if (!bijlage) platen.forEach(x => delete x.slicer_plaat);
+  if (letters) return { letters: true, platen, ...(bijlage ? { slicer_bijlage_id: bijlage } : {}) };
   if (platen.length === 1) {
     const { naam: _n, ...p } = platen[0];
     if (bijlage) p.slicer_bijlage_id = bijlage; else delete p.slicer_plaat;
@@ -119,14 +161,14 @@ export function regelUitProfiel(p, aantal) {
 // Eén printregel per plaat (21-10). `printer_id` per plaat (anders `printer`),
 // `omschrijving` met "plaat i/n" bij meerdere platen.
 export function regelsUitProfiel(p, aantal, naam = '') {
-  const lijst = platenVan(p);
+  const lijst = stukPlaten(p);
   return lijst.map((x, i) => ({ ...regelUitProfiel(x, aantal), printer_id: x.printer_id ?? null,
     omschrijving: lijst.length > 1 ? `${naam} — plaat ${i + 1}/${lijst.length}${x.naam ? ` (${x.naam})` : ''}` : naam,
     laatste: i === lijst.length - 1 }));
 }
 // Gewicht van één stuk (alle platen samen), of null.
 export function gewichtVan(p) {
-  const g = platenVan(p).reduce((t, x) => t + (x.materialen || []).reduce((u, m) => u + (Number(m.gram) || 0), 0), 0);
+  const g = stukPlaten(p).reduce((t, x) => t + (x.materialen || []).reduce((u, m) => u + (Number(m.gram) || 0), 0), 0);
   return g > 0 ? Math.round(g * 10) / 10 : null;
 }
 
@@ -134,7 +176,13 @@ export function gewichtVan(p) {
 export function leesProfielen(db) {
   return db.prepare(`SELECT id, naam, verkoopprijs, printprofiel FROM artikelen
     WHERE type = 'artikel' AND zelf_geprint = 1 AND gearchiveerd = 0 AND printprofiel IS NOT NULL ORDER BY naam COLLATE NOCASE`).all()
-    .map(({ printprofiel, ...a }) => { try { return { ...a, profiel: JSON.parse(printprofiel) }; } catch { return null; } })
+    .map(({ printprofiel, ...a }) => {
+      try {
+        const p = JSON.parse(printprofiel);
+        // 29-10: letterprofiel → "Uit product" rekent met de gemiddelde letter
+        return isLetterProfiel(p) ? { ...a, profiel: stukPlaten(p)[0], letters: p.platen.map(x => x.letter) } : { ...a, profiel: p };
+      } catch { return null; }
+    })
     .filter(Boolean);
 }
 
@@ -149,7 +197,7 @@ export function schatKost(db, profiel, onderdelen = []) {
   let filament = 0, energie = 0, machine = 0, bmcu = 0, arbeid = 0;
   if (profiel) {
     // 21-10: per plaat, opgeteld (een stuk kan uit meerdere platen bestaan)
-    for (const x of platenVan(profiel)) {
+    for (const x of stukPlaten(profiel)) {
       const pp = x.per_plaat > 0 ? x.per_plaat : 1;
       for (const m of x.materialen || []) {
         if (!m.gram) continue;
