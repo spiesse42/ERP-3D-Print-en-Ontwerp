@@ -16,6 +16,7 @@ import { logGebeurtenis } from '../domein/historiek.js';
 import { maakOpdracht } from './opdrachten.js';
 import { artikelMetProfiel, regelsUitProfiel, platenVan, bewaarProfiel } from './printprofiel.js';
 import { start } from '../domein/uitvoering.js';
+import { leesRegels, bewaarRegels } from '../domein/dossiers.js';
 
 const FILAMENT = `SELECT a.id, a.type, a.filament_type_id, m.naam AS merk, mat.naam AS materiaal, k.naam AS kleur,
     (SELECT COALESCE(SUM(aantal_resterend), 0) FROM voorraad_partijen p WHERE p.artikel_id = a.id) AS voorraad
@@ -165,4 +166,38 @@ export function nieuwProductUitRun(db, run, b) {
   });
   const p = maakEigenProduct(db, { artikel_id: artikelId, aantal: n, printer_id: run.printer_id });
   return { artikel_id: artikelId, ...p };
+}
+
+// ── Nieuw klantdossier uit een run (30-10) ────────────────────────────────
+// Een print voor een klant die nog geen dossier heeft: klantdossier met één
+// printregel uit deze plaat (printer van de run, printtijd en filament van
+// de hele plaat), meteen gestart (werkbon + printopdracht). De route koppelt
+// daarna de run; bij het bevestigen tellen de goede stuks voor het dossier.
+// Optioneel een bestaand product (onderdelen en prijsafspraak tellen mee)
+// en een eindbedrag (anders berekend).
+export function klantdossierUitRun(db, run, b) {
+  const klant = db.prepare('SELECT id, familie FROM klanten WHERE id = ?').get(Number(b?.klant_id));
+  if (!klant) throw new DomeinFout('Kies een klant (of maak er een)');
+  const art = b?.artikel_id ? db.prepare(`SELECT id, naam FROM artikelen WHERE id = ? AND type = 'artikel'`).get(Number(b.artikel_id)) : null;
+  if (b?.artikel_id && !art) throw new DomeinFout('Product niet gevonden');
+  const omschrijving = String(b?.omschrijving ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) || art?.naam || '';
+  if (!omschrijving) throw new DomeinFout('Wat werd er geprint? Vul een omschrijving in of kies een product');
+  const getal = v => (v === '' || v == null ? null : Number(String(v).replace(',', '.')));
+  const n = getal(b?.aantal ?? 1);
+  if (!Number.isFinite(n) || n <= 0) throw new DomeinFout('Stuks op deze plaat: een getal groter dan 0');
+  const tijd = getal(b?.tijd_min);
+  if (tijd !== null && (!Number.isFinite(tijd) || tijd < 0)) throw new DomeinFout('Printtijd: een getal vanaf 0');
+  const prijs = getal(b?.prijs);
+  if (prijs !== null && (!Number.isFinite(prijs) || prijs < 0)) throw new DomeinFout('Prijs: een getal vanaf 0');
+  const titel = String(b?.titel ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) || omschrijving;
+  const nummer = volgendNummer(db, 'D');
+  const dossierId = Number(db.prepare('INSERT INTO dossiers (nummer, soort, klant_id, titel, notities, filament_inkoop) VALUES (?,?,?,?,?,?)')
+    .run(nummer, 'klant', klant.id, titel, run.bestand ? `Bestand: ${run.bestand}` : null, klant.familie ? 1 : 0).lastInsertRowid);
+  bewaarRegels(db, dossierId, leesRegels([{ type: 'printen', omschrijving, aantal: n, printer_id: run.printer_id, tijd_min: tijd ?? 0,
+    artikel_id: art?.id ?? null, handmatig_bedrag: prijs, materialen: Array.isArray(b?.materialen) ? b.materialen : [] }]));
+  logGebeurtenis(db, 'dossier', dossierId, 'aangemaakt', `Uit een run op de printer${run.bestand ? ` (${run.bestand})` : ''}`);
+  start(db, dossierId, { waarom: 'uit een run' });
+  const opdracht = db.prepare(`SELECT o.id FROM printopdrachten o JOIN dossier_regels r ON r.id = o.dossier_regel_id
+    WHERE r.dossier_id = ? ORDER BY o.id LIMIT 1`).get(dossierId);
+  return { dossier_id: dossierId, nummer, opdracht_id: opdracht?.id ?? null };
 }
