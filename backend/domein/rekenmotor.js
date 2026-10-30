@@ -176,7 +176,7 @@ export function bereken(regels, tarieven, { stand = 'schatting', model = 'nieuw'
   let met = 0, zonder = 0, vast = 0;
   const fouten = [];
   // 15-10: prijsopbouw over alle regels (wat de klant betaalt, per post)
-  const po = { materiaal: 0, onderdelen: 0, energie: 0, machine: 0, arbeid: 0, bmcu: 0, winst: 0, marge: 0, ontwerp: 0, aanpassing: 0, artikelen: 0, extra: 0, handmatig: 0, afspraak: 0,
+  const po = { materiaal: 0, onderdelen: 0, energie: 0, machine: 0, arbeid: 0, bmcu: 0, winst: 0, marge: 0, ontwerp: 0, aanpassing: 0, artikelen: 0, extra: 0, handmatig: 0, afspraak: 0, productprijs: 0,
     korting_materiaal: 0, korting_printuren: 0, korting_regels: 0, korting_totaal: 0,
     gram: 0, uren: 0, kwh: 0, platen: 0, arbeid_min: 0, ontwerp_min: 0, aanpassing_min: 0 };
   const uit = (regels || []).map((regel, i) => {
@@ -185,11 +185,14 @@ export function bereken(regels, tarieven, { stand = 'schatting', model = 'nieuw'
     telPrijs(po, regel, r, factor, t);
     // 29-10: prijsafspraak van de klant (prijs per stuk × aantal) = vast eindbedrag;
     // een zelf ingevuld eindbedrag gaat voor
+    // 30-10: daarna de verkoopprijs van het product (printregel in een klantdossier)
     const eigen = getal(regel.handmatig_bedrag);
-    const afspraak = eigen === null && getal(regel.afspraak) !== null && regel.type !== 'korting' ? r4(getal(regel.afspraak) * of(regel.aantal, 1)) : null;
+    const perStuk = regel.type === 'korting' || eigen !== null ? null : getal(regel.afspraak) ?? getal(regel.productprijs);
+    const bron = perStuk === null ? 'handmatig' : getal(regel.afspraak) !== null ? 'afspraak' : 'productprijs';
+    const afspraak = perStuk === null ? null : r4(perStuk * of(regel.aantal, 1));
     const hand = eigen ?? afspraak;
-    if (hand !== null) po[afspraak !== null ? 'afspraak' : 'handmatig'] += hand - (r.met_marge * factor + r.zonder_marge);
-    if (hand !== null) r = { ...r, natuurlijk_eindbedrag: r.met_marge * factor + r.zonder_marge, met_marge: 0, zonder_marge: hand, handmatig: true, ...(afspraak !== null ? { afspraak: getal(regel.afspraak) } : {}) };
+    if (hand !== null) po[bron] += hand - (r.met_marge * factor + r.zonder_marge);
+    if (hand !== null) r = { ...r, natuurlijk_eindbedrag: r.met_marge * factor + r.zonder_marge, met_marge: 0, zonder_marge: hand, handmatig: true, ...(afspraak !== null ? { [bron]: perStuk } : {}) };
     // 15-10: kortingen per regel (een handmatig eindbedrag gaat voor)
     else if (regel.korting && regel.type !== 'korting') {
       const K = regel.korting, d = r.detail || {};

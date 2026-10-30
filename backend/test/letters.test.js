@@ -53,6 +53,27 @@ test('L1. prijsafspraak per klant: printregel en artikelregel aan de afgesproken
   ok(await vraag('PUT', `/klanten/${klant}/prijzen`, { prijzen: [{ artikel_id: letter, prijs: 1.75 }] }));
 });
 
+test('L1b. printregel uit een product in een klantdossier: verkoopprijs van het product (webshop); andere platen 0; afspraak en eigen eindbedrag gaan voor', async () => {
+  const elf = ok(await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Gebreid meisje', zelf_geprint: true, wordt_verkocht: true, verkoopprijs: 12.5 }), 201).id;
+  const regels = [{ type: 'printen', omschrijving: 'romp', printer_id: 1, aantal: 2, tijd_min: 300, plaat_van: elf },
+    { type: 'printen', omschrijving: 'Gebreid meisje', printer_id: 1, aantal: 2, tijd_min: 200, artikel_id: elf }];
+  const andere = ok(await vraag('POST', '/klanten', { type: 'particulier', naam: 'Claes' }), 201).id;
+  const d = ok(await vraag('POST', '/dossiers', { titel: 'Elfjes', klant_id: andere, regels }), 201);
+  const [p1, p2] = d.berekening.regels.map(r => r._berekend);
+  assert.deepEqual([p1.eindbedrag, p1.productprijs, p2.eindbedrag, p2.productprijs], [0, 0, 25, 12.5]);
+  assert.equal(d.berekening.totaal, 25);
+  assert.ok(Math.abs(d.berekening.prijsopbouw.productprijs) > 0);
+  // eigen eindbedrag gaat voor
+  const zelf = ok(await vraag('POST', '/bereken', { regels: [regels[0], { ...regels[1], handmatig_bedrag: 20 }], klant_id: andere }));
+  assert.equal(zelf.totaal, 20);
+  // voorraaddossier: gewone berekening (kost)
+  const eigen = ok(await vraag('POST', '/bereken', { regels, onderdelen: false }));
+  assert.ok(eigen.regels[1]._berekend.productprijs === undefined && eigen.totaal !== 25);
+  // prijsafspraak van de klant gaat voor de verkoopprijs
+  const afs = ok(await vraag('POST', '/bereken', { regels: [{ type: 'printen', printer_id: 1, aantal: 4, tijd_min: 120, artikel_id: letter }], klant_id: klant }));
+  assert.equal(afs.totaal, 7);
+});
+
 test('L2. letterprofiel: plaat per letter, letters verplicht en uniek; kost = gemiddelde letter', async () => {
   const db = getDb();
   const pg = ok(await vraag('POST', '/filament/types', { merk_id: 1, materiaal_id: 1, verkoopprijs_per_kg: 25 }), 201).id;

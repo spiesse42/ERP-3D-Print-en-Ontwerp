@@ -129,7 +129,8 @@ test('G5. enkel de laatste levering ongedaan; voorraad terug op dezelfde partije
 });
 
 test('G6. printregel uit een product: onderdelen in de prijs (klant, niet voorraad) en uit voorraad bij de levering', async () => {
-  const kh = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Sleutelhanger rechthoek', zelf_geprint: true, wordt_verkocht: true, verkoopprijs: 1.5 })).data.id;
+  // (zonder verkoopprijs: met een verkoopprijs geldt die als eindbedrag in een klantdossier, zie L1b)
+  const kh = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Sleutelhanger rechthoek', zelf_geprint: true, wordt_verkocht: true })).data.id;
   const r = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Ring G6', wordt_gekocht: true })).data.id;
   const bk = await vraag('POST', `/voorraad/artikelen/${r}/boeking`, { richting: 'in', aantal: 3, prijs_per_eenheid: 0.12, reden: 'ontvangst' });
   assert.equal(bk.status, 200, JSON.stringify(bk.data));
