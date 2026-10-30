@@ -190,7 +190,7 @@ function Detail({ b, type, alleenKost = false }) {
       {delen.map(([l, w]) => <span key={l}>{l} {euro(Math.round(w * 100) / 100)}</span>)}
       {type === 'printen' && <span>{fmtAantal(Math.round(d.uren * 100) / 100)} u{d.energie_bron === 'gemeten' ? ' · energie gemeten' : ''}</span>}
       {b.korting?.totaal > 0 && <span className="badge b-info" title="Korting op deze regel">korting {e2(b.korting.totaal)}{b.korting.materiaal > 0 ? ` · filament ${e2(b.korting.materiaal)}` : ''}{b.korting.printuren > 0 ? ` · printuren ${e2(b.korting.printuren)}` : ''}{b.korting.regel > 0 ? ` · regel ${e2(b.korting.regel)}` : ''}</span>}
-      {b.handmatig && <span className="badge b-info">{b.afspraak != null ? `prijsafspraak ${euro(b.afspraak)}/stuk` : 'handmatig'} (berekend {euro(Math.round(b.natuurlijk_eindbedrag * 100) / 100)})</span>}
+      {b.handmatig && <span className="badge b-info">{b.afspraak != null ? `prijsafspraak ${euro(b.afspraak)}/stuk` : b.productprijs != null ? (b.productprijs > 0 ? `verkoopprijs product ${euro(b.productprijs)}/stuk` : 'in de prijs van het product') : 'handmatig'} (berekend {euro(Math.round(b.natuurlijk_eindbedrag * 100) / 100)})</span>}
       {b.per_stuk != null && type !== 'korting' && <span>per stuk {euro(b.per_stuk)}</span>}
       {b.oud != null && Math.abs(b.oud - b.eindbedrag) >= 0.01 && <span className="oudprijs" title="Wat de oude berekening (getrapte marge) voor deze regel vroeg">oude berekening {euro(b.oud)} ({b.eindbedrag > b.oud ? '+' : ''}{euro(Math.round((b.eindbedrag - b.oud) * 100) / 100)})</span>}
       {b.kost && <KostRegel k={b.kost} bedrag={b.eindbedrag} />}
