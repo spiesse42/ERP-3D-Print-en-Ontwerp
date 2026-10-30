@@ -79,16 +79,16 @@ export const regelsUitProduct = (a, eindproducten) => {
 };
 export const regelUitProduct = (a, eindproducten) => regelsUitProduct(a, eindproducten)[0];
 // Printprofiel (plaat k) van een product → velden (per stuk) van de regel.
-function uitProfiel(r, a, eindproducten, k = 0) {
+function uitProfiel(r, a, _eindproducten, k = 0) {
   const lijst = platenVan(a.profiel || {});
   const p = lijst[k] || {};
   const meer = lijst.length > 1, laatste = k === lijst.length - 1;
-  const eind = eindproducten?.some(e => e.id === a.id);
   return { per_stuk: true, per_plaat: alsInvoer(p.per_plaat), ...tijdVelden(Number(p.tijd_min) || 0),
     omschrijving: meer ? `${a.naam} — plaat ${k + 1}/${lijst.length}${p.naam ? ` (${p.naam})` : ''}` : r.omschrijving || a.naam,
     printer_id: p.printer_id ? String(p.printer_id) : r.printer_id,
     voorbereiding_min: alsInvoer(p.voorbereiding_min), nabewerking_min: alsInvoer(p.nabewerking_min),
-    ...(eind ? (laatste ? { artikel_id: String(a.id), plaat_van: null } : { artikel_id: '', plaat_van: a.id }) : { artikel_id: laatste ? String(a.id) : '' }),
+    // 30-10: ook in een klantdossier onthouden de andere platen plaat_van (zitten in de productprijs)
+    ...(laatste ? { artikel_id: String(a.id), plaat_van: null } : { artikel_id: '', plaat_van: meer ? a.id : null }),
     materialen: (p.materialen || []).length ? p.materialen.map(m => ({ keuze: m.artikel_id ? `a:${m.artikel_id}` : `p:${m.filament_type_id}`, gram: alsInvoer(m.gram) })) : [{ keuze: '', gram: '' }] };
 }
 export function vanApi(r) {
@@ -287,9 +287,13 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                   <option value="">— niet naar voorraad —</option>
                   {eindproducten.map(a => <option key={a.id} value={a.id}>{a.weergave}</option>)}
                 </select></label>}
-                {productKeuze && <label title="Het product dat je print: zijn onderdelen per stuk (bv. sleutelring) komen mee in de prijs en gaan bij de levering uit voorraad">Product<select className="inp" value={r.artikel_id} onChange={e => zet(i, { artikel_id: e.target.value })}>
+                {productKeuze && <label title="Het product dat je print: de prijs is zijn verkoopprijs, zijn onderdelen per stuk (bv. sleutelring) gaan bij de levering uit voorraad. Een andere plaat van een product uit meerdere platen zit in die prijs (€ 0).">Product<select className="inp" value={r.artikel_id || (r.plaat_van ? `p:${r.plaat_van}` : '')}
+                  onChange={e => { const v = e.target.value; zet(i, v.startsWith('p:') ? { artikel_id: '', plaat_van: Number(v.slice(2)) } : { artikel_id: v, plaat_van: null }); }}>
                   <option value="">— geen —</option>
                   {productKeuze.map(a => <option key={a.id} value={a.id}>{a.weergave}</option>)}
+                  <optgroup label="Andere plaat van (zit in de productprijs)">
+                    {productKeuze.map(a => <option key={`p${a.id}`} value={`p:${a.id}`}>plaat van {a.weergave}</option>)}
+                  </optgroup>
                 </select></label>}
                 {(productKeuze || eindproducten) && r.artikel_id && !alleenLezen && (
                   <button type="button" className="linkish" style={{ alignSelf: 'end', marginBottom: 6 }} title="Tijd, filament, printer en stuks per plaat van deze regel als printprofiel (per stuk) bij het product bewaren" onClick={() => naarProfiel(r)}>Als printprofiel van het product bewaren</button>
