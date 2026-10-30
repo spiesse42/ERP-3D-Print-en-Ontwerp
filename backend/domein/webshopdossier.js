@@ -131,7 +131,7 @@ export function maakDossierUitBestelling(db, bestellingId, { items = null, kleur
           const { laatste, ...r } = x;
           regels.push({ ...r, type: 'printen', aantal: i.aantal,
             materialen: kleurOk ? r.materialen.map((m, j) => ({ artikel_id: kleurIds[j], gram: m.gram })) : r.materialen,
-            artikel_id: laatste ? a.id : null, handmatig_bedrag: laatste ? bedrag : 0,
+            artikel_id: laatste ? a.id : null, plaat_van: laatste ? null : a.id, handmatig_bedrag: laatste ? bedrag : 0,
             ...(slicer ? { slicer_bijlage_id: slicer, slicer_plaat: platen[k]?.slicer_plaat ?? null } : {}) });
         });
       }
