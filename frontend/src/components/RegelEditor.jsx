@@ -291,9 +291,10 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                   onChange={e => { const v = e.target.value; zet(i, v.startsWith('p:') ? { artikel_id: '', plaat_van: Number(v.slice(2)) } : { artikel_id: v, plaat_van: null }); }}>
                   <option value="">— geen —</option>
                   {productKeuze.map(a => <option key={a.id} value={a.id}>{a.weergave}</option>)}
-                  <optgroup label="Andere plaat van (zit in de productprijs)">
-                    {productKeuze.map(a => <option key={`p${a.id}`} value={`p:${a.id}`}>plaat van {a.weergave}</option>)}
-                  </optgroup>
+                  {/* enkel producten waarvan het printprofiel meerdere platen heeft */}
+                  {(m => m.length > 0 && <optgroup label="Andere plaat van (zit in de productprijs)">
+                    {m.map(a => <option key={`p${a.id}`} value={`p:${a.id}`}>plaat van {a.weergave}</option>)}
+                  </optgroup>)(productKeuze.filter(a => String(a.id) === String(r.plaat_van) || platenVan(producten?.find(x => x.id === a.id)?.profiel).length > 1))}
                 </select></label>}
                 {(productKeuze || eindproducten) && r.artikel_id && !alleenLezen && (
                   <button type="button" className="linkish" style={{ alignSelf: 'end', marginBottom: 6 }} title="Tijd, filament, printer en stuks per plaat van deze regel als printprofiel (per stuk) bij het product bewaren" onClick={() => naarProfiel(r)}>Als printprofiel van het product bewaren</button>
