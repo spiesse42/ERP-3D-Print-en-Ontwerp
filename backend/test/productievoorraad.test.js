@@ -189,3 +189,22 @@ test('V-run. nieuw product uit een run: artikel + printprofiel per stuk + dossie
   assert.match((await vraag('POST', `/productie/runs/${r2.id}/nieuw-product`, { naam: 'draak', aantal: 1 })).data.error, /bestaat al/);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM artikelen').get().n, n);
 });
+
+test('V-klant. nieuw klantdossier uit een run: printregel uit de plaat, gestart, run gekoppeld, bevestigen telt voor het dossier', async () => {
+  const db = getDb();
+  const pg = db.prepare('SELECT id FROM filament_types LIMIT 1').get().id;
+  const klant = ok(await vraag('POST', '/klanten', { type: 'particulier', naam: 'Peeters', voornaam: 'An' }), 201);
+  const r = ok(await vraag('POST', '/productie/runs', { printer_id: mini, gestart_op: iso(100), geeindigd_op: iso(99), uitkomst: 'klaar', kwh: 0.1, bestand: 'Naambord_An.gcode.3mf' }), 201);
+  assert.match((await vraag('POST', `/productie/runs/${r.id}/klantdossier`, { omschrijving: 'x' })).data.error, /klant/);
+  const p = ok(await vraag('POST', `/productie/runs/${r.id}/klantdossier`, { klant_id: klant.id, omschrijving: 'Naambord An', aantal: 2, tijd_min: '60', prijs: '12,5', materialen: [{ filament_type_id: pg, gram: '40' }] }), 201);
+  const d = ok(await vraag('GET', `/dossiers/${p.dossier_id}`));
+  assert.deepEqual([d.soort, d.klant_id, d.titel, !!d.gestart_op], ['klant', klant.id, 'Naambord An', true]);
+  assert.deepEqual([d.regels.length, d.regels[0].aantal, d.regels[0].tijd_min, d.regels[0].printer_id, d.regels[0].handmatig_bedrag, d.regels[0].materialen[0].gram], [1, 2, 60, mini, 12.5, 40]);
+  assert.equal(db.prepare('SELECT printopdracht_id FROM printruns WHERE id = ?').get(r.id).printopdracht_id, p.opdracht_id, 'run gekoppeld');
+  assert.ok(db.prepare('SELECT 1 FROM werkbonnen WHERE dossier_id = ?').get(p.dossier_id), 'werkbon gemaakt');
+  ok(await vraag('POST', `/productie/opdrachten/${p.opdracht_id}/bevestig`, { aantal_goed: 2 }));
+  const n = db.prepare('SELECT COUNT(*) n FROM dossiers').get().n;
+  const r2 = ok(await vraag('POST', '/productie/runs', { printer_id: mini, gestart_op: iso(98.5), geeindigd_op: iso(98), uitkomst: 'klaar', kwh: 0.1 }), 201);
+  assert.match((await vraag('POST', `/productie/runs/${r2.id}/klantdossier`, { klant_id: klant.id })).data.error, /omschrijving/);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM dossiers').get().n, n, 'fout → niets aangemaakt');
+});
