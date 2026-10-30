@@ -45,6 +45,15 @@ export function verrijk(db, regels, { filamentInkoop = false, onderdelen = true,
   const q = sql(db);
   const afspraken = afsprakenVan(db, klantId);
   const metAfspraak = r => (r?.artikel_id && afspraken.has(Number(r.artikel_id)) ? { afspraak: afspraken.get(Number(r.artikel_id)) } : {});
+  // 30-10: printregel uit een product in een klantdossier → de verkoopprijs
+  // van dat product (= webshopprijs) per stuk; de andere platen van een
+  // product uit meerdere platen zitten daarin (0). Prijsafspraak en een zelf
+  // ingevuld eindbedrag gaan voor.
+  const productPrijs = r => {
+    const a = r.artikel_id || r.plaat_van ? q.artikel.get(r.artikel_id || r.plaat_van) : null;
+    if (!a || a.type !== 'artikel' || !a.wordt_verkocht || !(Number(a.verkoopprijs) > 0)) return {};
+    return { productprijs: r.artikel_id ? Number(a.verkoopprijs) : 0 };
+  };
   return (Array.isArray(regels) ? regels : []).map(r => {
     if (r?.type === 'printen') {
       const printer = r.printer_id ? q.printer.get(r.printer_id) ?? null : null;
@@ -58,7 +67,7 @@ export function verrijk(db, regels, { filamentInkoop = false, onderdelen = true,
         return { ...m, naam: pg?.naam ?? m.naam ?? null, prijs_per_kg: pg ? pg.verkoopprijs_per_kg : null, inkoop_per_kg: ink == null ? null : Math.round(ink * 100) / 100 };
       });
       const delen = onderdelen && r.artikel_id ? leesOnderdelen(db, r.artikel_id).map(o => ({ naam: o.naam, aantal: o.aantal, prijs: o.prijs })) : [];
-      return { ...r, printer, materialen, onderdelen: delen, ...metAfspraak(r) };
+      return { ...r, printer, materialen, onderdelen: delen, ...metAfspraak(r), ...(onderdelen ? productPrijs(r) : {}) };
     }
     if (r?.type === 'artikel') {
       const a = r.artikel_id ? q.artikel.get(r.artikel_id) : null;

@@ -129,7 +129,7 @@ const KOL = ['type', 'omschrijving', 'aantal', 'printer_id', 'tijd_min', 'voorbe
 export function bewaarRegels(db, dossierId, regels) {
   const soort = db.prepare('SELECT soort FROM dossiers WHERE id = ?').get(dossierId)?.soort;
   for (const [i, r] of regels.entries()) {
-    if (r.type === 'printen' && r.plaat_van && (soort !== 'eigen' || !db.prepare(`SELECT 1 FROM artikelen WHERE id = ? AND type = 'artikel' AND zelf_geprint = 1`).get(r.plaat_van))) r.plaat_van = null;
+    if (r.type === 'printen' && r.plaat_van && ((soort !== 'eigen' && soort !== 'klant') || !db.prepare(`SELECT 1 FROM artikelen WHERE id = ? AND type = 'artikel' AND zelf_geprint = 1`).get(r.plaat_van))) r.plaat_van = null;
     if (r.type !== 'printen' || !r.artikel_id) continue;
     // 24-10: klantdossier = het geprinte product (voor zijn onderdelen), geen voorraad
     if (soort !== 'eigen' && soort !== 'klant') { r.artikel_id = null; continue; }
