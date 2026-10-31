@@ -4,7 +4,7 @@
 // Een concept volgt altijd de huidige dossierregels. Bij versturen (offerte)
 // of definitief maken (werkbon, bij het afrekenen) wordt een MOMENTOPNAME
 // bewaard: precies wat de klant kreeg, ook als het dossier nadien wijzigt.
-import { getBedrijfsgegevens } from './hulp.js';
+import { getBedrijfsgegevens, DomeinFout } from './hulp.js';
 import { offerteStatus } from './status/offerte.js';
 import { volgendNummer } from './nummering.js';
 import { logGebeurtenis } from './historiek.js';
@@ -79,6 +79,16 @@ export function documentInhoud(db, dossier, berekening) {
     regels,
     totaal: berekening.totaal, btw_grondslag: berekening.btw_grondslag, vast: berekening.vast,
   };
+}
+
+// 31-10: de klant ziet het werk als één regel (bv. "Bureeldecoratie") in plaats van
+// alle printregels. Het totaal blijft exact gelijk; de werkbon zelf verandert niet.
+export function eenRegelInhoud(inhoud, omschrijving) {
+  const o = String(omschrijving ?? '').trim();
+  if (!o) throw new DomeinFout('Vul een omschrijving in voor de ene regel op het document.');
+  if (o.length > 200) throw new DomeinFout('De omschrijving voor de ene regel is te lang (maximum 200 tekens).');
+  const bedrag = Math.round(Number(inhoud.totaal) * 100) / 100;
+  return { ...inhoud, regels: [{ omschrijving: o, aantal: 1, per_stuk: bedrag, bedrag, uren: null, afbeelding: null }] };
 }
 
 export function geldigheidDagen(db) {

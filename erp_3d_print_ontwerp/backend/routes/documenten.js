@@ -7,7 +7,7 @@ import { DomeinFout } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { volgendNummer } from '../domein/nummering.js';
 import { leesDossier, leesRegelsVan, berekenDossier, datumOk, bewaarRegels, leesRegels } from '../domein/dossiers.js';
-import { offertesVan, nummerMetVersie, documentInhoud, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje, isErpFactuur, betaaltermijn } from '../domein/documenten.js';
+import { offertesVan, nummerMetVersie, documentInhoud, eenRegelInhoud, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje, isErpFactuur, betaaltermijn } from '../domein/documenten.js';
 import { getBedrijfsgegevens } from '../domein/hulp.js';
 import { factuurHtml, factuurBestand, peppolVerplicht } from '../documenten/factuur.js';
 import { maakBonnetje, maakFactuur, leesBonnummer, bonnummerVoorstel } from '../domein/afrekening.js';
@@ -341,6 +341,13 @@ async function erpDocumentHtml(soort, d) {
     ? factuurHtml({ inhoud: d.werkbon.document, nummer: d.afgerekend_nummer, datum: d.afgerekend_op, vervaldatum: d.afrekening_vervaldatum || d.afgerekend_op, uitvoering: uitvoering(d, d.afgerekend_op) })
     : bonnetjeHtml({ inhoud: d.werkbon.document, nummer: d.afgerekend_nummer, datum: d.afgerekend_op });
 }
+// 31-10: "alles in één regel op het document": { een_regel: true, omschrijving }.
+// Zonder omschrijving geldt de titel van het dossier.
+function eenRegelVan(bron, d) {
+  const aan = bron?.een_regel === true || bron?.een_regel === 'true' || bron?.een_regel === '1' || bron?.een_regel === 1;
+  if (!aan) return null;
+  return tekst(bron.omschrijving) || tekst(d.titel) || null;
+}
 function documentDatum(v, soort) {
   const datum = tekst(v) || vandaag();
   if (!datumOk(datum)) throw new DomeinFout('Vul een geldige datum in');
@@ -356,7 +363,7 @@ function vervalDatum(db, v, datum) {
 // Wat het document ZOU worden (venster + voorbeeld-PDF), zonder iets te
 // bewaren: de werkbon wordt zo nodig gemaakt in een transactie die daarna
 // teruggedraaid wordt, zodat het exact hetzelfde is als bij het echte maken.
-function documentVoorstel(db, d0, datum, soort) {
+function documentVoorstel(db, d0, datum, soort, eenRegel = null) {
   if (!d0.acties.afrekenen) throw new DomeinFout(d0.soort !== 'klant' ? 'Enkel een klantopdracht wordt afgerekend.' : 'Dit dossier is al afgerekend, gratis geleverd of geannuleerd.');
   if (soort === 'factuur' && !d0.klant_id) throw new DomeinFout('Een factuur is altijd op naam: kies eerst de klant van dit dossier (of maak een bonnetje).');
   let uit = null;
@@ -365,7 +372,7 @@ function documentVoorstel(db, d0, datum, soort) {
       const d = !d0.werkbon && maakWerkbon(db, d0.id) ? leesDossier(db, d0.id) : d0;
       const wb = d.werkbon;
       if (!wb.volledig || !wb.concept_document) throw new DomeinFout('Niet alle regels van de werkbon kunnen berekend worden. Los dat eerst op (zie de regels).');
-      uit = { inhoud: wb.concept_document, bedrag: wb.bedrag, werkbon: wb.weergave };
+      uit = { inhoud: eenRegel ? eenRegelInhoud(wb.concept_document, eenRegel) : wb.concept_document, bedrag: wb.bedrag, werkbon: wb.weergave };
       throw TERUG;
     })();
   } catch (e) { if (e !== TERUG) throw e; }
@@ -414,7 +421,7 @@ r.get('/dossiers/:id/:soort(bonnetje|factuur)/voorbeeld', metFouten(async (req, 
   const soort = soortVan(req);
   const d = dossier(db, idVan(req.params.id));
   const datum = documentDatum(req.query.datum, soort);
-  const v = documentVoorstel(db, d, datum, soort);
+  const v = documentVoorstel(db, d, datum, soort, eenRegelVan(req.query, d));
   const html = soort === 'factuur'
     ? await factuurHtml({ inhoud: v.inhoud, nummer: v.nummer, datum, vervaldatum: vervalDatum(db, req.query.vervaldatum, datum), uitvoering: uitvoering(d, datum), concept: true })
     : bonnetjeHtml({ inhoud: v.inhoud, nummer: tekst(req.query.nummer) ? `Bonnetje ${String(req.query.nummer).trim().replace(/^bonnetje\s*/i, '')}` : 'Bonnetje …', datum: v.datum, concept: true });
@@ -433,7 +440,8 @@ r.post('/dossiers/:id/:soort(bonnetje|factuur)', metFouten(async (req, res) => {
   const datum = documentDatum(req.body?.datum, soort);
   const verval = soort === 'factuur' ? vervalDatum(db, req.body?.vervaldatum, datum) : null;
   const bonnummer = soort === 'bonnetje' ? leesBonnummer(db, req.body?.nummer) : null;   // 04-10: uit Accountable
-  documentVoorstel(db, d0, datum, soort);   // zelfde controles als het venster
+  const eenRegel = eenRegelVan(req.body, d0);
+  documentVoorstel(db, d0, datum, soort, eenRegel);   // zelfde controles als het venster
   const naarKlant = !!req.body?.naar_klant;
   if (naarKlant && !geldigAdres(req.body?.aan)) throw new DomeinFout('Vul een geldig e-mailadres van de klant in (of vink "ook naar de klant" uit).');
   // mailen: een factuur altijd (Accountable), een bonnetje enkel naar de klant (30-09)
@@ -442,8 +450,8 @@ r.post('/dossiers/:id/:soort(bonnetje|factuur)', metFouten(async (req, res) => {
   if (mailen && !vindBrowser()) throw new DomeinFout('Geen Chrome, Edge of Chromium gevonden om de PDF te maken.');
   const leverVoorraad = req.body?.voorraad_leveren !== false;
   db.transaction(() => (soort === 'factuur'
-    ? maakFactuur(db, d0, { datum, vervaldatum: verval, leverVoorraad })
-    : maakBonnetje(db, d0, { datum, nummer: bonnummer, leverVoorraad })))();
+    ? maakFactuur(db, d0, { datum, vervaldatum: verval, leverVoorraad, eenRegel })
+    : maakBonnetje(db, d0, { datum, nummer: bonnummer, leverVoorraad, eenRegel })))();
   let mail_fout = null;
   if (mailen) try {
     await mailDocument(db, soort, leesDossier(db, d0.id), { naar_klant: naarKlant, aan: req.body?.aan, onderwerp: req.body?.onderwerp, tekst: req.body?.tekst, naar_accountable: soort === 'factuur' });

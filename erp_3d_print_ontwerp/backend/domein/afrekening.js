@@ -10,7 +10,7 @@
 // werkbon → eerst automatisch aanmaken (25-09).
 import { DomeinFout } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
-import { maakWerkbon, afrekeningWeergave, isErpBonnetje, isErpFactuur, isErpDocument } from './documenten.js';
+import { maakWerkbon, afrekeningWeergave, isErpBonnetje, isErpFactuur, isErpDocument, eenRegelInhoud } from './documenten.js';
 import { leesDossier, leesRegelsVan } from './dossiers.js';
 import { volgendNummer } from './nummering.js';
 import { leverRestUitVoorraad } from './leveringen.js';
@@ -22,12 +22,12 @@ const dmj = d => String(d).split('-').reverse().join('-');
 // afrekening(wb) → { soort, nummer, datum, bedrag, extra? } — pas opgeroepen
 // als de werkbon volledig berekend is (dus geen nummer "verbruikt" bij een fout).
 // leverVoorraad (29-09): nog niet geleverde artikelen uit voorraad meteen leveren.
-export function rekenAf(db, d0, { waarom = 'bij het afrekenen', afrekening, logTekst = null, leverVoorraad = true }) {
+export function rekenAf(db, d0, { waarom = 'bij het afrekenen', afrekening, logTekst = null, leverVoorraad = true, eenRegel = null }) {
   const d = !d0.werkbon && maakWerkbon(db, d0.id, { waarom }) ? leesDossier(db, d0.id) : d0;
   const wb = d.werkbon;
   if (!wb.volledig || !wb.concept_document) throw new DomeinFout('Niet alle regels van de werkbon kunnen berekend worden. Los dat eerst op (zie de regels).');
   const a = afrekening(wb);
-  const momentopname = { regels_api: leesRegelsVan(db, d.id), document: wb.concept_document, basis: wb.basis, metingen_totaal: wb.berekening?.totaal ?? null };
+  const momentopname = { regels_api: leesRegelsVan(db, d.id), document: eenRegel ? eenRegelInhoud(wb.concept_document, eenRegel) : wb.concept_document, basis: wb.basis, metingen_totaal: wb.berekening?.totaal ?? null };
   db.prepare('UPDATE werkbonnen SET definitief_op = ?, momentopname = ?, totaal = ? WHERE id = ?')
     .run(a.datum, JSON.stringify(momentopname), wb.bedrag, wb.id);
   // Een bonnetje = afgerekend én betaald in één keer (dagontvangsten).
@@ -66,24 +66,24 @@ export function bonnummerVoorstel(db, datum) {
   const hoog = alle.reduce((a, b) => (b.n > a.n ? b : a));
   return `${jaar}-${String(hoog.n + 1).padStart(hoog.w, '0')}`;
 }
-export function maakBonnetje(db, d0, { datum, nummer, leverVoorraad = true }) {
+export function maakBonnetje(db, d0, { datum, nummer, leverVoorraad = true, eenRegel = null }) {
   if (!nummer) throw new DomeinFout('Vul het nummer van het bonnetje uit Accountable in.');
   return rekenAf(db, d0, {
-    waarom: 'bij het maken van het bonnetje', leverVoorraad,
+    waarom: 'bij het maken van het bonnetje', leverVoorraad, eenRegel,
     afrekening: wb => ({ soort: 'bonnetje', nummer, datum, bedrag: wb.bedrag, pdf: true }),
-    logTekst: a => `${a.nummer} gemaakt (nummer uit Accountable; ${dmj(a.datum)}, ${euro(a.bedrag)}): afgerekend en meteen betaald`,
+    logTekst: a => `${a.nummer} gemaakt (nummer uit Accountable; ${dmj(a.datum)}, ${euro(a.bedrag)}): afgerekend en meteen betaald${eenRegel ? ` (één regel: "${eenRegel}")` : ''}`,
   });
 }
 
 // ── Factuur door het ERP (29-09) ────────────────────────────────────────
 // Zelfde als het bonnetje, maar: nummer uit de reeks FAC, NIET meteen betaald,
 // met een vervaldatum. Het bedrag is altijd dat van de werkbon.
-export function maakFactuur(db, d0, { datum, vervaldatum, leverVoorraad = true }) {
+export function maakFactuur(db, d0, { datum, vervaldatum, leverVoorraad = true, eenRegel = null }) {
   if (!d0.klant_id) throw new DomeinFout('Een factuur is altijd op naam: kies eerst de klant van dit dossier (of maak een bonnetje).');
   return rekenAf(db, d0, {
-    waarom: 'bij het maken van de factuur', leverVoorraad,
+    waarom: 'bij het maken van de factuur', leverVoorraad, eenRegel,
     afrekening: wb => ({ soort: 'factuur', nummer: volgendNummer(db, 'FAC', { jaar: Number(String(datum).slice(0, 4)) }), datum, vervaldatum, bedrag: wb.bedrag, pdf: true }),
-    logTekst: a => `${a.nummer} gemaakt door het ERP (${dmj(a.datum)}, ${euro(a.bedrag)}, vervalt ${dmj(a.vervaldatum)})`,
+    logTekst: a => `${a.nummer} gemaakt door het ERP (${dmj(a.datum)}, ${euro(a.bedrag)}, vervalt ${dmj(a.vervaldatum)})${eenRegel ? `, in één regel: "${eenRegel}"` : ''}`,
   });
 }
 
