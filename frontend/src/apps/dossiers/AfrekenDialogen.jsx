@@ -95,6 +95,8 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
   const k = dossier.klant_gegevens;
   const [naarKlant, setNaarKlant] = useState(false);
   const [leveren, setLeveren] = useState(true);
+  const [eenRegel, setEenRegel] = useState(false);   // 31-10: alles in één regel op het document
+  const [omschr, setOmschr] = useState(dossier.titel || '');
   const [verval, setVerval] = useState(null);   // null = volgens de betaaltermijn
   const vervaldatum = verval || v?.vervaldatum || '';
   const [mail, setMail] = useState(null);   // pas invullen zodra het nummer gekend is
@@ -108,16 +110,16 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
   const mailen = factuur || naarKlant;
   const blokkeert = !v || !mailen ? null : !v.mail_ingesteld ? (factuur ? 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Een factuur moet naar Accountable gemaild worden.' : 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie): vink "ook naar de klant" uit.')
     : !v.pdf_mogelijk ? 'Geen Chrome, Edge of Chromium gevonden om de PDF te maken.' : null;
-  const kan = v && !blokkeert && !bezig && (!naarKlant || m.aan.trim()) && (!factuur || vervaldatum >= dag) && (factuur || kaalNr);
+  const kan = v && !blokkeert && !bezig && (!eenRegel || omschr.trim()) && (!naarKlant || m.aan.trim()) && (!factuur || vervaldatum >= dag) && (factuur || kaalNr);
   async function ok() {
     setBezig(true);
-    try { await onBevestig({ datum: dag, ...(factuur ? { vervaldatum } : { nummer: kaalNr }), voorraad_leveren: leveren, naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) }); }
+    try { await onBevestig({ datum: dag, ...(eenRegel ? { een_regel: true, omschrijving: omschr.trim() } : {}), ...(factuur ? { vervaldatum } : { nummer: kaalNr }), voorraad_leveren: leveren, naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) }); }
     finally { setBezig(false); }
   }
   return (
     <Dialoog titel={factuur ? 'Factuur maken' : 'Bonnetje maken'} onSluit={onSluit} breed
       voet={<>
-        <button type="button" className="btn ghost" disabled={!v} onClick={() => openPdf(`/dossiers/${dossier.id}/${soort}/voorbeeld?datum=${dag}${factuur && vervaldatum ? `&vervaldatum=${vervaldatum}` : ''}${!factuur && kaalNr ? `&nummer=${encodeURIComponent(kaalNr)}` : ''}`)}>Voorbeeld (PDF)</button>
+        <button type="button" className="btn ghost" disabled={!v} onClick={() => openPdf(`/dossiers/${dossier.id}/${soort}/voorbeeld?datum=${dag}${factuur && vervaldatum ? `&vervaldatum=${vervaldatum}` : ''}${!factuur && kaalNr ? `&nummer=${encodeURIComponent(kaalNr)}` : ''}${eenRegel ? `&een_regel=1&omschrijving=${encodeURIComponent(omschr.trim())}` : ''}`)}>Voorbeeld (PDF)</button>
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={onSluit}>Annuleren</button>
         <button type="button" className="btn primary" disabled={!kan} onClick={ok}>{bezig ? 'Bezig…' : factuur ? (naarKlant ? 'Maken en mailen (klant + Accountable)' : 'Maken en mailen naar Accountable') : (naarKlant ? 'Maken en mailen naar de klant' : 'Bonnetje maken')}</button>
@@ -134,6 +136,11 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
           ? <div><span className="lbl">Nummer</span><div className="mono" style={{ padding: '8px 0' }}>{v?.nummer ?? '…'}</div></div>
           : <div><label htmlFor="bn-nr">Nummer uit Accountable</label><input id="bn-nr" className="inp mono" autoFocus placeholder={v?.nummer_voorstel ? `bv. ${v.nummer_voorstel}` : 'bv. 2026-025'} value={nr} onChange={e => setNr(e.target.value)} /></div>}
         <div><span className="lbl">Bedrag</span><div className="num" style={{ padding: '8px 0' }}><b>{v ? euro(v.bedrag) : '…'}</b> <span className="sub">{factuur ? 'btw niet van toepassing' : 'btw 0 %'}</span></div></div>
+      </div>
+      <div style={{ margin: '10px 0 0' }}>
+        <label className="vinkje" htmlFor="bn-een"><input id="bn-een" type="checkbox" checked={eenRegel} onChange={e => setEenRegel(e.target.checked)} /> {factuur ? 'Op de factuur' : 'Op het bonnetje'} in één regel (de klant ziet niet alle printregels)</label>
+        {eenRegel && <div style={{ marginTop: 6 }}><label htmlFor="bn-omschr">Omschrijving van de regel</label><input id="bn-omschr" className="inp" maxLength={200} value={omschr} onChange={e => setOmschr(e.target.value)} placeholder="bv. Bureeldecoratie" />
+          <div className="sub">Eén regel van {v ? euro(v.bedrag) : '…'}: het totaal blijft gelijk. De werkbon met alle regels blijft ongewijzigd bewaard.</div></div>}
       </div>
       <p className="sub" style={{ margin: '4px 0 0' }}>Het bedrag is dat van de werkbon{v?.werkbon ? ` ${v.werkbon}` : ''}{dossier.werkbon ? '' : ' (wordt nu gemaakt)'}; de werkbon wordt definitief{factuur ? '. Zet het dossier op betaald zodra het geld binnen is' : ' en het dossier staat meteen op betaald'}. Een ander bedrag nodig? Pas eerst de regels aan.</p>
       {!factuur && v && v.bedrag > v.drempel && <div className="waarschuwing" style={{ margin: '10px 0 0', display: 'block' }}>Meer dan {euro(v.drempel)}: volgens Accountable is voor zo'n verkoop mogelijk een factuur nodig in plaats van een bonnetje.</div>}

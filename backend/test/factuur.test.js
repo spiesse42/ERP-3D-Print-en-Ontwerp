@@ -101,8 +101,12 @@ test('FA2. maken: afgerekend (niet betaald), vervaldatum, naar Accountable; PDF 
   const b = ok(await vraag('POST', `/dossiers/${d1.id}/betaald`, { datum: vandaag }));
   assert.equal(b.volgende_stap.soort, 'afgerond');
   // Belgische btw-plichtige klant: tip om via Peppol te versturen
-  const e = ok(await vraag('POST', `/dossiers/${d2.id}/factuur`, { datum: vandaag }), 201);
+  const e = ok(await vraag('POST', `/dossiers/${d2.id}/factuur`, { datum: vandaag, een_regel: true, omschrijving: 'Bureeldecoratie' }), 201);
   assert.equal(e.afgerekend_nummer, `Factuur ${jaar}-005`);
+  // 31-10: alles in één regel op de factuur; bedrag ongewijzigd
+  assert.equal(e.werkbon.document.regels.length, 1);
+  assert.equal(e.werkbon.document.regels[0].omschrijving, 'Bureeldecoratie');
+  assert.equal(e.werkbon.document.regels[0].bedrag, e.afgerekend_bedrag);
   assert.ok(e.volgende_stap.extra.some(t => /via Peppol/.test(t)));
 });
 

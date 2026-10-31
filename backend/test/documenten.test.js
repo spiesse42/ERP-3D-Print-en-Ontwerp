@@ -216,3 +216,18 @@ test('F6. sjabloon: escapen, concept-watermerk, geen aankoopfactuurnummers', () 
   assert.ok(html.includes('€ 1,50'));
   assert.ok(html.includes('56bis'));
 });
+
+test('factuur in één regel: totaal gelijk, omschrijving naar keuze, werkbon ongewijzigd', async () => {
+  const { eenRegelInhoud } = await import('../domein/documenten.js');
+  const inhoud = { totaal: 123.456, regels: [{ omschrijving: 'a', aantal: 2, per_stuk: 10, bedrag: 20 }, { omschrijving: 'b', aantal: 1, per_stuk: 5, bedrag: 5 }], bedrijf: { naam: 'X' } };
+  const een = eenRegelInhoud(inhoud, '  Bureeldecoratie ');
+  assert.equal(een.regels.length, 1);
+  assert.equal(een.regels[0].omschrijving, 'Bureeldecoratie');
+  assert.equal(een.regels[0].bedrag, 123.46);
+  assert.equal(een.regels[0].aantal, 1);
+  assert.equal(een.totaal, 123.456);
+  assert.equal(een.bedrijf.naam, 'X');
+  assert.equal(inhoud.regels.length, 2, 'origineel ongewijzigd');
+  assert.throws(() => eenRegelInhoud(inhoud, '   '), /omschrijving/);
+  assert.throws(() => eenRegelInhoud(inhoud, 'x'.repeat(201)), /te lang/);
+});
