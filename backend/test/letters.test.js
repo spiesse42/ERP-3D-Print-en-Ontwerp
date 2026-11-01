@@ -8,6 +8,7 @@ import { stopWachter } from '../productie/wachter.js';
 import { leesLetterlijst } from '../domein/letters.js';
 import { filamentKaart, norm } from '../domein/webshopdossier.js';
 import { wisPaletCache } from '../integraties/kleurenpalet.js';
+import { bewaarBestellingen } from '../domein/webshopbestellingen.js';
 
 const echteFetch = globalThis.fetch;
 let palet = [];
@@ -164,4 +165,30 @@ test('L5. zelf gekozen filament bij een webshopkleur wordt onthouden bij de webs
   palet = [{ label: 'Perzik', slug: 'perzik', filamentName: 'Polymaker Panchroma PLA Matte — Pastel Peach' }];
   const v2 = ok(await vraag('POST', '/dossiers/letters/voorbeeld', { tekst: 'Perzik: A', artikel_id: letter }));
   assert.deepEqual([v2.kleuren[0].filament_id, v2.kleuren[0].bron], [zwart, 'webshop']);
+});
+
+test('L6. webshopbestelling met letters → klantdossier met letterregels (per letter × kleur); onbekende kleur → lijst in de notities', async () => {
+  const db = getDb();
+  db.prepare('UPDATE artikelen SET webshop_slug = ? WHERE id = ?').run('bubble-letter', letter);
+  wisPaletCache();
+  palet = [{ label: 'Oat', slug: 'oat', filamentName: 'iets onbekends' }];
+  const wit = db.prepare(`SELECT a.id FROM artikelen a JOIN filament_kleuren k ON k.id = a.kleur_id WHERE a.type = 'filament' AND k.naam = 'Wit'`).get().id;
+  bewaarBestellingen(db, [{ id: 'let1', created_at: '2026-11-01T10:00:00Z', customer_name: 'Anja Verhoye', customer_email: 'anja@voorbeeld.be', customer_phone: '0470000000',
+    street: 'Dorp 1', postal_city: '9000 Gent', country: 'BE', shipping_method_label: 'Bpost', total: 10, shipping_price: 3.25, notes: 'Bubble Letter: graag tegen vrijdag',
+    items: [{ slug: 'bubble-letter', name: 'Bubble letter ("MA" in Oat, "A" in Oat)', quantity: 3, price: 1.75, letters: [{ text: 'MA', color: 'Oat' }, { text: 'A', color: 'Oat' }], note: 'graag tegen vrijdag' }] }]);
+  const r = ok(await vraag('POST', '/webshopbestellingen/let1/dossier', {}), 201);
+  assert.deepEqual(r.waarschuwingen, []);
+  const d = ok(await vraag('GET', `/dossiers/${r.dossier_id}`));
+  assert.deepEqual(d.regels.map(x => [x.omschrijving, x.aantal, x.materialen[0]?.artikel_id]).sort(), [['Bubble letter A – Oat', 2, wit], ['Bubble letter M – Oat', 1, wit]]);
+  assert.equal(d.berekening.totaal, 5.25, '3 letters × € 1,75');
+  assert.deepEqual(d.letters[0].namen.map(n => n.naam), ['MA']);
+  assert.match(d.notities, /graag tegen vrijdag/);
+  // onbekende kleur: geen regels, wel de lijst in de notities + waarschuwing
+  bewaarBestellingen(db, [{ id: 'let2', created_at: '2026-11-01T11:00:00Z', customer_name: 'Bart Test', customer_email: 'bart@voorbeeld.be', total: 2, shipping_price: 0,
+    items: [{ slug: 'bubble-letter', name: 'Bubble letter', quantity: 1, price: 1.75, letters: [{ text: 'A', color: 'Neon' }] }] }]);
+  const r2 = ok(await vraag('POST', '/webshopbestellingen/let2/dossier', {}), 201);
+  assert.match(r2.waarschuwingen.join(), /kies het filament voor Neon/);
+  const d2 = ok(await vraag('GET', `/dossiers/${r2.dossier_id}`));
+  assert.equal(d2.regels.length, 0);
+  assert.match(d2.notities, /- "A" in Neon \(1 letters\)/);
 });
