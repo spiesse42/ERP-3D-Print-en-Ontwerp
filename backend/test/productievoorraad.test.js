@@ -208,3 +208,26 @@ test('V-klant. nieuw klantdossier uit een run: printregel uit de plaat, gestart,
   assert.match((await vraag('POST', `/productie/runs/${r2.id}/klantdossier`, { klant_id: klant.id })).data.error, /omschrijving/);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM dossiers').get().n, n, 'fout → niets aangemaakt');
 });
+
+test('V-dossier. run aan een bestaand dossier: bestaande printregel (dossier start) of nieuwe printregel', async () => {
+  const db = getDb();
+  const d = ok(await vraag('POST', '/dossiers', { titel: 'Bestaand', klant_id: klant, regels: [{ type: 'printen', omschrijving: 'Vaas', printer_id: mini, aantal: 1, tijd_min: 60 }] }), 201);
+  assert.equal(d.gestart_op, null);
+  const r = ok(await vraag('POST', '/productie/runs', { printer_id: mini, gestart_op: iso(97), geeindigd_op: iso(96), uitkomst: 'klaar', kwh: 0.1, bestand: 'Vaas.gcode' }), 201);
+  assert.match((await vraag('POST', `/productie/runs/${r.id}/dossier`, { dossier_id: d.id })).data.error, /printregel/);
+  const p = ok(await vraag('POST', `/productie/runs/${r.id}/dossier`, { dossier_id: d.id, regel_id: d.regels[0].id }));
+  const o = db.prepare('SELECT * FROM printopdrachten WHERE id = ?').get(p.opdracht_id);
+  assert.equal(o.dossier_regel_id, d.regels[0].id);
+  assert.equal(db.prepare('SELECT printopdracht_id FROM printruns WHERE id = ?').get(r.id).printopdracht_id, o.id);
+  assert.ok(db.prepare('SELECT gestart_op FROM dossiers WHERE id = ?').get(d.id).gestart_op, 'dossier gestart');
+  ok(await vraag('POST', `/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: 1 }));
+  // regel volledig geprint → duidelijke fout; nieuwe printregel kan wel
+  const r2 = ok(await vraag('POST', '/productie/runs', { printer_id: mini, gestart_op: iso(95), geeindigd_op: iso(94.5), uitkomst: 'klaar', kwh: 0.1 }), 201);
+  assert.match((await vraag('POST', `/productie/runs/${r2.id}/dossier`, { dossier_id: d.id, regel_id: d.regels[0].id })).data.error, /geen open printopdracht/);
+  const p2 = ok(await vraag('POST', `/productie/runs/${r2.id}/dossier`, { dossier_id: d.id, nieuw: { omschrijving: 'Extra schaaltje', aantal: 2, tijd_min: 30, prijs: '8' } }));
+  const dn = ok(await vraag('GET', `/dossiers/${d.id}`));
+  assert.equal(dn.regels.length, 2);
+  assert.deepEqual([dn.regels[1].omschrijving, dn.regels[1].aantal, dn.regels[1].handmatig_bedrag, dn.regels[1].printer_id], ['Extra schaaltje', 2, 8, mini]);
+  assert.equal(db.prepare('SELECT dossier_regel_id FROM printopdrachten WHERE id = ?').get(p2.opdracht_id).dossier_regel_id, dn.regels[1].id);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM printopdrachten o JOIN dossier_regels r ON r.id = o.dossier_regel_id WHERE r.dossier_id = ? AND o.geannuleerd_op IS NULL').get(d.id).n, 2, 'eerste opdracht blijft, geen extra');
+});
