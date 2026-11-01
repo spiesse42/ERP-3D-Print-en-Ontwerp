@@ -35,8 +35,23 @@ export function leesLetterlijst(tekst) {
   const namen = [];
   const perKleur = [];
   const waarschuwingen = [];
-  let huidig = null;
+  let huidig = null, webshop = false;
   for (const l of regels) {
+    // 01-11: de mail van het letterformulier op de webshop:
+    // kopregels overslaan, opmerkingen niet lezen,
+    // '- "EMMA" in Lichtroze (4 letters)' = naam (of losse letter) in één kleur
+    if (/^opmerkingen\s*:/i.test(l)) break;
+    if (/^(product|besteller|bestelde letters)\b[^:]*:/i.test(l)) continue;
+    let w = l.match(/^[-•*]\s*["“”'](.+?)["“”']\s+in\s+(.+?)\s*\((\d+)\s+letters?\)\s*$/iu);
+    if (w) {
+      const letters = tekens(w[1].replace(/\s+/g, '').toLocaleUpperCase('nl-BE'));
+      const kleur = kleurNaam(w[2]);
+      if (Number(w[3]) !== letters.length) waarschuwingen.push(`"${w[1]}": ${letters.length} letters gelezen, maar het aantal zegt ${w[3]}. Kijk de lijst na.`);
+      if (letters.length === 1) perKleur.push({ kleur, letters });
+      else namen.push({ naam: w[1].trim().toLocaleUpperCase('nl-BE'), letters: letters.map(letter => ({ letter, kleur })) });
+      huidig = null; webshop = true;
+      continue;
+    }
     // "J – Perzikkleur": één teken, streep, kleur
     let m = l.match(new RegExp(`^(\\S)\\s*${STREEP}\\s*(.+)$`, 'u'));
     if (m && /\p{L}/u.test(m[2]) && tekens(m[1]).length === 1 && (huidig || heeftKlein(m[2]))) {
@@ -76,7 +91,7 @@ export function leesLetterlijst(tekst) {
       waarschuwingen.push(`${n.naam}: de letters (${n.letters.map(x => x.letter).join('')}) komen niet overeen met de naam. Kijk de lijst na.`);
     }
   }
-  if (namen.length && perKleur.length) waarschuwingen.push('De lijst mengt namen en kleuren; beide worden meegeteld.');
+  if (namen.length && perKleur.length && !webshop) waarschuwingen.push('De lijst mengt namen en kleuren; beide worden meegeteld.');
   // dezelfde kleur met andere hoofdletters ("Oat"/"oat") = één kleur: de schrijfwijze van de eerste keer
   const schrijf = new Map();
   const eén = k => { const s = k.toLowerCase(); if (!schrijf.has(s)) schrijf.set(s, k.charAt(0).toLocaleUpperCase('nl-BE') + k.slice(1)); return schrijf.get(s); };
