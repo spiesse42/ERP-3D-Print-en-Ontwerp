@@ -333,3 +333,46 @@ export async function keuzes({ fetchFn = fetch } = {}) {
     "kleuren": *[_type == "color" && !(_id in path("drafts.**"))] | order(label asc){ _id, label, hex } }`, {}, { fetchFn, metToken: false });
   return { categorieen: r?.categorieen || [], kleuren: r?.kleuren || [], lettertypes: LETTERTYPES, token: !!process.env.SANITY_TOKEN };
 }
+
+// ── Gewicht automatisch naar de webshop (01-11) ───────────────────────────
+// Na het bewaren van een printprofiel: het gewicht per stuk (filament uit
+// het profiel; bij letters de gemiddelde letter) meteen in Sanity zetten,
+// voor de verzendkosten. Niet als er in het tabblad Webshop een eigen
+// gewicht ingevuld is. Een maatvariant krijgt het gewicht bij die variant.
+// Fouten blokkeren het bewaren niet: de uitkomst gaat terug als melding.
+export async function syncGewicht(db, artikelId, { fetchFn = fetch } = {}) {
+  const a = db.prepare('SELECT id, webshop_slug, webshop_variant, webshop_data, webshop_sanity_id, webshop_sanity_rev, printprofiel FROM artikelen WHERE id = ?').get(Number(artikelId));
+  if (!a || (!a.webshop_slug && !a.webshop_sanity_id)) return { status: 'geen_webshop' };
+  let d = {};
+  try { d = a.webshop_data ? JSON.parse(a.webshop_data) : {}; } catch { /* leeg */ }
+  if (d.weightGrams != null && !a.webshop_variant) return { status: 'eigen_gewicht', gram: d.weightGrams };
+  const gram = gewichtUitProfiel(a);
+  if (!gram) return { status: 'geen_gewicht' };
+  if (!process.env.SANITY_TOKEN) return { status: 'geen_token', gram };
+  try {
+    const doc = await sanityQuery(a.webshop_sanity_id ? '*[_id == $id][0]{_id, _updatedAt, weightGrams, "varianten": sizeVariants[]{label, weightGrams}}'
+      : '*[_type == "product" && slug.current == $s && !(_id in path("drafts.**"))][0]{_id, _updatedAt, weightGrams, "varianten": sizeVariants[]{label, weightGrams}}',
+    a.webshop_sanity_id ? { id: a.webshop_sanity_id } : { s: a.webshop_slug }, { fetchFn });
+    if (!doc) return { status: 'niet_gevonden', gram };
+    let set;
+    if (a.webshop_variant) {
+      const v = (doc.varianten || []).find(x => x.label === a.webshop_variant);
+      if (!v) return { status: 'niet_gevonden', gram };
+      if (v.weightGrams === gram) return { status: 'gelijk', gram };
+      set = { [`sizeVariants[label==${JSON.stringify(a.webshop_variant)}].weightGrams`]: gram };
+    } else {
+      if (doc.weightGrams === gram) return { status: 'gelijk', gram };
+      set = { weightGrams: gram };
+    }
+    const inSync = a.webshop_sanity_rev && a.webshop_sanity_rev === doc._updatedAt;
+    await sanityMutate([{ patch: { id: doc._id, set } }], { fetchFn });
+    if (inSync) {
+      const na = await sanityQuery('*[_id == $id][0]{_updatedAt}', { id: doc._id }, { fetchFn });
+      db.prepare('UPDATE artikelen SET webshop_sanity_rev = ? WHERE id = ?').run(na?._updatedAt ?? a.webshop_sanity_rev, a.id);
+    }
+    logGebeurtenis(db, 'artikel', a.id, 'gewijzigd', `Gewicht in de webshop: ${String(gram).replace('.', ',')} g (uit het printprofiel)`);
+    return { status: 'bijgewerkt', gram };
+  } catch (e) {
+    return { status: 'fout', gram, melding: e.message };
+  }
+}

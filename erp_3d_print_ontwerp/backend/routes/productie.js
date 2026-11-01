@@ -22,6 +22,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { bijlagenMap } from '../db/index.js';
 import { logGebeurtenis } from '../domein/historiek.js';
+import { syncGewicht } from '../domein/webshoppush.js';
 
 const r = Router();
 function metFouten(fn) {
@@ -458,13 +459,15 @@ r.post('/rol-leeg/:mutatie/ongedaan', metFouten((req, res) => {
 // Printprofielen van vaste producten (06-10)
 r.get('/printprofielen', metFouten((req, res) => res.json(leesProfielen(getDb()))));
 r.get('/printprofiel/:artikel', metFouten((req, res) => res.json({ profiel: artikelMetProfiel(getDb(), req.params.artikel).profiel })));
-r.put('/printprofiel/:artikel', metFouten((req, res) => {
+r.put('/printprofiel/:artikel', metFouten(async (req, res) => {
   const db = getDb();
-  res.json({ profiel: db.transaction(() => bewaarProfiel(db, req.params.artikel, req.body?.profiel ?? null))() });
+  const profiel = db.transaction(() => bewaarProfiel(db, req.params.artikel, req.body?.profiel ?? null))();
+  // 01-11: gewicht meteen naar de webshop (verzendkosten)
+  res.json({ profiel, webshop: profiel ? await syncGewicht(db, req.params.artikel) : null });
 }));
 // 24-10: een printregel uit een dossier (bv. uit een slicerbestand) bewaren
 // als printprofiel van het product; het slicerbestand gaat mee (kopie bij het artikel).
-r.post('/printprofiel/:artikel/uit-regel', metFouten((req, res) => {
+r.post('/printprofiel/:artikel/uit-regel', metFouten(async (req, res) => {
   const db = getDb();
   const regel = req.body?.regel;
   if (!regel || regel.type !== 'printen') throw new DomeinFout('Geen printregel meegegeven');
@@ -485,7 +488,7 @@ r.post('/printprofiel/:artikel/uit-regel', metFouten((req, res) => {
       logGebeurtenis(db, 'artikel', a.id, 'gewijzigd', `Printprofiel overgenomen uit een printregel${kopie ? ` (slicerbestand ${kopie.b.bestandsnaam})` : ''}`);
       return p;
     })();
-    res.json({ profiel, naam: a.naam, vervangen: !!a.profiel });
+    res.json({ profiel, naam: a.naam, vervangen: !!a.profiel, webshop: await syncGewicht(db, a.id) });
   } catch (e) {
     if (kopie) try { fs.unlinkSync(path.join(bijlagenMap(), kopie.naam)); } catch { /* al weg */ }
     throw e;
