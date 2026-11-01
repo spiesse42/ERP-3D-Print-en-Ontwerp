@@ -21,14 +21,15 @@ import { logGebeurtenis } from './historiek.js';
 import { volgendNummer } from './nummering.js';
 import { leesRegels, bewaarRegels } from './dossiers.js';
 import { leesBestellingen } from './webshopbestellingen.js';
-import { artikelMetProfiel, stukPlaten, regelsUitProfiel } from '../productie/printprofiel.js';
+import { artikelMetProfiel, stukPlaten, regelsUitProfiel, isLetterProfiel } from '../productie/printprofiel.js';
+import { voorbeeldLetters, voegLettersToe } from './letters.js';
 
 export const norm = t => String(t ?? '').toLowerCase().replace(/[—–·\-_,()]/g, ' ').replace(/\s+/g, ' ').trim();
 const r2 = v => Math.round(v * 100) / 100;
 
 // Welke lijnen standaard in het dossier horen: gepersonaliseerd, niet
 // gekoppeld, of te weinig op voorraad.
-export const moetPrinten = i => !!(i.tekst || i.lettertype || i.symbool) || !i.artikel || i.artikel.voorraad < i.aantal;
+export const moetPrinten = i => !!(i.tekst || i.lettertype || i.symbool || i.letters) || !i.artikel || i.artikel.voorraad < i.aantal;
 
 export function filamentKaart(db) {
   const rijen = db.prepare(`SELECT a.id, fm.naam AS merk, fmat.naam AS materiaal, k.naam AS kleur FROM artikelen a
@@ -125,8 +126,11 @@ export function maakDossierUitBestelling(db, bestellingId, { items = null, kleur
         return id;
       };
       const regels = [];
+      const letterLijnen = [];   // 01-11: letterbestellingen → na de gewone regels via "Letters"
       for (const idx of gekozen) {
         const i = b.items[idx];
+        const la = i.letters && i.artikel ? artikelMetProfiel(db, i.artikel.id) : null;
+        if (la && isLetterProfiel(la.profiel)) { letterLijnen.push({ i, a: la }); continue; }
         const extra = [i.lettertype && !norm(i.naam).includes(norm(i.lettertype)) ? `Lettertype: ${i.lettertype}` : null,
           i.symbool && i.symbool !== 'geen' && !norm(i.naam).includes(norm(i.symbool)) ? `Symbool: ${i.symbool}` : null].filter(Boolean);
         const omschrijving = [i.naam, ...extra].join(' · ');
@@ -155,6 +159,21 @@ export function maakDossierUitBestelling(db, bestellingId, { items = null, kleur
         });
       }
       bewaarRegels(db, dossierId, leesRegels(regels));
+      for (const { i, a } of letterLijnen) {
+        // zelfde formaat als de mail van het letterformulier (Letters… leest dat)
+        const tekst = i.letters.map(r => `- "${r.text}" in ${r.color} (${String(r.text).replace(/\s/g, '').length} letters)`).join('\n');
+        const v = voorbeeldLetters(db, { tekst, artikel_id: a.id }, kleuren || new Map());
+        const zonder = v.kleuren.filter(k => !k.filament_id).map(k => k.label);
+        if (v.zonder_plaat.length || zonder.length || !v.items.length) {
+          waarschuwingen.push(`"${a.naam}": letters niet automatisch toegevoegd (${v.zonder_plaat.length ? `geen plaat voor ${v.zonder_plaat.join(' ')}` : zonder.length ? `kies het filament voor ${zonder.join(', ')}` : 'geen letters gelezen'}). Klik in het dossier op "Letters…" en plak de lijst uit de notities.`);
+          db.prepare(`UPDATE dossiers SET notities = trim(COALESCE(notities, '') || ? ) WHERE id = ?`).run(`\n\nLetters (${a.naam}):\n${tekst}`, dossierId);
+          continue;
+        }
+        const voor = db.prepare('SELECT COALESCE(MAX(id), 0) m FROM dossier_regels WHERE dossier_id = ?').get(dossierId).m;
+        voegLettersToe(db, { id: dossierId }, { tekst, artikel_id: a.id }, kleuren || new Map());
+        // wat de klant betaald heeft: prijs per letter uit de webshop
+        if (Number(i.prijs) >= 0) db.prepare('UPDATE dossier_regels SET handmatig_bedrag = ROUND(? * aantal, 2) WHERE dossier_id = ? AND id > ?').run(Number(i.prijs), dossierId, voor);
+      }
       db.prepare('UPDATE webshop_bestellingen SET dossier_id = ?, dossier_items = ? WHERE id = ?').run(dossierId, JSON.stringify(gekozen), b.id);
       logGebeurtenis(db, 'dossier', dossierId, 'aangemaakt', `Uit de webshopbestelling van ${b.klant_naam || b.email || 'een klant'} (${datum})`);
       return { dossier_id: dossierId, nummer, klant_id: klantId, klant_nieuw: klantNieuw, waarschuwingen };

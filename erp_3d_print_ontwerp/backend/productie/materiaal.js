@@ -13,10 +13,10 @@ import { boekUit, voorraadVan } from '../domein/voorraad.js';
 import { weergaveNaam, maakArtikel } from '../domein/artikelen.js';
 import { volgendNummer } from '../domein/nummering.js';
 import { logGebeurtenis } from '../domein/historiek.js';
-import { maakOpdracht } from './opdrachten.js';
+import { maakOpdracht, synchroniseer } from './opdrachten.js';
 import { artikelMetProfiel, regelsUitProfiel, platenVan, bewaarProfiel } from './printprofiel.js';
 import { start } from '../domein/uitvoering.js';
-import { leesRegels, bewaarRegels } from '../domein/dossiers.js';
+import { leesRegels, bewaarRegels, leesRegelsVan } from '../domein/dossiers.js';
 
 const FILAMENT = `SELECT a.id, a.type, a.filament_type_id, m.naam AS merk, mat.naam AS materiaal, k.naam AS kleur,
     (SELECT COALESCE(SUM(aantal_resterend), 0) FROM voorraad_partijen p WHERE p.artikel_id = a.id) AS voorraad
@@ -200,4 +200,49 @@ export function klantdossierUitRun(db, run, b) {
   const opdracht = db.prepare(`SELECT o.id FROM printopdrachten o JOIN dossier_regels r ON r.id = o.dossier_regel_id
     WHERE r.dossier_id = ? ORDER BY o.id LIMIT 1`).get(dossierId);
   return { dossier_id: dossierId, nummer, opdracht_id: opdracht?.id ?? null };
+}
+
+// ── Run aan een bestaand dossier (01-11) ──────────────────────────────────
+// - regel_id: een printregel van dat dossier. Niet gestart → het dossier
+//   start (werkbon, printopdrachten); de run gaat naar de eerste open
+//   printopdracht van die regel (verhuist mee naar de printer van de run).
+// - nieuw: { omschrijving, artikel_id, aantal, tijd_min, prijs, materialen }
+//   → een extra printregel uit deze plaat (printer van de run).
+// Geeft de printopdracht terug; de route koppelt de run.
+export function dossierVoorRun(db, run, b) {
+  const d = db.prepare('SELECT id, nummer, soort, gestart_op, geannuleerd_op, afgerekend_op, gratis_op, samengevoegd_in FROM dossiers WHERE id = ?').get(Number(b?.dossier_id));
+  if (!d) throw new DomeinFout('Kies een dossier');
+  if (d.geannuleerd_op || d.samengevoegd_in) throw new DomeinFout(`Dossier ${d.nummer} is geannuleerd of samengevoegd.`);
+  if (d.afgerekend_op || d.gratis_op) throw new DomeinFout(`Dossier ${d.nummer} is al afgerekend of gratis geleverd. Maak dat eerst ongedaan.`);
+  let regelId;
+  if (b?.nieuw) {
+    const x = b.nieuw;
+    const art = x.artikel_id ? db.prepare(`SELECT id, naam FROM artikelen WHERE id = ? AND type = 'artikel'`).get(Number(x.artikel_id)) : null;
+    if (x.artikel_id && !art) throw new DomeinFout('Product niet gevonden');
+    const omschrijving = String(x.omschrijving ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) || art?.naam || '';
+    if (!omschrijving) throw new DomeinFout('Wat werd er geprint? Vul een omschrijving in of kies een product');
+    const getal = v => (v === '' || v == null ? null : Number(String(v).replace(',', '.')));
+    const n = getal(x.aantal ?? 1);
+    if (!Number.isFinite(n) || n <= 0) throw new DomeinFout('Stuks op deze plaat: een getal groter dan 0');
+    const tijd = getal(x.tijd_min);
+    if (tijd !== null && (!Number.isFinite(tijd) || tijd < 0)) throw new DomeinFout('Printtijd: een getal vanaf 0');
+    const prijs = getal(x.prijs);
+    if (prijs !== null && (!Number.isFinite(prijs) || prijs < 0)) throw new DomeinFout('Prijs: een getal vanaf 0');
+    const oud = leesRegelsVan(db, d.id);
+    bewaarRegels(db, d.id, leesRegels([...oud, { type: 'printen', omschrijving, aantal: n, printer_id: run.printer_id, tijd_min: tijd ?? 0,
+      artikel_id: art?.id ?? null, handmatig_bedrag: d.soort === 'eigen' ? null : prijs, materialen: Array.isArray(x.materialen) ? x.materialen : [] }]));
+    regelId = db.prepare(`SELECT id FROM dossier_regels WHERE dossier_id = ? AND type = 'printen' ORDER BY id DESC LIMIT 1`).get(d.id).id;
+    logGebeurtenis(db, 'dossier', d.id, 'gewijzigd', `Printregel "${omschrijving}" toegevoegd uit een run${run.bestand ? ` (${run.bestand})` : ''}`);
+  } else {
+    const r = db.prepare(`SELECT id FROM dossier_regels WHERE id = ? AND dossier_id = ? AND type = 'printen'`).get(Number(b?.regel_id), d.id);
+    if (!r) throw new DomeinFout('Kies een printregel van het dossier, of maak een nieuwe');
+    regelId = r.id;
+  }
+  if (!d.gestart_op) start(db, d.id, { waarom: 'run gekoppeld' });
+  else synchroniseer(db, d.id);
+  const open = db.prepare(`SELECT o.id FROM printopdrachten o WHERE o.dossier_regel_id = ? AND o.voltooid_op IS NULL AND o.geannuleerd_op IS NULL
+    AND NOT EXISTS (SELECT 1 FROM printruns x WHERE x.printopdracht_id = COALESCE(o.plaat_groep, o.id) AND x.uitkomst = 'bezig' AND x.id <> ?)
+    ORDER BY (o.printer_id = ?) DESC, o.volgorde, o.id LIMIT 1`).get(regelId, run.id, run.printer_id);
+  if (!open) throw new DomeinFout('Deze printregel heeft geen open printopdracht meer (alles geprint of al bezig). Verhoog het aantal op de regel, of kies "Nieuwe printregel".');
+  return { dossier_id: d.id, nummer: d.nummer, opdracht_id: open.id };
 }
