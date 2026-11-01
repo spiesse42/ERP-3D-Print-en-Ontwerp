@@ -338,9 +338,25 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
   const klantOpties = (klanten || []).map(k => ({ id: k.id, naam: klantNaam(k) })).sort((a, b) => a.naam.localeCompare(b.naam, 'nl'));
   const producten = (artikelen || []).filter(a => a.type === 'artikel' && a.zelf_geprint).sort((a, b) => a.naam.localeCompare(b.naam, 'nl'));
   async function nieuweKlant(naam) { const k = await api.post('/klanten', { type: 'particulier', naam }); await herlaadKlanten(); return k; }
+  // 01-11: bestaand dossier (bestaande of nieuwe printregel)
+  const [bd, setBd] = useState({ dossier_id: '', regel: '' });
+  const { data: dossiers } = useData(keuze === 'dossier' ? '/dossiers' : null);
+  const { data: dossier } = useData(keuze === 'dossier' && bd.dossier_id ? `/dossiers/${bd.dossier_id}` : null);
+  const dossierOpties = (dossiers || []).filter(x => !x.afgerekend_op && !x.gratis_op && !x.geannuleerd_op && !x.samengevoegd_in);
+  const prodRegels = dossier && String(dossier.id) === bd.dossier_id ? dossier.productie?.regels || [] : [];
   const [bezig, setBezig] = useState(false);
   const gekozen = open.find(o => String(o.id) === andere);
   async function ok() {
+    if (keuze === 'dossier') {
+      setBezig(true);
+      try {
+        const body = bd.regel === 'nieuw' ? { dossier_id: bd.dossier_id, nieuw: { ...kd, materialen: matVoorApi(kdMat) } } : { dossier_id: bd.dossier_id, regel_id: bd.regel };
+        const r = await api.post(`/productie/runs/${run.id}/dossier`, body);
+        melding(`Run gekoppeld aan dossier ${r.nummer}.`);
+        await onKlaar();
+      } catch (e) { melding(e.message, 'fout'); setBezig(false); }
+      return;
+    }
     if (keuze === 'klant') {
       setBezig(true);
       try {
@@ -367,7 +383,24 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
   }
   const kan = keuze === 'voorstel' ? !!run.voorstel : keuze === 'andere' ? !!andere : keuze === 'nieuw' ? !!nieuw.naam.trim()
     : keuze === 'product' ? !!product.naam.trim() && Number(product.aantal) > 0
-    : keuze === 'klant' ? !!kd.klant_id && !!(kd.omschrijving.trim() || kd.artikel_id) && Number(String(kd.aantal).replace(',', '.')) > 0 : true;
+    : keuze === 'klant' ? !!kd.klant_id && !!(kd.omschrijving.trim() || kd.artikel_id) && Number(String(kd.aantal).replace(',', '.')) > 0
+    : keuze === 'dossier' ? !!bd.dossier_id && (bd.regel === 'nieuw' ? !!(kd.omschrijving.trim() || kd.artikel_id) && Number(String(kd.aantal).replace(',', '.')) > 0 : !!bd.regel) : true;
+  // printregel uit deze plaat: nieuw klantdossier of nieuwe regel in een bestaand dossier
+  const regelVelden = (<>
+            <div><label htmlFor="kp-kart">Product (optioneel)</label>
+              <select id="kp-kart" className="inp" value={kd.artikel_id} onChange={e => { const a = producten.find(x => String(x.id) === e.target.value); setKd(x => ({ ...x, artikel_id: e.target.value, omschrijving: a ? a.naam : x.omschrijving })); }}>
+                <option value="">— geen (eigen omschrijving) —</option>
+                {producten.map(a => <option key={a.id} value={a.id}>{a.naam}</option>)}
+              </select></div>
+            <div><label htmlFor="kp-koms">Omschrijving</label><input id="kp-koms" className="inp" value={kd.omschrijving} onChange={e => setKd(x => ({ ...x, omschrijving: e.target.value }))} /></div>
+            <div><label htmlFor="kp-kaantal">Stuks op deze plaat</label><input id="kp-kaantal" className="inp num" inputMode="decimal" value={kd.aantal} onChange={e => setKd(x => ({ ...x, aantal: e.target.value }))} /></div>
+            <div><label htmlFor="kp-ktijd">Printtijd van de plaat (min)</label><input id="kp-ktijd" className="inp num" inputMode="decimal" placeholder={run.uitkomst === 'bezig' ? 'zie de slicer' : ''} value={kd.tijd_min} onChange={e => setKd(x => ({ ...x, tijd_min: e.target.value }))} /></div>
+            <div><label htmlFor="kp-kprijs">Prijs voor de klant, totaal (optioneel)</label><input id="kp-kprijs" className="inp num" inputMode="decimal" placeholder="leeg = berekend" value={kd.prijs} onChange={e => setKd(x => ({ ...x, prijs: e.target.value }))} /></div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <FilamentInvoer rijen={kdMat} onWijzig={setKdMat} id="kp-kfil" />
+              <p className="sub" style={{ margin: '4px 0 0' }}>Filament en tijd van de <b>hele plaat</b>.{gemeld ? ` Gewicht zoals de printer het meldde: ${gemeld} g.` : ''} Met een product tellen de onderdelen en een prijsafspraak van de klant mee. Prijs leeg = berekend; je past het dossier daarna nog aan (extra regels, levering…).</p>
+            </div>
+  </>);
   const perPrinter = [...new Set(open.map(o => o.printer))];
   return (
     <Dialoog titel="Run koppelen" onSluit={onSluit} breed
@@ -410,6 +443,34 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
             </div>
           </div>
         )}
+        <label className="keuze"><input type="radio" name="kp" checked={keuze === 'dossier'} onChange={() => setKeuze('dossier')} />
+          <span>Bestaand dossier <span className="sub">(een printregel van dat dossier, of een nieuwe printregel erbij)</span></span></label>
+        {keuze === 'dossier' && (
+          <div className="keuze-sub fgrid">
+            <div style={{ gridColumn: '1 / -1' }}><label htmlFor="kp-dossier">Dossier</label>
+              <select id="kp-dossier" className="inp" value={bd.dossier_id} onChange={e => setBd({ dossier_id: e.target.value, regel: '' })}>
+                <option value="">{dossiers ? '— kies het dossier —' : 'laden…'}</option>
+                {dossierOpties.map(x => <option key={x.id} value={x.id}>{x.nummer} · {x.titel || '—'}{x.klant ? ` · ${x.klant}` : ''}</option>)}
+              </select></div>
+            {bd.dossier_id && (
+              <fieldset className="keuzes" style={{ gridColumn: '1 / -1', margin: 0 }}>
+                <legend className="lbl" style={{ padding: 0 }}>Printregel</legend>
+                {prodRegels.map(x => {
+                  const rest = x.besteld - x.goed;
+                  return (
+                    <label key={x.regel_id} className="keuze"><input type="radio" name="kp-regel" checked={bd.regel === String(x.regel_id)} onChange={() => setBd(b => ({ ...b, regel: String(x.regel_id) }))} />
+                      <span>{x.omschrijving || 'Printwerk'} <span className="sub">(besteld {aantal(x.besteld)} · goed {aantal(x.goed)}{rest <= 0 ? ' · al klaar' : ''})</span></span></label>
+                  );
+                })}
+                {dossier && !prodRegels.length && <p className="sub" style={{ margin: '0 0 4px' }}>Dit dossier heeft nog geen printregels.</p>}
+                <label className="keuze"><input type="radio" name="kp-regel" checked={bd.regel === 'nieuw'} onChange={() => setBd(b => ({ ...b, regel: 'nieuw' }))} />
+                  <span>Nieuwe printregel uit deze plaat</span></label>
+              </fieldset>
+            )}
+            {bd.regel === 'nieuw' && regelVelden}
+            {bd.dossier_id && <p className="sub" style={{ gridColumn: '1 / -1', margin: 0 }}>Is het dossier nog niet gestart, dan start het nu (werkbon en printopdrachten). De run gaat naar de open printopdracht van die regel.</p>}
+          </div>
+        )}
         <label className="keuze"><input type="radio" name="kp" checked={keuze === 'klant'} onChange={() => setKeuze('klant')} />
           <span>Nieuw klantdossier <span className="sub">(voor een klant: dossier met deze plaat als printregel, meteen gestart)</span></span></label>
         {keuze === 'klant' && (
@@ -417,19 +478,7 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
             <div><label htmlFor="kp-klant">Klant</label>
               <KeuzeMetToevoegen id="kp-klant" ariaLabel="Klant" waarde={kd.klant_id} leegLabel="— kies de klant —"
                 opties={klantOpties} onKies={w => setKd(x => ({ ...x, klant_id: w }))} onNieuw={nieuweKlant} watLabel="klant" /></div>
-            <div><label htmlFor="kp-kart">Product (optioneel)</label>
-              <select id="kp-kart" className="inp" value={kd.artikel_id} onChange={e => { const a = producten.find(x => String(x.id) === e.target.value); setKd(x => ({ ...x, artikel_id: e.target.value, omschrijving: a ? a.naam : x.omschrijving })); }}>
-                <option value="">— geen (eigen omschrijving) —</option>
-                {producten.map(a => <option key={a.id} value={a.id}>{a.naam}</option>)}
-              </select></div>
-            <div><label htmlFor="kp-koms">Omschrijving</label><input id="kp-koms" className="inp" value={kd.omschrijving} onChange={e => setKd(x => ({ ...x, omschrijving: e.target.value }))} /></div>
-            <div><label htmlFor="kp-kaantal">Stuks op deze plaat</label><input id="kp-kaantal" className="inp num" inputMode="decimal" value={kd.aantal} onChange={e => setKd(x => ({ ...x, aantal: e.target.value }))} /></div>
-            <div><label htmlFor="kp-ktijd">Printtijd van de plaat (min)</label><input id="kp-ktijd" className="inp num" inputMode="decimal" placeholder={run.uitkomst === 'bezig' ? 'zie de slicer' : ''} value={kd.tijd_min} onChange={e => setKd(x => ({ ...x, tijd_min: e.target.value }))} /></div>
-            <div><label htmlFor="kp-kprijs">Prijs voor de klant, totaal (optioneel)</label><input id="kp-kprijs" className="inp num" inputMode="decimal" placeholder="leeg = berekend" value={kd.prijs} onChange={e => setKd(x => ({ ...x, prijs: e.target.value }))} /></div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <FilamentInvoer rijen={kdMat} onWijzig={setKdMat} id="kp-kfil" />
-              <p className="sub" style={{ margin: '4px 0 0' }}>Filament en tijd van de <b>hele plaat</b>.{gemeld ? ` Gewicht zoals de printer het meldde: ${gemeld} g.` : ''} Met een product tellen de onderdelen en een prijsafspraak van de klant mee. Prijs leeg = berekend; je past het dossier daarna nog aan (extra regels, levering…).</p>
-            </div>
+            {regelVelden}
           </div>
         )}
         <label className="keuze"><input type="radio" name="kp" checked={keuze === 'nieuw'} onChange={() => setKeuze('nieuw')} />
@@ -459,7 +508,6 @@ export function KoppelDialoog({ run, onSluit, onKlaar }) {
           </div>
         )}
       </fieldset>
-      <p className="note" style={{ marginBottom: 0 }}>Hoort de run bij een bestaand klantdossier zonder printopdracht? Start dat dossier eerst (tabblad Productie) en koppel de run daarna.</p>
     </Dialoog>
   );
 }
