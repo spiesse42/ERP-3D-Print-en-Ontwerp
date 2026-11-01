@@ -55,7 +55,7 @@ export default function LettersDialoog({ dossierId, producten, filamenten, vuil,
           <select className="inp" value={artikel} onChange={e => setArtikel(e.target.value)}>
             {producten.map(a => <option key={a.id} value={a.id}>{a.naam} ({a.letters.length} letters)</option>)}
           </select></label>}
-        <label className="lbl" htmlFor="lt-tekst">Plak de lijst zoals je ze kreeg: per naam (naam, dan "letter – kleur", of "NAAM: kleur") of per kleur ("Kleur LETTERS aantal").</label>
+        <label className="lbl" htmlFor="lt-tekst">Plak de lijst zoals je ze kreeg: per naam (naam, dan "letter – kleur", of "NAAM: kleur"), per kleur ("Kleur LETTERS aantal") of de hele mail van het letterformulier op de webshop.</label>
         <textarea id="lt-tekst" className="inp mono" rows={14} placeholder={VOORBEELD} value={tekst} onChange={e => setTekst(e.target.value)} />
         <p className="note" style={{ marginBottom: 0 }}>Afvinktekens (v, ✓, ok) mogen blijven staan. Accenten (É, Ë…) blijven behouden: daarvoor moet er een plaat in het letterprofiel zijn.</p>
       </> : <>

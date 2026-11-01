@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { initDb, sluitDb, getDb } from '../db/index.js';
 import { maakApp } from '../app.js';
 import { stopWachter } from '../productie/wachter.js';
+import { leesLetterlijst } from '../domein/letters.js';
 
 const echteFetch = globalThis.fetch;
 let palet = [];
@@ -128,4 +129,20 @@ test('L3. lijst per naam inlezen → voorbeeld, kleuren via het webshoppalet en 
   const r2 = ok(await vraag('POST', `/dossiers/${d.id}/letters`, { tekst: 'Zwartig: A A', artikel_id: letter }), 201);
   assert.equal(r2.dossier.letters.length, 2);
   assert.equal(r2.dossier.regels.length, regels.length + 1);
+});
+
+test('L4. de mail van het letterformulier op de webshop plakken: kopregels en opmerkingen overslaan, naam of losse letter in één kleur', () => {
+  const r = leesLetterlijst(`Product: Bubble Letter
+Besteller: Verhoye anja (x@y.be)
+
+Bestelde letters (totaal 6):
+- "L" in Zacht oranje (1 letters)
+- "C" in Butter cream (geel) (1 letters)
+- "Emma" in Lichtroze (4 letters)
+
+Opmerkingen:
+graag tegen vrijdag`);
+  assert.deepEqual(r.waarschuwingen, []);
+  assert.deepEqual(r.namen.map(n => n.naam), ['EMMA']);
+  assert.deepEqual(r.items.map(i => `${i.letter}:${i.kleur}:${i.aantal}`), ['C:Butter cream (geel):1', 'A:Lichtroze:1', 'E:Lichtroze:1', 'M:Lichtroze:2', 'L:Zacht oranje:1']);
 });
