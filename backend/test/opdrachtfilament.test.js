@@ -163,3 +163,19 @@ test('F8. rol leegmelden: het filament van de losse opdracht staat bij de voorst
   const f = ok(await vraag('GET', `/productie/printers/${mini}/filament`));
   assert.ok(f.voorstel.some(a => a.id === zwart), JSON.stringify(f.voorstel));
 });
+
+test('F9. filament van een dossierregel aanvullen vanuit Productie: regel bewaard, bevestigde opdracht herberekend', async () => {
+  const d = ok(await vraag('POST', '/dossiers', { soort: 'intern', titel: 'Aanvullen', regels: [{ type: 'printen', omschrijving: 'Figuurtje', printer_id: mini, aantal: 2, tijd_min: 60 }] }), 201);
+  const o = ok(await vraag('POST', '/productie/opdrachten', { printer_id: mini, dossier_regel_id: d.regels[0].id }), 201);
+  const run = await geslaagdeRun();
+  ok(await vraag('POST', `/productie/runs/${run.id}/koppel`, { printopdracht_id: o.id }));
+  const b = ok(await vraag('POST', `/productie/opdrachten/${o.id}/bevestig`, { aantal_goed: 2 }));
+  assert.equal(b.kost_onvolledig, 1);
+  fout(await vraag('PUT', `/dossiers/${d.id}/regels/${d.regels[0].id}/materialen`, { materialen: [{ artikel_id: zwart, filament_type_id: pg, gram: 5 }] }), /filament of een prijsgroep/);
+  const r = ok(await vraag('PUT', `/dossiers/${d.id}/regels/${d.regels[0].id}/materialen`, { materialen: [{ artikel_id: zwart, gram: '30,5' }] }));
+  assert.deepEqual([r.herberekend, r.onvolledig], [1, 0]);
+  assert.equal(r.dossier.regels[0].materialen[0].gram, 30.5);
+  const na = getDb().prepare('SELECT kost_onvolledig, productiekost_stuk FROM printopdrachten WHERE id = ?').get(o.id);
+  assert.equal(na.kost_onvolledig, 0); assert.ok(na.productiekost_stuk > 0);
+  assert.equal((await vraag('PUT', `/dossiers/${d.id}/regels/999999/materialen`, { materialen: [] })).status, 404);
+});
