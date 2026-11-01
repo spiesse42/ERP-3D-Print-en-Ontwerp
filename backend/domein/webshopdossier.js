@@ -35,7 +35,26 @@ export function filamentKaart(db) {
     JOIN filament_types ft ON ft.id = a.filament_type_id JOIN filament_merken fm ON fm.id = ft.merk_id
     JOIN filament_materialen fmat ON fmat.id = ft.materiaal_id JOIN filament_kleuren k ON k.id = a.kleur_id
     WHERE a.type = 'filament' AND a.gearchiveerd = 0`).all();
-  return new Map(rijen.map(r => [norm(`${r.merk} ${r.materiaal} ${r.kleur}`), r.id]));
+  const kaart = new Map(rijen.map(r => [norm(`${r.merk} ${r.materiaal} ${r.kleur}`), r.id]));
+  // 01-11: zelf gemaakte koppelingen (webshopnaam → filament), bv. "Polymaker
+  // Panchroma PLA Matte — Pastel Peach" → PolyMaker PLA Matte · Pastel Peach
+  const actief = new Set(rijen.map(r => r.id));
+  for (const [naam, id] of Object.entries(webshopKoppelingen(db))) if (actief.has(id) && !kaart.has(naam)) kaart.set(naam, id);
+  return kaart;
+}
+const KOPPELINGEN = 'webshop_filamenten';   // instelling: { genormaliseerde webshopnaam: filament-id }
+function webshopKoppelingen(db) {
+  try { return JSON.parse(db.prepare('SELECT waarde FROM instellingen WHERE sleutel = ?').get(KOPPELINGEN)?.waarde || '{}'); } catch { return {}; }
+}
+// Een zelf gekozen filament bij een webshopkleur onthouden (als de naam het
+// niet al vanzelf vindt): de volgende bestelling herkent het dan automatisch.
+export function onthoudWebshopFilament(db, webshopNaam, filamentId) {
+  const k = norm(webshopNaam), id = Number(filamentId);
+  if (!k || !Number.isInteger(id)) return;
+  const lijst = webshopKoppelingen(db);
+  if (lijst[k] === id) return;
+  lijst[k] = id;
+  db.prepare(`INSERT INTO instellingen (sleutel, waarde, label) VALUES (?, ?, 'Webshop: filamentnaam → filament') ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde`).run(KOPPELINGEN, JSON.stringify(lijst));
 }
 
 // "Maya Mathys" → voornaam Maya, naam Mathys; adres enkel bij levering aan huis

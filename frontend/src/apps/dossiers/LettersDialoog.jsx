@@ -85,7 +85,7 @@ export default function LettersDialoog({ dossierId, producten, filamenten, vuil,
             })}</tbody>
           </table>
         </div>
-        <p className="note" style={{ marginBottom: 0 }}>Per letter × kleur komt er een printregel met de eigen plaat van die letter. Wil je meerdere letters van dezelfde kleur samen op één plaat printen: na het starten in het tabblad Productie aanvinken → "Op één plaat zetten". Je keuze van filament per kleur wordt onthouden.</p>
+        <p className="note" style={{ marginBottom: 0 }}>Per letter × kleur komt er een printregel met de eigen plaat van die letter. Wil je meerdere letters van dezelfde kleur samen op één plaat printen: na het starten in het tabblad Productie aanvinken → "Op één plaat zetten". Je keuze van filament per kleur wordt onthouden, ook bij de filamentnaam van de webshop (dan herkennen ook webshopbestellingen die kleur).</p>
       </>}
     </Dialoog>
   );

@@ -19,7 +19,7 @@ import { bijlagenMap } from '../db/index.js';
 import { DomeinFout } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
 import { leesRegels, leesRegelsVan, bewaarRegels } from './dossiers.js';
-import { filamentKaart, norm } from './webshopdossier.js';
+import { filamentKaart, norm, onthoudWebshopFilament } from './webshopdossier.js';
 import { artikelMetProfiel, isLetterProfiel, letterPlaat, normLetter, regelUitProfiel } from '../productie/printprofiel.js';
 
 const STREEP = '[–—\\-:]';
@@ -179,6 +179,8 @@ export function voegLettersToe(db, dossier, { tekst, artikel_id, kleuren = {} },
       // kleurkeuzes onthouden voor de volgende keer
       const eerder = onthouden(db);
       for (const k of v.kleuren) eerder[k.label.toLowerCase()] = keuze.get(k.label.toLowerCase());
+      // 01-11: en bij de filamentnaam van de webshop (ook voor webshopbestellingen)
+      for (const k of v.kleuren) if (k.webshop) onthoudWebshopFilament(db, k.webshop, keuze.get(k.label.toLowerCase()));
       db.prepare(`INSERT INTO instellingen (sleutel, waarde, label) VALUES (?, ?, 'Letters: kleur → filament') ON CONFLICT(sleutel) DO UPDATE SET waarde = excluded.waarde`).run(ONTHOUD, JSON.stringify(eerder));
       logGebeurtenis(db, 'dossier', dossier.id, 'gewijzigd', `${v.totaal} letters toegevoegd (${v.bron === 'naam' ? `${v.namen?.length ?? 0} namen` : `${v.kleuren.length} kleuren`}): ${nieuw.length} printregels`);
       return { regels: nieuw.length, letters: v.totaal };

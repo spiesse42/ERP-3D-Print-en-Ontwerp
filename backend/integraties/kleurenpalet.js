@@ -15,3 +15,5 @@ export async function kleurenPalet() {
   } catch { /* webshop niet bereikbaar */ }
   return cache.map || new Map();
 }
+// Tests (en na een wijziging in Sanity): het palet opnieuw ophalen.
+export function wisPaletCache() { cache = { t: 0, map: null }; }
