@@ -6,7 +6,7 @@ import { api, BASE } from '../lib/api.js';
 import Icoon from '../schil/Icoon.jsx';
 import NieuwArtikelDialoog from './NieuwArtikelDialoog.jsx';
 import Kostenopbouw, { Prijsopbouw } from './Kostenopbouw.jsx';
-import { euro, naarInvoer, aantal as fmtAantal } from '../lib/formaat.js';
+import { euro, naarInvoer, aantal as fmtAantal, webshopGewichtTekst } from '../lib/formaat.js';
 import { verklein } from '../lib/afbeelding.js';
 import { useOmgeving } from '../schil/Omgeving.jsx';
 
@@ -229,8 +229,8 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
     const heeft = (producten || []).some(p => p.id === a.id);
     if (!await bevestig({ titel: 'Printprofiel van het product', tekst: `De printtijd, het filament, de printer en de stuks per plaat van deze regel worden het printprofiel van "${a.weergave}" (per stuk)${r.slicer_bijlage_id ? ', met het slicerbestand erbij' : ''}.${heeft ? ' Het huidige profiel wordt vervangen.' : ''}`, bevestigLabel: heeft ? 'Profiel vervangen' : 'Profiel bewaren' })) return;
     try {
-      await api.post(`/productie/printprofiel/${a.id}/uit-regel`, { regel: naarApi(r) });
-      melding(`Printprofiel van "${a.weergave}" bewaard. Volgende keer: "Uit product".`);
+      const uit = await api.post(`/productie/printprofiel/${a.id}/uit-regel`, { regel: naarApi(r) });
+      melding(`Printprofiel van "${a.weergave}" bewaard. Volgende keer: "Uit product".${webshopGewichtTekst(uit.webshop)}`);
       onProfielBewaard?.();
     } catch (e) { melding(e.message, 'fout'); }
   }   // sleutel van de regel die een nieuw artikel krijgt

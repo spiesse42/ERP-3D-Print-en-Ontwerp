@@ -3,7 +3,7 @@ import { api, BASE } from '../../lib/api.js';
 import { useData } from '../../schil/useData.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
 import Icoon from '../../schil/Icoon.jsx';
-import { aantal as fmtAantal, euro } from '../../lib/formaat.js';
+import { aantal as fmtAantal, euro, webshopGewichtTekst } from '../../lib/formaat.js';
 import ProfielUitSlicer from './ProfielUitSlicer.jsx';
 
 // Printprofiel van een vast product (06-10): tijd en gram PER STUK, stuks
@@ -60,7 +60,10 @@ export default function Printprofiel({ id, naam = '', gewicht = null, onBijprint
   const vuil = data && JSON.stringify(f) !== JSON.stringify(naarForm(data.profiel));
   async function bewaar(profiel) {
     setBezig(true);
-    try { await api.put(`/productie/printprofiel/${id}`, { profiel }); await herlaad(); herlaadKost(); melding(profiel ? 'Printprofiel bewaard.' : 'Printprofiel gewist.'); }
+    try {
+      const r = await api.put(`/productie/printprofiel/${id}`, { profiel }); await herlaad(); herlaadKost();
+      melding(profiel ? `Printprofiel bewaard.${webshopGewichtTekst(r.webshop)}` : 'Printprofiel gewist.', r.webshop?.status === 'fout' ? 'fout' : undefined);
+    }
     catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
   }

@@ -23,3 +23,16 @@ export function alsDatum(t) {
 export const datum = t => (t ? alsDatum(t).toLocaleDateString('nl-BE') : '');
 export const datumTijd = t => (t ? alsDatum(t).toLocaleString('nl-BE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 export const vandaag = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+// 01-11: uitkomst van "gewicht naar de webshop" na het bewaren van een printprofiel
+export function webshopGewichtTekst(w) {
+  const g = w?.gram != null ? `${String(w.gram).replace('.', ',')} g` : '';
+  switch (w?.status) {
+    case 'bijgewerkt': return ` Gewicht in de webshop bijgewerkt: ${g}.`;
+    case 'eigen_gewicht': return ` In de webshop blijft het zelf ingevulde gewicht (${g}, tabblad Webshop).`;
+    case 'geen_token': return ' Gewicht niet naar de webshop: er is geen Sanity-token ingesteld.';
+    case 'niet_gevonden': return ' Gewicht niet naar de webshop: het product werd niet gevonden in Sanity.';
+    case 'fout': return ` Gewicht niet naar de webshop: ${w.melding}`;
+    default: return '';
+  }
+}

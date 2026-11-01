@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { initDb, sluitDb, getDb, bijlagenMap } from '../db/index.js';
-import { leesWebshop, bewaarWebshop, pushWebshop, slugVan, LAYER_LEAF_SJABLOON, maakKeuzeArtikel, maakAlleKeuzeArtikels, voorraadNaarKeuze } from '../domein/webshoppush.js';
+import { leesWebshop, bewaarWebshop, pushWebshop, syncGewicht, slugVan, LAYER_LEAF_SJABLOON, maakKeuzeArtikel, maakAlleKeuzeArtikels, voorraadNaarKeuze } from '../domein/webshoppush.js';
 
 // nagebootste Sanity: documenten in een Map, GROQ enkel voor de paar vragen die de push stelt
 const docs = new Map();
@@ -24,6 +24,7 @@ async function nep(url, opties = {}) {
   const p = k => JSON.parse(u.searchParams.get(`$${k}`));
   if (q.startsWith('count(*[_type == "product" && slug.current')) return antwoord({ result: [...docs.values()].filter(d => d.slug?.current === p('s')).length });
   if (q.startsWith('count(*[_id == $id])')) return antwoord({ result: docs.has(p('id')) ? 1 : 0 });
+  if (q.startsWith('*[_id == $id][0]{_id, _updatedAt, weightGrams')) { const d = docs.get(p('id')); return antwoord({ result: d ? { _id: d._id, _updatedAt: d._updatedAt, weightGrams: d.weightGrams ?? null, varianten: d.sizeVariants ?? null } : null }); }
   if (q.startsWith('*[_id == $id][0]')) { const d = docs.get(p('id')); return antwoord({ result: d ? { _id: d._id, _updatedAt: d._updatedAt, slug: d.slug?.current } : null }); }
   return antwoord({ result: null });
 }
@@ -182,4 +183,24 @@ test('W14. voorraad van het hoofdartikel naar een keuze-artikel verplaatsen (zel
   assert.equal(voorraadVan(db, art), 0); assert.equal(voorraadVan(db, tien), 2);
   assert.equal(db.prepare('SELECT prijs_per_eenheid p FROM voorraad_partijen WHERE artikel_id = ? AND aantal_resterend > 0').get(tien).p, 1.5);
   assert.throws(() => voorraadNaarKeuze(db, art, '10cm'), /niets in voorraad/);
+});
+
+test('W15. gewicht automatisch naar de webshop na het bewaren van het printprofiel; eigen webshopgewicht gaat voor', async () => {
+  const db = getDb();
+  const a = db.prepare('SELECT * FROM artikelen WHERE id = ?').get(art);
+  const pg = db.prepare('SELECT id FROM filament_types LIMIT 1').get()?.id
+    ?? Number(db.prepare('INSERT INTO filament_types (merk_id, materiaal_id, verkoopprijs_per_kg) VALUES (1, 1, 25)').run().lastInsertRowid);
+  db.prepare('UPDATE artikelen SET printprofiel = ? WHERE id = ?').run(JSON.stringify({ printer_id: 1, tijd_min: 60, per_plaat: 1, materialen: [{ filament_type_id: pg, gram: 42.5 }] }), art);
+  const d = JSON.parse(a.webshop_data); delete d.weightGrams;
+  db.prepare('UPDATE artikelen SET webshop_data = ? WHERE id = ?').run(JSON.stringify(d), art);
+  const revVoor = db.prepare('SELECT webshop_sanity_rev r FROM artikelen WHERE id = ?').get(art).r;
+  const inSync = docs.get(a.webshop_sanity_id)._updatedAt === revVoor;
+  const r = await syncGewicht(db, art, { fetchFn: nep });
+  assert.deepEqual(r, { status: 'bijgewerkt', gram: 42.5 });
+  assert.equal(docs.get(a.webshop_sanity_id).weightGrams, 42.5);
+  if (inSync) assert.equal(db.prepare('SELECT webshop_sanity_rev r FROM artikelen WHERE id = ?').get(art).r, docs.get(a.webshop_sanity_id)._updatedAt, 'geen valse 409 bij de volgende push');
+  assert.equal((await syncGewicht(db, art, { fetchFn: nep })).status, 'gelijk');
+  db.prepare('UPDATE artikelen SET webshop_data = ? WHERE id = ?').run(JSON.stringify({ ...d, weightGrams: 60 }), art);
+  assert.deepEqual(await syncGewicht(db, art, { fetchFn: nep }), { status: 'eigen_gewicht', gram: 60 });
+  assert.equal(docs.get(a.webshop_sanity_id).weightGrams, 42.5);
 });
