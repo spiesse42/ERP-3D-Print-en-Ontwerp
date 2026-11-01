@@ -3,7 +3,9 @@ import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
 import { Link } from '../../schil/Schil.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { aantal, euro, naarInvoer } from '../../lib/formaat.js';
-import { OpdrachtBadge, OpdrachtDialoog, BevestigDialoog, KoppelDialoog, duur, PlaatBadge, PlaatBevestigDialoog } from '../productie/opdracht.jsx';
+import { OpdrachtBadge, OpdrachtDialoog, BevestigDialoog, KoppelDialoog, duur, PlaatBadge, PlaatBevestigDialoog, FilamentInvoer, naarMatInvoer, matVoorApi, gemeldGewicht } from '../productie/opdracht.jsx';
+import Printprofiel from '../voorraad/Printprofiel.jsx';
+import { useData } from '../../schil/useData.js';
 import { RunVenster } from '../productie/RunDialoog.jsx';
 import { StatusBadge } from '../productie/PrintersLive.jsx';
 import { api, BASE } from '../../lib/api.js';
@@ -70,6 +72,7 @@ export default function ProductieTab({ d, vuil, herlaad }) {
     setDialoog({ soort: 'nieuw', regel: { dossier_regel_id: x.regel_id, naam: x.omschrijving || `Printwerk ${d.nummer}`, label: x.omschrijving || 'Printwerk',
       aantal: rest > 0 ? rest : x.besteld, printer_id: x.printer_id } });
   }
+  const regelVan = x => d.regels.find(r => r.id === x.regel_id);
   const gemeten = Object.fromEntries(d.regels.filter(r => r.type === 'printen').map(r => [r.id, r.gemeten]));
   const alle = d.productie.regels.flatMap(x => x.opdrachten);
   const platen = [...new Map(alle.filter(o => o.plaat).map(o => [o.plaat.groep, o])).values()]
@@ -120,6 +123,7 @@ export default function ProductieTab({ d, vuil, herlaad }) {
               <b>{x.omschrijving || 'Printwerk'}{x.eindproduct && <span className="sub" style={{ fontWeight: 400 }}> → voorraad: <Link naar={`/voorraad/artikelen/${x.eindproduct.id}`}>{x.eindproduct.naam}</Link></span>}</b>
               <span className="tel num">besteld {aantal(x.besteld)} · goed {aantal(x.goed)}{x.gepland ? ` · gepland ${aantal(x.gepland)}` : ''}
                 {' '}{tekort === 0 ? <span className="badge b-pos">klaar</span> : x.opdrachten.length ? <span className="badge b-info">nog {aantal(tekort)}</span> : null}</span>
+              {(p => p && <button type="button" className="btn klein ghost" title="Het printprofiel van dit product bekijken of aanpassen (je blijft in het dossier)" onClick={() => setDialoog({ soort: 'profiel', id: p })}>Printprofiel…</button>)(regelVan(x)?.artikel_id || regelVan(x)?.plaat_van)}
               {kan && <button type="button" className="btn klein" onClick={() => plan(x)}><Icoon naam="plus" maat={12} /> Printopdracht</button>}
             </div>
             {x.te_plannen > 0 && d.gestart_op && !x.printer_id && (
@@ -128,7 +132,8 @@ export default function ProductieTab({ d, vuil, herlaad }) {
             {x.opdrachten.filter(o => o.voltooid_op && o.kost_onvolledig).map(o => (
               <div key={`k${o.id}`} className="waarschuwing" style={{ margin: '8px 0 0' }} role="status">
                 <span>Productiekost van "{o.naam}" onvolledig{o.kost_ontbreekt ? <> — ontbreekt: {o.kost_ontbreekt}</> : ''}.</span>
-                <button type="button" className="btn klein" style={{ marginLeft: 'auto' }} disabled={bezig} onClick={() => herbereken(o)}>Kost herberekenen</button>
+                {/filament/i.test(o.kost_ontbreekt || '') && /printregel/.test(o.kost_ontbreekt || '') && <button type="button" className="btn klein primary" style={{ marginLeft: 'auto' }} disabled={bezig} onClick={() => (vuil ? melding('Sla eerst je wijzigingen op of verwerp ze.', 'fout') : setDialoog({ soort: 'filament', x }))}>Filament aanvullen…</button>}
+                <button type="button" className="btn klein" style={/filament/i.test(o.kost_ontbreekt || '') && /printregel/.test(o.kost_ontbreekt || '') ? undefined : { marginLeft: 'auto' }} disabled={bezig} onClick={() => herbereken(o)}>Kost herberekenen</button>
               </div>
             ))}
             {x.te_veel > 0 && (
@@ -178,6 +183,12 @@ export default function ProductieTab({ d, vuil, herlaad }) {
       {dialoog?.soort === 'run_kiezen' && <RunKiezen o={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'koppel' && <KoppelDialoog run={dialoog.run} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
       {dialoog?.soort === 'run' && <RunVenster runId={dialoog.id} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
+      {dialoog?.soort === 'filament' && <RegelFilament d={d} x={dialoog.x} regel={regelVan(dialoog.x)} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
+      {dialoog?.soort === 'profiel' && (
+        <Dialoog titel="Printprofiel" breed onSluit={klaar} voet={<button type="button" className="btn" onClick={klaar}>Sluiten</button>}>
+          <Printprofiel id={dialoog.id} />
+        </Dialoog>
+      )}
     </>
   );
 }
@@ -236,6 +247,48 @@ function RunKiezen({ o, onSluit, onKlaar }) {
         </div>
       )}
       <p className="note">Een run van een andere printer koppelen verhuist de opdracht naar die printer (tijd en verbruik tellen dan van die printer).</p>
+    </Dialoog>
+  );
+}
+
+// Filament van een printregel aanvullen vanuit Productie (01-11): gram voor
+// de hele regel. Voorstel: wat de printer meldde, of het printprofiel van het
+// product (per stuk × aantal). De bevestigde opdrachten krijgen meteen een
+// nieuwe productiekost; je blijft in het dossier.
+const platenVan = p => (!p ? [] : Array.isArray(p.platen) && p.platen.length ? p.platen : [p]);
+function RegelFilament({ d, x, regel, onSluit, onKlaar }) {
+  const { melding } = useOmgeving();
+  const { data: profielen } = useData('/productie/printprofielen');
+  const runs = x.opdrachten.flatMap(o => o.runs || []);
+  const gemeld = gemeldGewicht(runs);
+  const [rijen, setRijen] = useState(() => {
+    const r = naarMatInvoer(regel?.materialen);
+    return gemeld && r.length === 1 && !(Number(String(r[0].gram).replace(',', '.')) > 0) ? [{ ...r[0], gram: gemeld }] : r;
+  });
+  const [bezig, setBezig] = useState(false);
+  const product = profielen?.find(a => a.id === (regel?.artikel_id || regel?.plaat_van));
+  const platen = platenVan(product?.profiel).filter(p => (p.materialen || []).length);
+  const n = Number(regel?.aantal) || 1;
+  const uitPlaat = p => setRijen(p.materialen.map(m => ({ keuze: m.artikel_id ? `a:${m.artikel_id}` : `p:${m.filament_type_id}`, gram: naarInvoer(Math.round((Number(m.gram) || 0) * n * 100) / 100) })));
+  async function bewaar() {
+    setBezig(true);
+    try {
+      const r = await api.put(`/dossiers/${d.id}/regels/${regel.id}/materialen`, { materialen: matVoorApi(rijen) });
+      melding(r.onvolledig ? 'Filament bewaard; de productiekost is nog onvolledig (zie de melding).' : `Filament bewaard; productiekost herberekend${r.herberekend ? '' : ' (nog geen bevestigde opdrachten)'}.`, r.onvolledig ? 'fout' : undefined);
+      await onKlaar();
+    } catch (e) { melding(e.message, 'fout'); setBezig(false); }
+  }
+  return (
+    <Dialoog titel={`Filament · ${regel?.omschrijving || 'printregel'}`} breed onSluit={onSluit}
+      voet={<><button type="button" className="btn" onClick={onSluit}>Terug</button><button type="button" className="btn primary" disabled={bezig || !rijen.some(r => r.keuze)} onClick={bewaar}>Bewaren</button></>}>
+      <p className="sub" style={{ marginTop: 0 }}>Filament van de printregel ({aantal(n)} stuks): gram voor <b>alle stuks samen</b>.{gemeld ? ` De printer meldde ${gemeld} g.` : ''}</p>
+      {platen.length > 0 && (
+        <p style={{ margin: '0 0 10px' }}>Uit het printprofiel van {product.naam}:{' '}
+          {platen.map((p, k) => <button key={k} type="button" className="btn klein" style={{ marginRight: 6 }} onClick={() => uitPlaat(p)}>{platen.length > 1 ? `plaat ${k + 1}${p.naam ? ` (${p.naam})` : ''}` : 'overnemen'}</button>)}
+        </p>
+      )}
+      <FilamentInvoer rijen={rijen} onWijzig={setRijen} id="rf" />
+      <p className="note" style={{ marginBottom: 0 }}>Bewaren past de printregel aan en rekent de productiekost van de bevestigde opdrachten opnieuw. Is de prijs voor de klant berekend (geen vaste of productprijs), dan kan die mee veranderen.</p>
     </Dialoog>
   );
 }

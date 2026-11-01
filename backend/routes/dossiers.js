@@ -8,7 +8,7 @@ import { getDb, bijlagenMap } from '../db/index.js';
 import { DomeinFout, isFkFout } from '../domein/hulp.js';
 import { logGebeurtenis, beschrijfWijzigingen, wisHistoriek } from '../domein/historiek.js';
 import { volgendNummer } from '../domein/nummering.js';
-import { annuleerVoorDossier, synchroniseer } from '../productie/opdrachten.js';
+import { annuleerVoorDossier, synchroniseer, herbereken, leesOpdracht } from '../productie/opdrachten.js';
 import { start } from '../domein/uitvoering.js';
 import { maakWerkbon, afrekeningWeergave } from '../domein/documenten.js';
 import { rekenAf, maakAfrekeningOngedaan } from '../domein/afrekening.js';
@@ -87,6 +87,32 @@ r.post('/letters/voorbeeld', async (req, res) => {
   try { res.json(voorbeeldLetters(getDb(), { tekst: req.body?.tekst, artikel_id: Number(req.body?.artikel_id) || null }, await kleurenPalet())); }
   catch (e) { res.status(e.status || (e instanceof DomeinFout ? 400 : 500)).json({ error: e.message }); }
 });
+// 01-11: filament van één printregel aanvullen vanuit het tabblad Productie
+// (bv. "productiekost onvolledig: gewicht filament"). Gram = de hele regel.
+// De bevestigde opdrachten van die regel (en hun gedeelde plaat) krijgen
+// meteen een nieuwe productiekost.
+r.put('/:id/regels/:regel/materialen', metFouten((req, res) => {
+  const db = getDb();
+  const d = db.prepare('SELECT id, geannuleerd_op, samengevoegd_in FROM dossiers WHERE id = ?').get(Number(req.params.id));
+  if (!d) return res.status(404).json({ error: 'Dossier niet gevonden' });
+  if (d.geannuleerd_op || d.samengevoegd_in) throw new DomeinFout('Dit dossier is geannuleerd of samengevoegd.');
+  const regel = db.prepare(`SELECT id, omschrijving FROM dossier_regels WHERE id = ? AND dossier_id = ? AND type = 'printen'`).get(Number(req.params.regel), d.id);
+  if (!regel) return res.status(404).json({ error: 'Printregel niet gevonden' });
+  const [{ materialen }] = leesRegels([{ type: 'printen', materialen: req.body?.materialen }]);
+  const uit = db.transaction(() => {
+    db.prepare('DELETE FROM dossier_regel_materialen WHERE regel_id = ?').run(regel.id);
+    const ins = db.prepare('INSERT INTO dossier_regel_materialen (regel_id, volgorde, artikel_id, filament_type_id, gram) VALUES (?,?,?,?,?)');
+    materialen.forEach((m, i) => ins.run(regel.id, i, m.artikel_id, m.filament_type_id, m.gram));
+    logGebeurtenis(db, 'dossier', d.id, 'gewijzigd', `Filament van "${regel.omschrijving || 'printregel'}" aangevuld (tabblad Productie)`);
+    const ids = db.prepare(`SELECT DISTINCT o.id FROM printopdrachten o WHERE o.voltooid_op IS NOT NULL AND (o.dossier_regel_id = ?
+      OR o.plaat_groep IN (SELECT plaat_groep FROM printopdrachten WHERE dossier_regel_id = ? AND plaat_groep IS NOT NULL))`).all(regel.id, regel.id).map(x => x.id);
+    let onvolledig = 0;
+    for (const id of ids) if (herbereken(db, leesOpdracht(db, id)).onvolledig) onvolledig += 1;
+    return { herberekend: ids.length, onvolledig };
+  })();
+  res.json({ ...uit, dossier: leesDossier(db, d.id) });
+}));
+
 r.post('/:id/letters', async (req, res) => {
   const palet = await kleurenPalet();
   const db = getDb();
