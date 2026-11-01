@@ -6,6 +6,8 @@ import { initDb, sluitDb, getDb } from '../db/index.js';
 import { maakApp } from '../app.js';
 import { stopWachter } from '../productie/wachter.js';
 import { leesLetterlijst } from '../domein/letters.js';
+import { filamentKaart, norm } from '../domein/webshopdossier.js';
+import { wisPaletCache } from '../integraties/kleurenpalet.js';
 
 const echteFetch = globalThis.fetch;
 let palet = [];
@@ -145,4 +147,21 @@ graag tegen vrijdag`);
   assert.deepEqual(r.waarschuwingen, []);
   assert.deepEqual(r.namen.map(n => n.naam), ['EMMA']);
   assert.deepEqual(r.items.map(i => `${i.letter}:${i.kleur}:${i.aantal}`), ['C:Butter cream (geel):1', 'A:Lichtroze:1', 'E:Lichtroze:1', 'M:Lichtroze:2', 'L:Zacht oranje:1']);
+});
+
+test('L5. zelf gekozen filament bij een webshopkleur wordt onthouden bij de webshopnaam (ook voor webshopbestellingen)', async () => {
+  const db = getDb();
+  const zwart = db.prepare(`SELECT a.id FROM artikelen a JOIN filament_kleuren k ON k.id = a.kleur_id WHERE a.type = 'filament' AND k.naam = 'Zwart'`).get().id;
+  wisPaletCache();
+  palet = [{ label: 'Zacht oranje', slug: 'zacht-oranje', filamentName: 'Polymaker Panchroma PLA Matte — Pastel Peach' }];
+  const v = ok(await vraag('POST', '/dossiers/letters/voorbeeld', { tekst: 'Zacht oranje: A', artikel_id: letter }));
+  assert.equal(v.kleuren[0].filament_id, null, 'naam van de webshop niet gekend in Voorraad');
+  const d = ok(await vraag('POST', '/dossiers', { titel: 'Peach', klant_id: klant, regels: [] }), 201);
+  ok(await vraag('POST', `/dossiers/${d.id}/letters`, { tekst: 'Zacht oranje: A', artikel_id: letter, kleuren: { 'Zacht oranje': zwart } }), 201);
+  assert.equal(filamentKaart(db).get(norm('Polymaker Panchroma PLA Matte — Pastel Peach')), zwart);
+  // een ander label met dezelfde webshopnaam: meteen herkend
+  wisPaletCache();
+  palet = [{ label: 'Perzik', slug: 'perzik', filamentName: 'Polymaker Panchroma PLA Matte — Pastel Peach' }];
+  const v2 = ok(await vraag('POST', '/dossiers/letters/voorbeeld', { tekst: 'Perzik: A', artikel_id: letter }));
+  assert.deepEqual([v2.kleuren[0].filament_id, v2.kleuren[0].bron], [zwart, 'webshop']);
 });
