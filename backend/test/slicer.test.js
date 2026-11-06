@@ -8,6 +8,7 @@ import { maakApp } from '../app.js';
 import { stopWachter } from '../productie/wachter.js';
 import { documentHtml } from '../documenten/sjabloon.js';
 import { leesDossier } from '../domein/dossiers.js';
+import { stuksOpPlaat } from '../integraties/slicer.js';
 
 let server, basis;
 before(async () => {
@@ -212,4 +213,15 @@ test('S7. Onderhoud: ruimte per soort bijlage; slicerbestanden van lang afgeslot
   const d = (await json('GET', `/dossiers/${oud.id}`)).data;
   assert.equal(d.regels[0].slicer_bijlage_id, null, 'regel verliest enkel de link');
   assert.equal((await json('GET', `/bijlagen/dossier/${recent.id}`)).data.length, 1, 'recent dossier blijft');
+});
+
+test('S9. stuks op de plaat uit de objecten: kopieën, vaste sets, gemengd; naam bij kopieën', async () => {
+  assert.equal(stuksOpPlaat([]), 1);
+  assert.equal(stuksOpPlaat(Array(25).fill('Sleutelhanger Caraad')), 25);
+  assert.equal(stuksOpPlaat(['Eierdopje', 'Sint', 'Eierdopje', 'Sint', 'Eierdopje', 'Sint']), 3, '3 sets');
+  assert.equal(stuksOpPlaat(['Oor links', 'Oor rechts']), 1, 'één set van 2 delen');
+  assert.equal(stuksOpPlaat(['Elf A', 'Elf B', 'Elf B']), 3, 'gemengd: alle objecten');
+  assert.equal(stuksOpPlaat(['Draak', 'Draak (2)', 'Draak (3)']), 3, 'kopie met nummer');
+  const r = await lees(await bambu3mf({ platen: [{ nr: 1, sec: 600, gewicht: 144.4, objecten: Array(25).fill('Sleutelhanger.stl'), filamenten: [{ slot: 1, type: 'PLA', kleur: '#000000', g: 144.4 }] }] }));
+  assert.deepEqual([r.data.platen[0].stuks, r.data.platen[0].naam], [25, 'Sleutelhanger']);
 });

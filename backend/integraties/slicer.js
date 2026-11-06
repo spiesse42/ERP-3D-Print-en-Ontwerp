@@ -78,8 +78,19 @@ export function leesGcode(buffer, bestandsnaam = '') {
   const naam = String(bestandsnaam).replace(/\.(gcode|gco|g)$/i, '').replace(/[_-]+/g, ' ').trim() || null;
   return {
     printer_model: (instelling.printer_model || '').replace(/^"(.*)"$/, '$1') || null,
-    platen: [{ nummer: 1, naam, objecten: [], tijd_min: tijd_min ?? 0, gram: r2(filamenten.reduce((t, f) => t + f.gram, 0)), filamenten, afbeelding }],
+    platen: [{ nummer: 1, naam, objecten: [], stuks: 1, tijd_min: tijd_min ?? 0, gram: r2(filamenten.reduce((t, f) => t + f.gram, 0)), filamenten, afbeelding }],
   };
+}
+
+// 06-11: stuks op een plaat uit de objecten: dezelfde objecten (kopieën)
+// → zoveel stuks; vaste sets (bv. 4 × eierdopje + sint) → het aantal sets;
+// anders het aantal objecten. Geen objecten (losse gcode) → 1.
+export function stuksOpPlaat(objecten) {
+  if (!objecten?.length) return 1;
+  const tel = new Map();
+  for (const o of objecten) { const k = String(o).replace(/\s*\(\d+\)$/, '').trim().toLowerCase(); tel.set(k, (tel.get(k) || 0) + 1); }
+  const aantallen = [...tel.values()];
+  return aantallen.every(n => n === aantallen[0]) ? aantallen[0] : objecten.length;
 }
 
 // 3mf (zip) of gcode (tekst), herkend aan de inhoud.
@@ -128,8 +139,9 @@ export async function leesSlicerBestand(buffer, bestandsnaam = '') {
     const png = zip.file(`Metadata/plate_${nummer}.png`) || zip.file(`Metadata/plate_${nummer}_small.png`);
     uit.push({
       nummer,
-      naam: namen.get(nummer) || (objecten.length === 1 ? objecten[0] : null),
+      naam: namen.get(nummer) || (objecten.length && new Set(objecten.map(o => o.toLowerCase())).size === 1 ? objecten[0] : null),
       objecten,
+      stuks: stuksOpPlaat(objecten),
       tijd_min: Math.round((getal(meta(p, 'prediction')) ?? 0) / 60),
       gram: r2(getal(meta(p, 'weight')) ?? filamenten.reduce((t, f) => t + f.gram, 0)),
       filamenten,
