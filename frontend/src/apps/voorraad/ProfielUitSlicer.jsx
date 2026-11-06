@@ -14,7 +14,7 @@ const norm = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 function stuksOp(p, naam) {
   const n = norm(naam);
   const zelfde = n ? p.objecten.filter(o => { const x = norm(o); return x && (x.includes(n) || n.includes(x)); }).length : 0;
-  return String(zelfde || p.objecten.length || 1);
+  return String(zelfde || p.stuks || p.objecten.length || 1);
 }
 
 // 29-10: letter uit de naam van een plaat of object ("A", "Letter A",

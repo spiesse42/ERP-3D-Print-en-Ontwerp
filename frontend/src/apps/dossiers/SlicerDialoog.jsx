@@ -34,7 +34,7 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
       const d = await api.upload('/slicer', fd);
       setBestand(bestand);
       setPrinterId(d.printer_id ? String(d.printer_id) : '');
-      setPlaten(d.platen.map(p => ({ ...p, mee: true, omschrijving: p.naam || `Plaat ${p.nummer}`, aantal: '1',
+      setPlaten(d.platen.map(p => ({ ...p, mee: true, omschrijving: p.naam || `Plaat ${p.nummer}`, aantal: String(p.stuks || 1),
         filamenten: p.filamenten.map(f => ({ ...f, keuze: f.keuze || '' })) })));
     } catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
@@ -93,7 +93,7 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
               <div className="gegevens">
                 <div className="rij">
                   <b className="mono">Plaat {p.nummer}</b>
-                  <span className="sub">{uurMin(p.tijd_min)} · {naarInvoer(p.gram)} g{p.objecten.length > 1 ? ` · ${p.objecten.length} objecten` : ''}</span>
+                  <span className="sub">{uurMin(p.tijd_min)} · {naarInvoer(p.gram)} g{p.objecten.length > 1 ? ` · ${p.objecten.length} objecten${p.stuks > 1 && p.stuks !== p.objecten.length ? ` (${p.stuks} sets)` : ''}` : ''}</span>
                 </div>
                 <div className="rij">
                   <input className="inp" aria-label={`Omschrijving plaat ${p.nummer}`} value={p.omschrijving} disabled={!p.mee} onChange={e => zet(i, { omschrijving: e.target.value })} />
