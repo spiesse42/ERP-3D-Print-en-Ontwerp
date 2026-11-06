@@ -49,7 +49,8 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
     // kleine versie op de regel zelf: komt op de offerte en de werkbon
     const klein = await Promise.all(gekozen.map(p => (afbOpOfferte && p.afbeelding ? verklein(p.afbeelding).catch(() => '') : '')));
     onToevoegen(gekozen.map((p, i) => ({
-      ...nieuweRegel('printen'), omschrijving: p.omschrijving, printer_id: printerId, aantal: p.aantal || '1', afbeelding: klein[i],
+      // 06-11: tijd en gram gelden voor de plaat → stuks per plaat = de stuks erop; meer stuks = meer platen
+      ...nieuweRegel('printen'), omschrijving: p.omschrijving, printer_id: printerId, aantal: p.aantal || '1', per_plaat: p.aantal || '1', afbeelding: klein[i],
       ...(bewaren ? { slicer_wacht: true, slicer_plaat: p.nummer, slicer_bestandsnaam: bestand?.name || '' } : {}),
       tijd_u: String(Math.floor(p.tijd_min / 60)), tijd_m: String(p.tijd_min % 60),
       materialen: p.filamenten.length ? p.filamenten.map(f => ({ keuze: f.keuze, gram: naarInvoer(f.gram) })) : [{ keuze: '', gram: '' }],

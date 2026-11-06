@@ -33,6 +33,19 @@ const kortingVanApi = k => Object.fromEntries(Object.entries(k || {}).map(([post
 const getalVan = v => { const n = Number(String(v ?? '').trim().replace(',', '.')); return String(v ?? '').trim() === '' || !Number.isFinite(n) ? null : n; };
 export const platen = r => { const n = getalVan(r.aantal) ?? 1, pp = getalVan(r.per_plaat); return pp > 0 ? Math.max(1, Math.ceil(n / pp - 1e-9)) : 1; };
 const r4 = v => Math.round(v * 10000) / 10000;
+// 06-11: invoerwijze van een printregel → factor naar de totalen (tijd/gram,
+// voorbereiding, nabewerking):
+// - per stuk: tijd, gram en nabewerking × aantal, voorbereiding × platen
+// - per plaat (per stuk uit, stuks per plaat ingevuld): alles × platen
+//   (bv. slicer: 25 stuks op een plaat, 100 besteld → × 4)
+// - anders: de ingevulde waarden zijn de totalen
+export const perPlaat = r => !r.per_stuk && (getalVan(r.per_plaat) ?? 0) > 0;
+function factoren(r) {
+  const n = getalVan(r.aantal) ?? 1, pl = platen(r);
+  if (r.per_stuk) return { t: n, v: pl, nb: n };
+  if (perPlaat(r)) return { t: pl, v: pl, nb: pl };
+  return { t: 1, v: 1, nb: 1 };
+}
 
 const nr = v => (String(v ?? '').trim() === '' ? null : String(v).replace(',', '.'));
 // Formulier → regel voor de API (id's; de backend zoekt prijzen op).
@@ -40,12 +53,12 @@ export function naarApi(r) {
   const basis = { ...(r.id ? { id: r.id } : {}), type: r.type, omschrijving: r.omschrijving, handmatig_bedrag: r.type === 'korting' ? null : nr(r.handmatig_bedrag), korting: kortingNaarApi(r.korting) };
   if (r.type === 'printen') {
     const u = Number(nr(r.tijd_u) ?? 0), m = Number(nr(r.tijd_m) ?? 0);
-    // per stuk: × aantal (nabewerking ook), voorbereiding × platen
-    const n = r.per_stuk ? (getalVan(r.aantal) ?? 1) : 1, pl = r.per_stuk ? platen(r) : 1;
+    // per stuk / per plaat → totalen (zie factoren)
+    const { t: n, v: pl, nb } = factoren(r);
     const maal = (v, f) => { const x = nr(v); return x === null || f === 1 ? x : r4(Number(x) * f); };
     return { ...basis, afbeelding: r.afbeelding || null, slicer_bijlage_id: r.slicer_bijlage_id || null, slicer_plaat: r.slicer_bijlage_id ? r.slicer_plaat || null : null, printer_id: r.printer_id || null, aantal: nr(r.aantal) ?? 1, tijd_min: r4((u * 60 + m) * n), artikel_id: r.artikel_id || null,
       per_stuk: !!r.per_stuk, per_plaat: nr(r.per_plaat), plaat_van: r.plaat_van || null,
-      voorbereiding_min: maal(r.voorbereiding_min, pl), nabewerking_min: maal(r.nabewerking_min, n),
+      voorbereiding_min: maal(r.voorbereiding_min, pl), nabewerking_min: maal(r.nabewerking_min, nb),
       materialen: r.materialen.filter(x => x.keuze).map(x => {
         const [soort, id] = x.keuze.split(':');
         return { [soort === 'a' ? 'artikel_id' : 'filament_type_id']: Number(id), gram: n === 1 ? (nr(x.gram) ?? 0) : r4(Number(nr(x.gram) ?? 0) * n) };
@@ -62,11 +75,11 @@ const alsInvoer = v => (v == null ? '' : String(v).replace('.', ','));
 const tijdVelden = t => { const u = Math.floor(t / 60), m = Math.round((t - u * 60) * 100) / 100; return { tijd_u: u ? String(u) : '', tijd_m: m ? alsInvoer(m) : '' }; };
 // Per stuk aan/uit: de ingevulde waarden omrekenen zodat het totaal gelijk blijft.
 function wisselPerStuk(r, aan) {
-  const n = getalVan(r.aantal) ?? 1, pl = platen(r);
-  const f = aan ? 1 / n : n, fp = aan ? 1 / pl : pl;
+  const oud = factoren(r), nieuw = factoren({ ...r, per_stuk: aan });
+  const f = oud.t / nieuw.t, fp = oud.v / nieuw.v, fn = oud.nb / nieuw.nb;
   const om = (v, x) => { const g = getalVan(v); return g === null ? v : alsInvoer(r4(g * x)); };
   const t = ((getalVan(r.tijd_u) ?? 0) * 60 + (getalVan(r.tijd_m) ?? 0)) * f;
-  return { per_stuk: aan, ...tijdVelden(t), voorbereiding_min: om(r.voorbereiding_min, fp), nabewerking_min: om(r.nabewerking_min, f),
+  return { per_stuk: aan, ...tijdVelden(t), voorbereiding_min: om(r.voorbereiding_min, fp), nabewerking_min: om(r.nabewerking_min, fn),
     materialen: r.materialen.map(m => ({ ...m, gram: om(m.gram, f) })) };
 }
 // Nieuwe printregel(s) volgens het printprofiel van een product (knop "Uit product").
@@ -95,13 +108,12 @@ export function vanApi(r) {
   const f = { ...nieuweRegel(r.type), id: r.id ?? undefined, omschrijving: r.omschrijving || '', handmatig_bedrag: alsInvoer(r.handmatig_bedrag), korting: kortingVanApi(r.korting) };
   if (r.id) f.sleutel = `r${r.id}`;
   if (r.type === 'printen') {
-    // per stuk bewaard als totalen: terugdelen door aantal (en platen)
-    const n = r.per_stuk ? (Number(r.aantal) || 1) : 1;
-    const pl = r.per_stuk ? platen({ aantal: r.aantal, per_plaat: r.per_plaat }) : 1;
+    // bewaard als totalen: terugdelen volgens de invoerwijze (per stuk / per plaat)
+    const { t: n, v: pl, nb } = factoren({ per_stuk: !!r.per_stuk, aantal: String(r.aantal ?? 1), per_plaat: r.per_plaat == null ? '' : String(r.per_plaat) });
     const deel = (v, f) => (v == null ? '' : alsInvoer(r4(Number(v) / f)));
     Object.assign(f, { afbeelding: r.afbeelding || '', slicer_bijlage_id: r.slicer_bijlage_id ?? null, slicer_plaat: r.slicer_plaat ?? null, slicer_bestandsnaam: r.slicer_bestandsnaam || '', printer_id: alsInvoer(r.printer_id), artikel_id: alsInvoer(r.artikel_id), plaat_van: r.plaat_van ?? null, aantal: alsInvoer(r.aantal ?? 1),
       ...tijdVelden((Number(r.tijd_min) || 0) / n), per_stuk: !!r.per_stuk, per_plaat: alsInvoer(r.per_plaat),
-      voorbereiding_min: deel(r.voorbereiding_min, pl), nabewerking_min: deel(r.nabewerking_min, n),
+      voorbereiding_min: deel(r.voorbereiding_min, pl), nabewerking_min: deel(r.nabewerking_min, nb),
       materialen: (r.materialen || []).length
         ? r.materialen.map(x => ({ keuze: x.artikel_id ? `a:${x.artikel_id}` : `p:${x.filament_type_id}`, gram: deel(x.gram, n) }))
         : [{ keuze: '', gram: '' }] });
@@ -277,12 +289,12 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                   <option value="">Kies…</option>
                   {(printers || []).map(p => <option key={p.id} value={p.id}>{p.naam}{p.machine_per_uur == null ? ' (tarief ontbreekt)' : ''}</option>)}
                 </select></label>
-                <label>{r.per_stuk ? 'Printtijd per stuk' : 'Printtijd'}<span className="samen"><input className="inp num" inputMode="numeric" aria-label="Uren" placeholder="u" value={r.tijd_u} onChange={e => zet(i, { tijd_u: e.target.value })} /><input className="inp num" inputMode="numeric" aria-label="Minuten" placeholder="min" value={r.tijd_m} onChange={e => zet(i, { tijd_m: e.target.value })} /></span></label>
-                <label>{r.per_stuk ? 'Aantal stuks' : 'Stuks op de print'}<input className="inp num" inputMode="numeric" value={r.aantal} onChange={e => zet(i, { aantal: e.target.value })} /></label>
+                <label>{r.per_stuk ? 'Printtijd per stuk' : perPlaat(r) ? 'Printtijd per plaat' : 'Printtijd'}<span className="samen"><input className="inp num" inputMode="numeric" aria-label="Uren" placeholder="u" value={r.tijd_u} onChange={e => zet(i, { tijd_u: e.target.value })} /><input className="inp num" inputMode="numeric" aria-label="Minuten" placeholder="min" value={r.tijd_m} onChange={e => zet(i, { tijd_m: e.target.value })} /></span></label>
+                <label>{r.per_stuk || perPlaat(r) ? 'Aantal stuks' : 'Stuks op de print'}<input className="inp num" inputMode="numeric" value={r.aantal} onChange={e => zet(i, { aantal: e.target.value })} /></label>
                 <label className="vinkje" title="Tijd en gram van één stuk invullen; het ERP rekent × het aantal"><input type="checkbox" checked={!!r.per_stuk} onChange={e => zet(i, wisselPerStuk(r, e.target.checked))} /> per stuk</label>
-                <label title="Hoeveel stuks er op één plaat passen: één printopdracht per plaat">Stuks per plaat<input className="inp num" inputMode="numeric" placeholder="alle" value={r.per_plaat} onChange={e => zet(i, { per_plaat: e.target.value })} /></label>
-                <label>{r.per_stuk ? 'Voorbereiding per plaat (min)' : 'Voorbereiding (min)'}<input className="inp num" inputMode="numeric" placeholder={naarInvoer(t.voorbereiding_min)} value={r.voorbereiding_min} onChange={e => zet(i, { voorbereiding_min: e.target.value })} /></label>
-                <label>{r.per_stuk ? 'Nabewerking per stuk (min)' : 'Nabewerking (min)'}<input className="inp num" inputMode="numeric" placeholder={r.per_stuk && t.nabewerking_min != null ? `std. ${naarInvoer(t.nabewerking_min)} in totaal` : naarInvoer(t.nabewerking_min)} value={r.nabewerking_min} onChange={e => zet(i, { nabewerking_min: e.target.value })} /></label>
+                <label title="Hoeveel stuks er op één plaat passen: één printopdracht per plaat. Zonder 'per stuk' vul je dan tijd en gram van één volle plaat in (bv. uit de slicer); het ERP rekent × het aantal platen.">Stuks per plaat<input className="inp num" inputMode="numeric" placeholder="alle" value={r.per_plaat} onChange={e => zet(i, { per_plaat: e.target.value })} /></label>
+                <label>{r.per_stuk || perPlaat(r) ? 'Voorbereiding per plaat (min)' : 'Voorbereiding (min)'}<input className="inp num" inputMode="numeric" placeholder={naarInvoer(t.voorbereiding_min)} value={r.voorbereiding_min} onChange={e => zet(i, { voorbereiding_min: e.target.value })} /></label>
+                <label>{r.per_stuk ? 'Nabewerking per stuk (min)' : perPlaat(r) ? 'Nabewerking per plaat (min)' : 'Nabewerking (min)'}<input className="inp num" inputMode="numeric" placeholder={(r.per_stuk || perPlaat(r)) && t.nabewerking_min != null ? `std. ${naarInvoer(t.nabewerking_min)} in totaal` : naarInvoer(t.nabewerking_min)} value={r.nabewerking_min} onChange={e => zet(i, { nabewerking_min: e.target.value })} /></label>
                 {eindproducten && <label>Naar voorraad als<select className="inp" value={r.artikel_id} onChange={e => zet(i, { artikel_id: e.target.value })}>
                   <option value="">— niet naar voorraad —</option>
                   {eindproducten.map(a => <option key={a.id} value={a.id}>{a.weergave}</option>)}
@@ -307,7 +319,7 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                         <optgroup label="Filament (merk · type · kleur)">{(filamenten || []).map(f => <option key={`a${f.id}`} value={`a:${f.id}`}>{f.weergave}</option>)}</optgroup>
                         <optgroup label="Enkel prijsgroep (merk · type)">{(prijsgroepen || []).map(g => <option key={`p${g.id}`} value={`p:${g.id}`}>{g.merk} {g.materiaal}</option>)}</optgroup>
                       </select>
-                      <span className="unit"><input className="inp num" inputMode="decimal" aria-label={`Gewicht filament ${k + 1}`} placeholder={r.per_stuk ? 'g/stuk' : 'gram'} value={m.gram} onChange={e => zetMat(i, k, { gram: e.target.value })} /><span>g</span></span>
+                      <span className="unit"><input className="inp num" inputMode="decimal" aria-label={`Gewicht filament ${k + 1}`} placeholder={r.per_stuk ? 'g/stuk' : perPlaat(r) ? 'g/plaat' : 'gram'} value={m.gram} onChange={e => zetMat(i, k, { gram: e.target.value })} /><span>g</span></span>
                       {r.materialen.length > 1 && <button type="button" className="btn ghost" aria-label="Kleur weghalen" onClick={() => zet(i, { materialen: r.materialen.filter((_, j) => j !== k) })}><Icoon naam="kruis" maat={12} /></button>}
                     </div>
                   ))}
