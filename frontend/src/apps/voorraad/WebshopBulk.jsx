@@ -51,7 +51,7 @@ export default function WebshopBulk({ artikelen, onSluit, onKlaar }) {
           </select></div>
       </div>
       <label htmlFor="wb-tekst" style={{ display: 'block', marginTop: 8 }}>Standaardbeschrijving, voor wie er nog geen heeft</label>
-      <textarea id="wb-tekst" className="inp" rows={3} value={tekst} onChange={e => setTekst(e.target.value)} placeholder="bv. 3D-geprint in PLA, met een led-theelichtje. (Layer & Leaf: standaardkleur, afmetingen en 'Design by Layer & Leaf' komen er vanzelf bij.)" />
+      <textarea id="wb-tekst" className="inp" rows={3} value={tekst} onChange={e => setTekst(e.target.value)} placeholder="bv. 3D-geprint in PLA, met een led-theelichtje. (Layer & Leaf, SabreDesign: standaardkleur, afmetingen en 'Design by …' komen er vanzelf bij.)" />
       <div className="tabelvak" style={{ maxHeight: 340, overflow: 'auto', marginTop: 10 }}>
         <table className="mini">
           <thead><tr><th /><th>Artikel</th><th className="r">Prijs</th><th>Webshop</th><th>Resultaat</th></tr></thead>

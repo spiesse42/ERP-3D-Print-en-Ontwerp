@@ -49,18 +49,27 @@ const getalOfNull = (v, wat) => {
 
 // 16-10: Layer & Leaf — standaard in de beschrijving (staat er al
 // "Standaardkleur" in, dan niet nog eens)
-export const LAYER_LEAF_SJABLOON = 'Standaardkleur: \nAfmetingen:\n• Breedte: \n• Hoogte: \n\nDesign by Layer & Leaf';
-export function isLayerLeaf(db, categorieId) {
+// 07-11: ook andere ontwerpers met een licentie (SabreDesign): de categorie
+// (of een bovenliggende) bepaalt de ontwerper → "Design by <ontwerper>"
+export const ONTWERPERS = [
+  { naam: 'Layer & Leaf', patroon: /layer\s*(&|and|en)\s*leaf/i },
+  { naam: 'SabreDesign', patroon: /sabre\s*design/i },
+];
+export const sjabloonVoor = ontwerper => `Standaardkleur: \nAfmetingen:\n• Breedte: \n• Hoogte: \n\nDesign by ${ontwerper}`;
+export const LAYER_LEAF_SJABLOON = sjabloonVoor('Layer & Leaf');
+export function ontwerperVan(db, categorieId) {
   for (let c = categorieId ? db.prepare('SELECT naam, ouder_id FROM categorieen WHERE id = ?').get(categorieId) : null, n = 0; c && n < 10; n++) {
-    if (/layer\s*(&|and|en)\s*leaf/i.test(c.naam)) return true;
+    const o = ONTWERPERS.find(x => x.patroon.test(c.naam));
+    if (o) return o.naam;
     c = c.ouder_id ? db.prepare('SELECT naam, ouder_id FROM categorieen WHERE id = ?').get(c.ouder_id) : null;
   }
-  return false;
+  return null;
 }
-export function metSjabloon(beschrijving) {
+export function metSjabloon(beschrijving, ontwerper = 'Layer & Leaf') {
   const t = String(beschrijving || '').trim();
   if (/standaardkleur/i.test(t)) return t;
-  return t ? `${t}\n\n${LAYER_LEAF_SJABLOON}` : LAYER_LEAF_SJABLOON;
+  const sj = sjabloonVoor(ontwerper);
+  return t ? `${t}\n\n${sj}` : sj;
 }
 
 // Nog niet ingevuld in het sjabloon (bv. "Breedte:" zonder maat) → melding
@@ -153,7 +162,8 @@ export async function leesWebshop(db, artikelId, { fetchFn = fetch } = {}) {
   if (data.sizeVariants === undefined) data.sizeVariants = a.webshop_slug ? null : [];
   // 23-10: per keuze het eigen artikel (prijs, voorraad, printprofiel), als dat er is
   if (Array.isArray(data.sizeVariants) && a.webshop_slug) data = { ...data, sizeVariants: data.sizeVariants.map(v => ({ ...v, artikel: keuzeArtikel(db, a.webshop_slug, v.label) })) };
-  if (isLayerLeaf(db, a.categorie_id)) data = { ...data, description: metSjabloon(data.description) };
+  const ontwerper = ontwerperVan(db, a.categorie_id);
+  if (ontwerper) data = { ...data, description: metSjabloon(data.description, ontwerper) };
   return { data, bron, voorraad: voorraadVan(db, a.id), sanity_foto: sanityFoto, fotos: fotosVan(db, a.id), slug: a.webshop_slug, variant: a.webshop_variant,
     gepusht_op: a.webshop_gepusht_op, naam: a.naam, prijs: a.verkoopprijs, gewicht_profiel: gewichtUitProfiel(a) };
 }

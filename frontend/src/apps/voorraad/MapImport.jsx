@@ -15,6 +15,12 @@ const IS_MODEL = /\.(3mf|stl)$/i;
 const MAX_FOTO = 20 * 1024 * 1024;
 const MAX_MODEL = 200 * 1024 * 1024;
 const norm = s => String(s || '').trim().toLowerCase();
+// 07-11: ontwerpers met een licentie → categorie en notitie (bron/licentie).
+// De categorienaam bepaalt ook "Design by …" in de webshop (webshoppush.js).
+const ONTWERPERS = [
+  { naam: 'Layer & Leaf', patroon: /layer\s*(&|and|en)?\s*leaf/i, bron: 'Ontwerp: Layer And Leaf (Patreon, commerciële licentie zolang het lidmaatschap loopt)' },
+  { naam: 'SabreDesign', patroon: /sabre\s*design/i, bron: 'Ontwerp: SabreDesign (Patreon, commerciële licentie zolang het lidmaatschap loopt)' },
+];
 
 // Bestanden groeperen per post-map: het padsegment "<cijfers> - <titel>",
 // anders de map waar het bestand in staat.
@@ -43,8 +49,19 @@ export default function MapImport({ onSluit, onKlaar }) {
   const [posts, setPosts] = useState(null);
   const [mee, setMee] = useState({});
   const [categorie, setCategorie] = useState('');
-  const [nieuweCat, setNieuweCat] = useState('Layer & Leaf');
-  const [bron, setBron] = useState('Ontwerp: Layer And Leaf (Patreon, commerciële licentie zolang het lidmaatschap loopt)');
+  const [ontwerper, setOntwerper] = useState('');
+  const [nieuweCat, setNieuweCat] = useState('');
+  const [bron, setBron] = useState('');
+  // ontwerper kiezen → bestaande categorie met die naam (anders een nieuwe) + notitie
+  function kiesOntwerper(naam) {
+    setOntwerper(naam);
+    const o = ONTWERPERS.find(x => x.naam === naam);
+    if (!o) return;
+    const cat = (categorieen || []).find(c => o.patroon.test(c.naam));
+    setCategorie(cat ? String(cat.id) : '__nieuw__');
+    setNieuweCat(o.naam);
+    setBron(o.bron);
+  }
   const [bezig, setBezig] = useState(null);
 
   const bestaand = useMemo(() => new Set((artikelen || []).map(a => norm(a.naam))), [artikelen]);
@@ -53,6 +70,10 @@ export default function MapImport({ onSluit, onKlaar }) {
     setPosts(g);
     setMee(Object.fromEntries(g.map(p => [p.sleutel, !bestaand.has(norm(p.naam))])));
     if (!g.length) melding('Geen foto\'s of modelbestanden (3mf, stl) gevonden in deze map.', 'fout');
+    // ontwerper herkennen aan de mapnaam (bv. Patreon\SabreDesign)
+    const pad = [...lijst].slice(0, 20).map(f => f.webkitRelativePath || '').join(' ');
+    const o = ONTWERPERS.find(x => x.patroon.test(pad));
+    if (o) kiesOntwerper(o.naam);
   }
   const gekozen = (posts || []).filter(p => mee[p.sleutel]);
 
@@ -94,12 +115,17 @@ export default function MapImport({ onSluit, onKlaar }) {
         <label htmlFor="map-import" className="dropzone">
           <Icoon naam="plus" maat={28} />
           <b>Kies de map met de downloads</b>
-          <span className="sub">bv. Catalogus\LayerLeaf — elke submap "&lt;nummer&gt; - &lt;titel&gt;" wordt één artikel</span>
+          <span className="sub">bv. C:\Projects\Patreon\SabreDesign — elke submap "&lt;nummer&gt; - &lt;titel&gt;" wordt één artikel</span>
         </label>
         <input id="map-import" type="file" className="sr-only" webkitdirectory="" directory="" multiple onChange={e => kies(e.target.files || [])} />
-        <p className="note">Per artikel: de naam van de post, één foto (de grootste) en de modelbestanden (.3mf, .stl). ZIP-bestanden worden niet meegenomen: pak die eerst uit als je de modellen erin wilt. De bestanden worden naar het ERP gekopieerd; je browser vraagt eerst toestemming om de map te lezen.</p>
+        <p className="note">Per artikel: de naam van de post, één foto (de grootste) en de modelbestanden (.3mf, .stl). ZIP-bestanden worden niet meegenomen: patreon_download.bat pakt ze al uit (anders: zelf uitpakken in dezelfde map). De bestanden worden naar het ERP gekopieerd; je browser vraagt eerst toestemming om de map te lezen.</p>
       </> : <>
         <div className="fgrid">
+          <div><label htmlFor="mi-ontw">Ontwerper</label>
+            <select id="mi-ontw" className="inp" value={ontwerper} onChange={e => kiesOntwerper(e.target.value)}>
+              <option value="">— andere / geen —</option>
+              {ONTWERPERS.map(o => <option key={o.naam} value={o.naam}>{o.naam}</option>)}
+            </select></div>
           <div><label htmlFor="mi-cat">Categorie</label>
             <select id="mi-cat" className="inp" value={categorie} onChange={e => setCategorie(e.target.value)}>
               <option value="">— geen —</option>

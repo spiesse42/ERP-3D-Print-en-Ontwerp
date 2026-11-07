@@ -204,3 +204,12 @@ test('W15. gewicht automatisch naar de webshop na het bewaren van het printprofi
   assert.deepEqual(await syncGewicht(db, art, { fetchFn: nep }), { status: 'eigen_gewicht', gram: 60 });
   assert.equal(docs.get(a.webshop_sanity_id).weightGrams, 42.5);
 });
+
+test('W16. SabreDesign: zelfde standaard in de beschrijving, met "Design by SabreDesign"', async () => {
+  const db = getDb();
+  const sd = Number(db.prepare(`INSERT INTO categorieen (naam) VALUES ('SabreDesign')`).run().lastInsertRowid);
+  const id = Number(db.prepare(`INSERT INTO artikelen (type, naam, zelf_geprint, wordt_verkocht, verkoopprijs, categorie_id) VALUES ('artikel', 'Draakje', 1, 1, 15, ?)`).run(sd).lastInsertRowid);
+  const w = await leesWebshop(db, id, { fetchFn: nep });
+  assert.match(w.data.description, /^Standaardkleur:[\s\S]*Design by SabreDesign$/);
+  assert.equal(w.data.description.includes('Layer'), false);
+});
