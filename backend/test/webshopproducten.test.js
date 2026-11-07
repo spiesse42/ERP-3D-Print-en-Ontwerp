@@ -103,7 +103,7 @@ test('W4. productoverzicht: geschatte kost uit profiel + onderdelen, marge', asy
 });
 
 test('W5. webshopbestellingen: ophalen, koppelen aan artikel, verkoop maakt ze afgehandeld', async () => {
-  supabaseOrders = [{ id: 'abc-1', created_at: '2026-10-07T10:00:00Z', status: 'paid', customer_name: 'Jan', customer_email: 'jan@x.be', street: 'Straat 1', postal_city: '8700 Tielt',
+  supabaseOrders = [{ id: 'abc-1', created_at: new Date(Date.now() - 864e5).toISOString(), status: 'paid', customer_name: 'Jan', customer_email: 'jan@x.be', street: 'Straat 1', postal_city: '8700 Tielt',
     items: [{ slug: 'sleutelhanger-hond', name: 'Sleutelhanger hond', quantity: 2, price: 5, variantLabel: null, colors: ['Rood'] }], total: 14.5, shipping_method_label: 'Bpost', shipping_price: 4.5 }];
   assert.equal(ok(await vraag('POST', '/webshopbestellingen/ophalen')).nieuw, 1);
   assert.equal(ok(await vraag('POST', '/webshopbestellingen/ophalen')).nieuw, 0, 'niet dubbel');
