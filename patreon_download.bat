@@ -13,6 +13,7 @@ echo.
 set "CONFMAP=%USERPROFILE%\patreon-dl"
 set "CONF=%CONFMAP%\patreon-dl.conf"
 set "STANDAARD=C:\Projects\Webshop-3D-Plezier\Catalogus\Patreon"
+set "STANDAARD_URL=https://www.patreon.com/cw/SabreDesign/posts"
 
 where node >nul 2>nul
 if %errorlevel% neq 0 ( echo *** Node.js is niet gevonden. Installeer het eerst: https://nodejs.org *** & pause & exit /b 1 )
@@ -32,11 +33,12 @@ if not exist "%CONF%" (
 findstr /c:"PLAK_HIER_JE_COOKIE" "%CONF%" >nul
 if %errorlevel% equ 0 ( echo *** Er staat nog geen cookie in %CONF% - vul ze in en start opnieuw. *** & pause & exit /b 1 )
 
-echo Plak de Patreon-pagina van de ontwerper, bv.
-echo   https://www.patreon.com/c/SabreDesign/posts
+echo Patreon-pagina van de ontwerper (Enter = SabreDesign: %STANDAARD_URL%)
+echo of plak de pagina van een andere ontwerper.
 set "URL="
 set /p URL=Pagina:
-if "%URL%"=="" ( echo Geen pagina opgegeven. & pause & exit /b 1 )
+if "%URL%"=="" set "URL=%STANDAARD_URL%"
+echo Pagina: %URL%
 
 echo.
 echo Map voor de downloads (Enter = %STANDAARD%)
