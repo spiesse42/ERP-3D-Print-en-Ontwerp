@@ -6,7 +6,7 @@ import { ControlePaneel, Laden, Fout } from '../../schil/Weergaven.jsx';
 import { Link } from '../../schil/Schil.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { aantal, naarInvoer, datumTijd } from '../../lib/formaat.js';
-import { KoppelDialoog } from './opdracht.jsx';
+import { KoppelDialoog, OpdrachtBadge, OpdrachtDialoog, BevestigDialoog, PlaatBadge, PlaatBevestigDialoog } from './opdracht.jsx';
 import RolLeegDialoog from './RolLeeg.jsx';
 
 // Productie → Printers (stap 6a): de VOLLEDIGE printerkaarten met live
@@ -27,7 +27,48 @@ function Camera({ id }) {
   return <img className="camera" alt="Camerabeeld" src={url(`/productie/printers/${id}/camera?t=${t}`)} />;
 }
 
-function PrinterKaart({ p, herlaad }) {
+// 09-11: wachtrij van de printer: runs die nog gekoppeld moeten worden en de
+// open printopdrachten (bezig, te bevestigen, gepland) in volgorde. Koppelen
+// en bevestigen kan hier meteen; de tabbladen Printopdrachten en Runs blijven.
+const MAX_WACHTRIJ = 6;
+function Wachtrij({ p, opdrachten, runs, verberg, herlaad }) {
+  const [dialoog, setDialoog] = useState(null);
+  const klaar = async () => { setDialoog(null); await herlaad(); };
+  const mijn = (opdrachten || []).filter(o => o.printer_id === p.id);
+  const teKoppelen = (runs || []).filter(r => r.printer_id === p.id && r.id !== verberg);
+  const toon = mijn.slice(0, MAX_WACHTRIJ);
+  return (
+    <div className="pwachtrij" aria-label={`Wachtrij ${p.naam}`}>
+      <div className="pwachtrij-kop"><b>Wachtrij</b><span className="sub">{mijn.length ? `${mijn.length} open` : 'leeg'}</span></div>
+      {teKoppelen.map(r => (
+        <div key={`r${r.id}`} className="prij te-koppelen-rij">
+          <span className="badge b-warn">Te koppelen</span>
+          <span className="pnaam">{r.bestand ? <span className="mono">{r.bestand}</span> : 'Run'}<span className="sub"> · {datumTijd(r.gestart_op)} · {tijd(r.duur_min)}</span></span>
+          <button type="button" className="btn klein primary" onClick={() => setDialoog({ soort: 'koppel', run: r })}>Koppelen</button>
+        </div>
+      ))}
+      {toon.map(o => (
+        <div key={o.id} className="prij klikbaar" role="button" tabIndex={0} title="Printopdracht openen"
+          onClick={() => setDialoog({ soort: 'open', o })} onKeyDown={e => { if (e.key === 'Enter') setDialoog({ soort: 'open', o }); }}>
+          <OpdrachtBadge status={o.status} />
+          <span className="pnaam">{o.naam}<PlaatBadge o={o} />
+            <span className="sub"> · {aantal(o.aantal)} st.{o.dossier_nummer ? <> · <Link naar={`/dossiers/${o.dossier_id}?tab=productie`}><span className="mono">{o.dossier_nummer}</span></Link></> : ''}</span></span>
+          {(o.status === 'te_bevestigen' || o.status === 'mislukt') && o.runs.some(r => r.uitkomst === 'klaar') && (
+            <button type="button" className="btn klein primary" onClick={e => { e.stopPropagation(); setDialoog({ soort: o.plaat ? 'plaat' : 'bevestig', o }); }}>Bevestigen</button>
+          )}
+        </div>
+      ))}
+      {mijn.length > MAX_WACHTRIJ && <div className="sub"><Link naar="/productie/opdrachten">nog {mijn.length - MAX_WACHTRIJ} in de wachtrij</Link></div>}
+      {!mijn.length && !teKoppelen.length && <div className="sub">Geen geplande printopdrachten. <Link naar="/productie/opdrachten">Printopdrachten</Link></div>}
+      {dialoog?.soort === 'koppel' && <KoppelDialoog run={{ ...dialoog.run, printer: p.naam, printer_id: p.id }} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
+      {dialoog?.soort === 'open' && <OpdrachtDialoog opdracht={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
+      {dialoog?.soort === 'bevestig' && <BevestigDialoog o={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
+      {dialoog?.soort === 'plaat' && <PlaatBevestigDialoog o={dialoog.o} onSluit={() => setDialoog(null)} onKlaar={klaar} />}
+    </div>
+  );
+}
+
+function PrinterKaart({ p, herlaad, opdrachten, runs }) {
   const { melding, bevestig } = useOmgeving();
   const [camera, setCamera] = useState(false);
   const [stop, setStop] = useState(false);
@@ -46,6 +87,7 @@ function PrinterKaart({ p, herlaad }) {
   }
   return (
     <section className="pkaart" aria-label={p.naam}>
+      <div className="plive">
       <div className="pkaart-kop">
         <div><b>{p.naam}</b><div className="sub">{p.koppeling_label}</div></div>
         <StatusBadge status={status} />
@@ -80,7 +122,7 @@ function PrinterKaart({ p, herlaad }) {
           <button type="button" className="btn klein primary" onClick={() => setKoppel(teKoppelen)}>Koppelen</button>
         </div>
       )}
-      {nogMeer > 0 && <div className="sub"><Link naar="/productie/runs?te_koppelen=1">{nogMeer} andere run{nogMeer > 1 ? 's' : ''} te koppelen</Link></div>}
+      {nogMeer > 0 && !runs && <div className="sub"><Link naar="/productie/runs?te_koppelen=1">{nogMeer} andere run{nogMeer > 1 ? 's' : ''} te koppelen</Link></div>}
       {camera && p.camera && <Camera id={p.id} />}
       <div className="doc-knoppen">
         {p.koppeling === 'manueel' ? (
@@ -95,6 +137,8 @@ function PrinterKaart({ p, herlaad }) {
         <button type="button" className="btn ghost" onClick={() => setRolLeeg(true)}>Rol leeg</button>
       </div>
       {p.bijgewerkt_op && <div className="sub klein">Bijgewerkt {datumTijd(p.bijgewerkt_op)}</div>}
+      </div>
+      <Wachtrij p={p} opdrachten={opdrachten} runs={runs} verberg={teKoppelen?.id} herlaad={herlaad} />
       {rolLeeg && <RolLeegDialoog printer={p} onSluit={() => setRolLeeg(false)} />}
       {koppel && <KoppelDialoog run={{ ...koppel, printer: p.naam, printer_id: p.id }} onSluit={() => setKoppel(null)} onKlaar={async () => { setKoppel(null); await herlaad(); }} />}
       {stop && (
@@ -111,19 +155,37 @@ function PrinterKaart({ p, herlaad }) {
   );
 }
 
+// 09-11: twee weergaven (onthouden in deze browser): kaarten naast elkaar of één rij per printer
+const WEERGAVE = 'printers-weergave';
+function leesWeergave() { try { return localStorage.getItem(WEERGAVE) === 'rijen' ? 'rijen' : 'kaarten'; } catch { return 'kaarten'; } }
+
 export default function PrintersLive() {
-  const { data, fout, laden, herlaad } = useData('/productie/live');
+  const { data, fout, laden, herlaad: herlaadLive } = useData('/productie/live');
+  const { data: opd, herlaad: herlaadOpd } = useData('/productie/opdrachten?open=1');
+  const { data: runs, herlaad: herlaadRuns } = useData('/productie/runs?te_koppelen=1');
   const { melding } = useOmgeving();
-  useEffect(() => { const k = setInterval(() => herlaad(), 5000); return () => clearInterval(k); }, [herlaad]);
+  const [weergave, setWeergave] = useState(leesWeergave);
+  const kies = w => { setWeergave(w); try { localStorage.setItem(WEERGAVE, w); } catch { /* niet bewaard */ } };
+  useEffect(() => { const k = setInterval(() => herlaadLive(), 5000); return () => clearInterval(k); }, [herlaadLive]);
+  // wachtrij: elke 15 s (en meteen na koppelen/bevestigen)
+  useEffect(() => { const k = setInterval(() => { herlaadOpd(); herlaadRuns(); }, 15000); return () => clearInterval(k); }, [herlaadOpd, herlaadRuns]);
+  const herlaad = async () => { await Promise.all([herlaadLive(), herlaadOpd(), herlaadRuns()]); };
   async function vernieuw() { try { await api.post('/productie/vernieuwen'); await herlaad(); } catch (e) { melding(e.message, 'fout'); } }
+  const open = (opd?.lijst || []).filter(o => !o.voltooid_op && !o.geannuleerd_op);
   return (
     <>
-      <ControlePaneel kruimels={[{ label: 'Printers' }]} acties={<button type="button" className="btn" onClick={vernieuw}>Vernieuwen</button>} />
+      <ControlePaneel kruimels={[{ label: 'Printers' }]} acties={<>
+        <div className="segment" role="group" aria-label="Weergave">
+          <button type="button" className={`btn klein${weergave === 'kaarten' ? ' actief' : ''}`} aria-pressed={weergave === 'kaarten'} onClick={() => kies('kaarten')}>Kaarten</button>
+          <button type="button" className={`btn klein${weergave === 'rijen' ? ' actief' : ''}`} aria-pressed={weergave === 'rijen'} onClick={() => kies('rijen')}>Rijen</button>
+        </div>
+        <button type="button" className="btn" onClick={vernieuw}>Vernieuwen</button>
+      </>} />
       {fout ? <Fout tekst={fout} /> : !data && laden ? <Laden /> : (
         <>
           {!data.ha && data.printers.some(p => p.koppeling !== 'manueel') && <div className="waarschuwing" style={{ margin: '12px 16px 0' }}>Home Assistant is niet ingesteld: de gekoppelde printers worden niet gevolgd. Zie <Link naar="/instellingen/integraties">Instellingen → Integraties</Link>.</div>}
           {data.printers.length === 0 ? <div className="leeg"><b>Geen actieve printers.</b>Voeg een printer toe onder Instellingen → Printers.</div> : (
-            <div className="pgrid">{data.printers.map(p => <PrinterKaart key={p.id} p={p} herlaad={herlaad} />)}</div>
+            <div className={`pgrid${weergave === 'rijen' ? ' rijen' : ''}`}>{data.printers.map(p => <PrinterKaart key={p.id} p={p} herlaad={herlaad} opdrachten={opd ? open : null} runs={runs} />)}</div>
           )}
           <p className="note" style={{ margin: '0 16px 16px' }}>De printerwachter leest de printers elke {data.interval_s} s, ook als deze pagina niet openstaat. Elke print wordt automatisch een run (zie Runs); koppel ze aan een printopdracht zodat tijd en verbruik op de werkbon komen.</p>
         </>

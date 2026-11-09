@@ -431,6 +431,24 @@ table.leveren .inp { width:80px; }
 .pwaarden { display:grid; grid-template-columns:auto minmax(0,1fr); gap:3px 12px; margin:0; font-size:13px; }
 .pwaarden dt { color:var(--muted); }
 .pwaarden dd { margin:0; text-align:right; }
+/* 09-11: wachtrij per printer + weergave kaarten/rijen */
+.plive { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.pwachtrij { display:flex; flex-direction:column; gap:4px; border-top:1px solid var(--line); padding-top:8px; min-width:0; font-size:13px; }
+.pwachtrij-kop { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.prij { display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:var(--radius); min-width:0; }
+.prij.klikbaar { cursor:pointer; }
+.prij.klikbaar:hover, .prij.klikbaar:focus-visible { background:var(--sunken); }
+.prij.te-koppelen-rij { background:var(--warn-bg); }
+.prij .pnaam { flex:1; min-width:0; overflow-wrap:anywhere; }
+.prij .badge, .prij .btn { flex-shrink:0; }
+.pgrid.rijen { grid-template-columns:minmax(0,1fr); }
+.pgrid.rijen .pkaart { display:grid; grid-template-columns:minmax(280px,360px) minmax(0,1fr); gap:18px; align-items:start; }
+.pgrid.rijen .pwachtrij { border-top:0; border-left:1px solid var(--line); padding:0 0 0 16px; align-self:stretch; }
+.segment { display:inline-flex; }
+.segment .btn { border-radius:0; }
+.segment .btn:first-child { border-radius:var(--radius) 0 0 var(--radius); }
+.segment .btn:last-child { border-radius:0 var(--radius) var(--radius) 0; margin-left:-1px; }
+.segment .btn.actief { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 .camera { width:100%; border-radius:var(--radius); background:var(--sunken); aspect-ratio:16/9; object-fit:cover; }
 .kopptest { margin-top:8px; padding:8px 10px; background:var(--sunken); border-radius:var(--radius); font-size:13px; }
 .klein { font-size:12px; }
@@ -506,6 +524,8 @@ ul.klein { margin:4px 0 0; padding-left:18px; overflow-wrap:anywhere; }
   .materiaal { grid-template-columns:minmax(0,1fr) 96px auto; gap:6px; }
   .totalen { max-width:none; }
   .pgrid { grid-template-columns:minmax(0,1fr); padding:12px; }
+  .pgrid.rijen .pkaart { grid-template-columns:minmax(0,1fr); }
+  .pgrid.rijen .pwachtrij { border-left:0; border-top:1px solid var(--line); padding:8px 0 0; }
   table.werkelijk th:nth-child(2), table.werkelijk td:nth-child(2) { display:none; }
   table.werkelijk .inp { width:58px; }
   table.werkelijk th, table.werkelijk td { padding-left:4px; padding-right:4px; }
