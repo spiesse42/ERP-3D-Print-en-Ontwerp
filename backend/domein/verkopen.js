@@ -205,32 +205,38 @@ export function leesVerkoop(db, body, { voorbeeld = false } = {}) {
     if (!datumOk(vervaldatum)) throw new DomeinFout('Vul een geldige vervaldatum in');
     if (vervaldatum < datum) throw new DomeinFout('De vervaldatum kan niet vóór de factuurdatum liggen.');
   }
-  // bonnetje (04-10): het nummer komt uit Accountable (met de hand)
-  const nummer = soort !== 'bonnetje' ? null
-    : voorbeeld ? (String(body?.nummer ?? '').trim() ? `Bonnetje ${String(body.nummer).trim().replace(/^bonnetje\s*/i, '')}` : 'Bonnetje …')
+  // bonnetje (04-10): het nummer komt uit Accountable (met de hand);
+  // 11-11: of een eigen ERP-nummer (kassabon), het Accountable-nummer apart (mag later)
+  const eigen = soort === 'bonnetje' && body?.eigen_nummer === true;
+  const ingevuld = String(body?.nummer ?? '').trim();
+  const nummer = soort !== 'bonnetje' || eigen ? null
+    : voorbeeld ? (ingevuld ? `Bonnetje ${ingevuld.replace(/^bonnetje\s*/i, '')}` : 'Bonnetje …')
     : leesBonnummer(db, body?.nummer);
+  const accountable_nummer = eigen && ingevuld && !voorbeeld ? leesBonnummer(db, body?.nummer) : null;
   // 07-10: verkoop voor een webshopbestelling
   const webshop_bestelling = tekst(body?.webshop_bestelling);
   if (webshop_bestelling && !db.prepare('SELECT 1 FROM webshop_bestellingen WHERE id = ?').get(webshop_bestelling)) throw new DomeinFout('Onbekende webshopbestelling');
-  return { soort, datum, vervaldatum, klant_id, omschrijving: tekst(body?.omschrijving), regels, totaal, nummer, webshop_bestelling };
+  return { soort, datum, vervaldatum, klant_id, omschrijving: tekst(body?.omschrijving), regels, totaal, nummer, eigen, accountable_nummer, webshop_bestelling };
 }
 
 // Wat het bonnetje ZOU worden (venster/voorbeeld): nummer zonder het uit te geven.
-export const REEKS = { bonnetje: 'BON', factuur: 'FAC' };
+export const REEKS = { bonnetje: 'BON', factuur: 'FAC', kassabon: 'KB' };
 // factuur: het volgende nummer van de reeks; bonnetje: enkel een voorstel
 // (het nummer uit Accountable vul je zelf in)
 export function voorstelNummer(db, datum, soort = 'bonnetje') {
   if (soort === 'bonnetje') return bonnummerVoorstel(db, datum);
+  if (soort === 'kassabon') return nummerOverzicht(db, Number(datum.slice(0, 4))).find(x => x.reeks === 'KB').voorbeeld;
   return nummerOverzicht(db, Number(datum.slice(0, 4))).find(x => x.reeks === REEKS[soort]).voorbeeld;
 }
 
 export function maakVerkoop(db, v) {
   const soort = v.soort || 'bonnetje';
   const factuur = soort === 'factuur';
-  const nummer = factuur ? volgendNummer(db, REEKS[soort], { jaar: Number(v.datum.slice(0, 4)) }) : v.nummer;
+  const jaar = Number(v.datum.slice(0, 4));
+  const nummer = factuur ? volgendNummer(db, REEKS[soort], { jaar }) : v.eigen ? volgendNummer(db, 'KB', { jaar }) : v.nummer;
   if (!nummer) throw new DomeinFout('Vul het nummer van het bonnetje uit Accountable in.');
-  const id = Number(db.prepare('INSERT INTO verkopen (nummer, datum, klant_id, omschrijving, totaal, soort, vervaldatum, betaald_op, webshop_bestelling) VALUES (?,?,?,?,?,?,?,?,?)')
-    .run(nummer, v.datum, v.klant_id, v.omschrijving, v.totaal, soort, v.vervaldatum || null, factuur ? null : v.datum, v.webshop_bestelling || null).lastInsertRowid);
+  const id = Number(db.prepare('INSERT INTO verkopen (nummer, datum, klant_id, omschrijving, totaal, soort, vervaldatum, betaald_op, webshop_bestelling, accountable_nummer) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(nummer, v.datum, v.klant_id, v.omschrijving, v.totaal, soort, v.vervaldatum || null, factuur ? null : v.datum, v.webshop_bestelling || null, v.accountable_nummer || null).lastInsertRowid);
   if (v.webshop_bestelling) db.prepare(`UPDATE webshop_bestellingen SET afgehandeld_op = COALESCE(afgehandeld_op, datetime('now')) WHERE id = ?`).run(v.webshop_bestelling);
   const ins = db.prepare(`INSERT INTO verkoop_regels (verkoop_id, volgorde, soort, artikel_id, dossier_id, printopdracht_id, omschrijving, aantal, prijs_per_stuk, bedrag, berekend)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`);

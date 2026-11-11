@@ -195,3 +195,46 @@ test('B9. sjabloon: btw-kolom 0 % en de volledige vrijstellingsvermelding', () =
   const w = documentHtml({ soort: 'WERKBON', nummer: 'WB-1', datum: '2026-09-26', inhoud });
   assert.ok(!w.includes('>Btw<') && w.includes('Vrijgesteld van btw — art. 56bis'), 'andere documenten ongewijzigd');
 });
+
+test('B10. kassabon: eigen ERP-nummer (reeks KB), los van Accountable; Accountable-nummer meteen of later; import koppelt erop', async () => {
+  const db = getDb();
+  const a = await nieuwDossier('Kassabon A');
+  const b = await nieuwDossier('Kassabon B');
+  const v = ok(await vraag('GET', `/dossiers/${a.id}/bonnetje/voorstel`));
+  assert.equal(v.eigen_nummer, `Kassabon ${jaar}-001`);
+  const pdf = await vraag('GET', `/dossiers/${a.id}/bonnetje/voorbeeld?eigen=1`);
+  assert.match(pdf.headers.get('content-disposition'), /Kassabon \d{4}-001/);
+  const bonVoor = await volgendBon();
+  // zonder Accountable-nummer
+  const da = ok(await vraag('POST', `/dossiers/${a.id}/bonnetje`, { datum: vandaag, eigen_nummer: true }), 201);
+  assert.deepEqual([da.afgerekend_soort, da.afgerekend_nummer, da.accountable_nummer, !!da.betaald_op], ['bonnetje', `Kassabon ${jaar}-001`, null, true]);
+  assert.equal(await volgendBon(), bonVoor, 'reeks BON (Accountable-stijl) niet aangeraakt');
+  // mét een Accountable-nummer dat al gebruikt is → fout, geen nummer verbruikt
+  fout(await vraag('POST', `/dossiers/${b.id}/bonnetje`, { datum: vandaag, eigen_nummer: true, nummer: `${jaar}-021` }), /al gebruikt/);
+  const db2 = ok(await vraag('POST', `/dossiers/${b.id}/bonnetje`, { datum: vandaag, eigen_nummer: true, nummer: `${jaar}-030` }), 201);
+  assert.deepEqual([db2.afgerekend_nummer, db2.accountable_nummer], [`Kassabon ${jaar}-002`, `Bonnetje ${jaar}-030`]);
+  // later invullen bij A; dubbel of een kassabon-nummer → geweigerd
+  fout(await vraag('PUT', `/dossiers/${a.id}/accountable-nummer`, { nummer: `${jaar}-030` }), /al gebruikt/);
+  fout(await vraag('PUT', `/dossiers/${a.id}/accountable-nummer`, { nummer: `Kassabon ${jaar}-002` }), /ERP-nummer/);
+  assert.equal(ok(await vraag('PUT', `/dossiers/${a.id}/accountable-nummer`, { nummer: `${jaar}-031` })).accountable_nummer, `Bonnetje ${jaar}-031`);
+  fout(await vraag('PUT', `/dossiers/${d1.id}/accountable-nummer`, { nummer: `${jaar}-040` }), /Enkel bij een kassabon/);
+  // het voorstel voor het volgende Accountable-nummer telt de aparte nummers mee
+  assert.equal(ok(await vraag('GET', `/dossiers/${d3.id}/bonnetje/voorstel`)).nummer_voorstel, `${jaar}-032`);
+  // Accountable-import: gevonden op het Accountable-nummer
+  const r = vergelijk(db, [{ nummer: `${jaar}-031`, datum: vandaag, bedrag: 56, betaald: true }]);
+  assert.equal(r.rijen[0].dossier?.id, a.id);
+});
+
+test('B11. losse verkoop als kassabon: eigen nummer, Accountable-nummer apart (ook later)', async () => {
+  const art = ok(await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Kaartje', wordt_gekocht: true, wordt_verkocht: true, verkoopprijs: 3 }), 201).id;
+  ok(await vraag('POST', `/voorraad/artikelen/${art}/boeking`, { richting: 'in', aantal: 5, prijs_per_eenheid: 1, datum: vandaag }));
+  const vs = ok(await vraag('GET', `/verkopen/voorstel?soort=bonnetje&datum=${vandaag}`));
+  assert.equal(vs.eigen_nummer, `Kassabon ${jaar}-003`);
+  const v = ok(await vraag('POST', '/verkopen', { soort: 'bonnetje', datum: vandaag, eigen_nummer: true, regels: [{ soort: 'artikel', artikel_id: art, aantal: 1, prijs_per_stuk: 3 }] }), 201);
+  assert.deepEqual([v.nummer, v.accountable_nummer], [`Kassabon ${jaar}-003`, null]);
+  const na = ok(await vraag('PUT', `/verkopen/${v.id}/accountable-nummer`, { nummer: `${jaar}-033` }));
+  assert.equal(na.accountable_nummer, `Bonnetje ${jaar}-033`);
+  fout(await vraag('PUT', `/verkopen/${v.id}/accountable-nummer`, { nummer: `${jaar}-031` }), /al gebruikt/);
+  const r = vergelijk(getDb(), [{ nummer: `${jaar}-033`, datum: vandaag, bedrag: 3, betaald: true }]);
+  assert.equal(r.rijen[0].verkoop?.id, v.id);
+});

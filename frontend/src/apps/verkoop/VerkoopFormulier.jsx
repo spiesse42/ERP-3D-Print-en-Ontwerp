@@ -12,7 +12,7 @@ import { euro, datum, naarInvoer, uitInvoer, vandaag, aantal as fmtAantal } from
 import { klantNaam } from '../klanten/klant.js';
 import { FASE } from '../dossiers/dossier.jsx';
 import { mailTekst } from '../dossiers/MailDialoog.jsx';
-import { BonnetjeMailDialoog, BetaaldDialoog } from '../dossiers/AfrekenDialogen.jsx';
+import { BonnetjeMailDialoog, BetaaldDialoog, AccountableNummer, isKassabon } from '../dossiers/AfrekenDialogen.jsx';
 import { StatusBadge } from './VerkopenLijst.jsx';
 
 // Losse verkoop (26-09). Eén bonnetje met regels van vier soorten:
@@ -53,7 +53,7 @@ function NieuweVerkoop() {
   const { data: kand } = useData('/verkopen/kandidaten');
   const { data: instellingen } = useData('/instellingen');
   const bedrijf = (instellingen || []).find(i => i.sleutel === 'bedrijf_naam')?.waarde || '';
-  const [f, setF] = useState({ soort: 'bonnetje', datum: vandaag(), klant_id: '', omschrijving: '', vervaldatum: '', nummer: '' });
+  const [f, setF] = useState({ soort: 'bonnetje', datum: vandaag(), klant_id: '', omschrijving: '', vervaldatum: '', nummer: '', eigen: true });
   const factuur = f.soort === 'factuur';
   const doc = factuur ? 'de factuur' : 'het bonnetje';
   const [regels, setRegels] = useState(() => [nieuweRegel('artikel')]);
@@ -135,7 +135,8 @@ function NieuweVerkoop() {
   const tekort = [...gevraagd].filter(([aid, n]) => n > (perId.get(aid)?.voorraad ?? 0) + 1e-9).map(([aid]) => perId.get(aid).weergave);
   const andereKlant = regels.some(r => r.soort === 'dossier' && r.dossier_id && dossierVan.get(r.dossier_id)?.klant_id && f.klant_id && String(dossierVan.get(r.dossier_id).klant_id) !== f.klant_id);
   const kaalNr = f.nummer.trim().replace(/^bonnetje\s*/i, '').trim();
-  const nummer = factuur ? v?.nummer : kaalNr ? `Bonnetje ${kaalNr}` : null;
+  // 11-11: bonnetje met eigen ERP-nummer (kassabon) of met het nummer uit Accountable
+  const nummer = factuur ? v?.nummer : f.eigen ? v?.eigen_nummer : kaalNr ? `Bonnetje ${kaalNr}` : null;
   const m = mail || { aan: klant?.email || '', onderwerp: nummer ? `${nummer}${f.omschrijving ? ` – ${f.omschrijving}` : ''}` : '', tekst: mailTekst({ klant, bedrijf, wat: factuur ? 'je factuur' : 'je bonnetje', titel: f.omschrijving || 'je aankoop' }) };
   const zetMail = (k, w) => setMail({ ...m, [k]: w });
   // 30-09: een bonnetje gaat niet naar Accountable; mailen enkel als het naar de klant moet
@@ -149,8 +150,8 @@ function NieuweVerkoop() {
     : andereKlant ? 'Een dossier hoort bij een andere klant dan de gekozen klant.'
     : factuur && !f.klant_id ? 'Een factuur is op naam: kies een klant.'
     : factuur && vervaldatum && vervaldatum < f.datum ? 'De vervaldatum ligt vóór de factuurdatum.'
-    : !factuur && !kaalNr ? 'Vul het nummer van het bonnetje uit Accountable in.' : null;
-  const body = () => ({ webshop_bestelling: webshopId || null, soort: f.soort, datum: f.datum, ...(factuur ? { vervaldatum } : { nummer: kaalNr }), klant_id: f.klant_id || null, omschrijving: f.omschrijving,
+    : !factuur && !f.eigen && !kaalNr ? 'Vul het nummer van het bonnetje uit Accountable in.' : null;
+  const body = () => ({ webshop_bestelling: webshopId || null, soort: f.soort, datum: f.datum, ...(factuur ? { vervaldatum } : { nummer: kaalNr, eigen_nummer: f.eigen }), klant_id: f.klant_id || null, omschrijving: f.omschrijving,
     regels: ingevuld.map(r => ({ soort: r.soort, artikel_id: r.soort === 'artikel' ? Number(r.artikel_id) : undefined,
       dossier_id: r.soort === 'dossier' ? Number(r.dossier_id) : undefined, printopdracht_id: r.soort === 'printopdracht' ? Number(r.printopdracht_id) : undefined,
       aantal: r.aantal, prijs_per_stuk: r.prijs, omschrijving: r.omschrijving })) });
@@ -236,7 +237,7 @@ function NieuweVerkoop() {
             <div className="kop">
               <div className="nr">Nieuwe verkoop · {factuur ? 'factuur' : 'bonnetje'}</div>
               <h2 className="mono-titel">{factuur ? (v?.nummer ?? '…') : (nummer || 'Bonnetje …')}</h2>
-              <div className="sub">{factuur ? <>Dit nummer krijgt {doc} bij "Verkopen" (Instellingen → Nummering).</> : <>Maak het bonnetje eerst in Accountable en vul hieronder het nummer in.</>}</div>
+              <div className="sub">{factuur ? <>Dit nummer krijgt {doc} bij "Verkopen" (Instellingen → Nummering).</> : f.eigen ? <>Eigen ERP-nummer (eigen telling). Het nummer uit Accountable vul je hieronder in, of later.</> : <>Maak het bonnetje eerst in Accountable en vul hieronder het nummer in.</>}</div>
               <div className="seg" role="group" aria-label="Bonnetje of factuur" style={{ marginTop: 8 }}>
                 <button type="button" aria-pressed={!factuur} onClick={() => zet('soort', 'bonnetje')}>Bonnetje</button>
                 <button type="button" aria-pressed={factuur} onClick={() => zet('soort', 'factuur')}>Factuur</button>
@@ -246,8 +247,13 @@ function NieuweVerkoop() {
           {(voorstelFout || blokkeert) && <div className="waarschuwing" style={{ margin: '0 22px 10px', display: 'block' }} role="alert">{voorstelFout || blokkeert}</div>}
           <div className="fields">
             <div>
-              {!factuur && <Veld label="Nummer uit Accountable" id="vk-nr" hint="Het nummer dat Accountable aan het bonnetje gaf.">
-                <input id="vk-nr" className="inp mono" placeholder={v?.nummer ? `bv. ${v.nummer}` : 'bv. 2026-025'} value={f.nummer} onChange={e => zet('nummer', e.target.value)} /></Veld>}
+              {!factuur && <Veld label="Nummer op het bonnetje" id="vk-eigen">
+                <select id="vk-eigen" className="inp" value={f.eigen ? 'eigen' : 'acc'} onChange={e => zet('eigen', e.target.value === 'eigen')}>
+                  <option value="eigen">Eigen ERP-nummer ({v?.eigen_nummer || 'Kassabon …'})</option>
+                  <option value="acc">Nummer uit Accountable</option>
+                </select></Veld>}
+              {!factuur && <Veld label={f.eigen ? 'Nummer in Accountable (optioneel)' : 'Nummer uit Accountable'} id="vk-nr" hint={f.eigen ? 'Kan ook later, op de verkoop zelf.' : 'Het nummer dat Accountable aan het bonnetje gaf.'}>
+                <input id="vk-nr" className="inp mono" placeholder={f.eigen ? 'kan ook later' : v?.nummer ? `bv. ${v.nummer}` : 'bv. 2026-025'} value={f.nummer} onChange={e => zet('nummer', e.target.value)} /></Veld>}
               <Veld label={factuur ? 'Factuurdatum' : 'Datum'} id="vk-datum"><input id="vk-datum" type="date" className="inp" max={vandaag()} value={f.datum} onChange={e => zet('datum', e.target.value || vandaag())} /></Veld>
               {factuur && <Veld label="Vervaldatum" id="vk-verval" hint="Volgens de betaaltermijn (Instellingen → Bedrijf); aanpasbaar.">
                 <input id="vk-verval" type="date" className="inp" min={f.datum} value={vervaldatum} onChange={e => zet('vervaldatum', e.target.value)} /></Veld>}
@@ -460,6 +466,9 @@ function Verkoop({ id }) {
                   <KeuzeMetToevoegen id="vk-klant" ariaLabel="Klant" waarde={v.klant_id ? String(v.klant_id) : ''} leegLabel="Geen klant" opties={klantOpties(v.klant_id ? String(v.klant_id) : '')}
                     onKies={klantZetten} onNieuw={nieuweKlant} watLabel="klant" />)}
               </Veld>
+              {!factuur && isKassabon(v.nummer) && !v.geannuleerd_op && (
+                <Veld label="In Accountable"><div style={{ padding: '8px 0' }}><AccountableNummer pad={`/verkopen/${v.id}/accountable-nummer`} waarde={v.accountable_nummer} onKlaar={na} /></div></Veld>
+              )}
               <Veld label="Gemaild"><div style={{ padding: '8px 0' }}>{v.gemaild_op ? `Accountable op ${datum(v.gemaild_op)}` : factuur ? 'Nog niet naar Accountable' : 'Niet naar Accountable (zelf ingeven)'}{v.klant_mail ? ` · klant: ${v.klant_mail}` : ''}</div></Veld>
             </div>
             <div>
