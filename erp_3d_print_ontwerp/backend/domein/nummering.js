@@ -30,6 +30,11 @@ export const REEKSEN = {
   // ook: nog een tabel met nummers van dezelfde reeks (26-09: losse verkoop)
   BON: { naam: 'Bonnetje', cijfers: 3, tabel: 'dossiers', kolom: 'afgerekend_nummer', metNaam: true, filter: "afgerekend_soort = 'bonnetje'",
     ook: [{ tabel: 'verkopen', kolom: 'nummer' }] },
+  // 11-11: bonnetje met een EIGEN ERP-nummer ("Kassabon 2026-001"), los van
+  // de nummers die Accountable aan bonnetjes geeft (die staan apart in
+  // accountable_nummer, of als afgerekend_nummer "Bonnetje 2026-025").
+  KB: { naam: 'Kassabon', cijfers: 3, tabel: 'dossiers', kolom: 'afgerekend_nummer', metNaam: true, filter: "afgerekend_soort = 'bonnetje'",
+    ook: [{ tabel: 'verkopen', kolom: 'nummer' }] },
   // 29-09: factuur door het ERP ("Factuur 2026-004"). Nummers die vroeger met
   // de hand uit Accountable overgenomen werden ("2026-003") tellen ook mee,
   // zodat er nooit een dubbel factuurnummer ontstaat.

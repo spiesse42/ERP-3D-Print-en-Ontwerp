@@ -322,7 +322,9 @@ export function volgendeStap(d) {
       : d.afrekening_gemaild_op ? `Afgerond: ${d.afgerekend_nummer} gemaakt en naar Accountable gemaild${d.afrekening_klant_mail ? ` (ook naar ${d.afrekening_klant_mail})` : ''}.`
       : `Afgerond: ${d.afgerekend_nummer} gemaakt${klantMail}.`,
       // 30-09: bonnetjes gaan niet meer naar inkomsten@ (daar werden ze een factuur)
-      extra: isErpBonnetje(d) && !d.afrekening_gemaild_op ? [...extra, 'Zet het bonnetje zelf in Accountable (dagontvangsten), als dat nog niet gebeurde. De Accountable-import toont het daarna als "in orde".'] : extra };
+      extra: isErpBonnetje(d) && /^kassabon\b/i.test(d.afgerekend_nummer || '') && !d.accountable_nummer && !d.afgerekend_via
+        ? [...extra, 'Zet de kassabon in Accountable (dagontvangsten) en vul het nummer dat Accountable gaf in bij "In Accountable" (bovenaan): zo vindt de Accountable-import het terug.']
+        : isErpBonnetje(d) && !d.afrekening_gemaild_op ? [...extra, 'Zet het bonnetje zelf in Accountable (dagontvangsten), als dat nog niet gebeurde. De Accountable-import toont het daarna als "in orde".'] : extra };
   }
   if (d.fase === 'gratis') {
     return { soort: 'afgerond', tekst: `Gratis geleverd${d.gratis_waarde != null ? ` (waarde ${euro2(d.gratis_waarde)})` : ''}: niets af te rekenen. Telt niet als omzet; je kost staat in Financiën → Marges.`, extra };

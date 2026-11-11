@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { getDb } from '../db/index.js';
 import { DomeinFout, isFkFout } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
+import { leesBonnummer } from '../domein/afrekening.js';
 import { leesVerkoop, leesDatum, leesSoort, voorstelNummer, maakVerkoop, leesVerkoopRij, verkoopInhoud, overzicht, annuleerVerkoop, kandidaten, zetVerkoopBetaald } from '../domein/verkopen.js';
 import { betaaltermijn, plusDagen } from '../domein/documenten.js';
 import { factuurHtml, factuurBestand, peppolVerplicht } from '../documenten/factuur.js';
@@ -65,6 +66,7 @@ r.get('/voorstel', metFouten((req, res) => {
   const klant = req.query.klant ? db.prepare('SELECT * FROM klanten WHERE id = ?').get(Number(req.query.klant)) : null;
   res.json({ nummer: voorstelNummer(db, datum, soort), datum, accountable: accountableAdres(), afzender: afzender(),
     mail_ingesteld: mailIngesteld(), pdf_mogelijk: !!vindBrowser(), drempel: DREMPEL_BONNETJE, naar_accountable: soort === 'factuur',
+    ...(soort === 'bonnetje' ? { eigen_nummer: voorstelNummer(db, datum, 'kassabon') } : {}),
     ...(soort === 'factuur' ? { vervaldatum: plusDagen(datum, betaaltermijn(db)), peppol_verplicht: peppolVerplicht(klant) } : {}) });
 }));
 // Wat je kunt koppelen: af te rekenen klantdossiers en voltooide losse
@@ -75,7 +77,7 @@ r.post('/voorbeeld', metFouten(async (req, res) => {
   const db = getDb();
   const v = leesVerkoop(db, req.body, { voorbeeld: true });
   const klant = v.klant_id ? db.prepare('SELECT * FROM klanten WHERE id = ?').get(v.klant_id) : null;
-  const x = { ...v, nummer: v.soort === 'factuur' ? voorstelNummer(db, v.datum, v.soort) : v.nummer, klant_gegevens: klant };
+  const x = { ...v, nummer: v.soort === 'factuur' ? voorstelNummer(db, v.datum, v.soort) : v.eigen ? voorstelNummer(db, v.datum, 'kassabon') : v.nummer, klant_gegevens: klant };
   await stuurPdf(res, await documentVan(db, x, { concept: true }), bestandVan(x, ' - voorbeeld'));
 }));
 
@@ -144,6 +146,18 @@ r.put('/:id', metFouten((req, res) => {
   if (klant !== v.klant_id) db.transaction(() => {
     db.prepare('UPDATE verkopen SET klant_id = ? WHERE id = ?').run(klant, v.id);
     logGebeurtenis(db, 'verkoop', v.id, 'gewijzigd', `Klant ${klant ? 'gekoppeld' : 'weggehaald'}`);
+  })();
+  res.json(verkoop(db, v.id));
+}));
+// 11-11: Accountable-nummer naast een kassabon (eigen ERP-nummer) invullen of wissen
+r.put('/:id/accountable-nummer', metFouten((req, res) => {
+  const db = getDb();
+  const v = verkoop(db, req.params.id);
+  if (v.soort !== 'bonnetje' || !/^kassabon\b/i.test(v.nummer)) throw new DomeinFout('Enkel bij een kassabon (eigen ERP-nummer) hoort een apart Accountable-nummer.');
+  const nr = String(req.body?.nummer ?? '').trim() ? leesBonnummer(db, req.body.nummer, { behalveVerkoop: v.id }) : null;
+  db.transaction(() => {
+    db.prepare('UPDATE verkopen SET accountable_nummer = ? WHERE id = ?').run(nr, v.id);
+    logGebeurtenis(db, 'verkoop', v.id, 'gewijzigd', nr ? `Nummer in Accountable: ${nr}` : 'Nummer in Accountable gewist');
   })();
   res.json(verkoop(db, v.id));
 }));
