@@ -13,7 +13,7 @@ import RegelEditor, { Totalen, TYPES, nieuweRegel, naarApi, vanApi, useBerekenin
 import { euro, datum } from '../../lib/formaat.js';
 import { klantNaam } from '../klanten/klant.js';
 import { FASE, SOORT, FaseBadge, VOOR_AFREKENING } from './dossier.jsx';
-import { AfrekenDialoog, BetaaldDialoog, GratisDialoog, Overnamefiche, BonnetjeDialoog, BonnetjeMailDialoog } from './AfrekenDialogen.jsx';
+import { AfrekenDialoog, BetaaldDialoog, GratisDialoog, Overnamefiche, BonnetjeDialoog, BonnetjeMailDialoog, AccountableNummer, isKassabon } from './AfrekenDialogen.jsx';
 import { BASE } from '../../lib/api.js';
 import { OffertesTab, WerkbonTab } from './DocumentTabs.jsx';
 import LeveringenTab from './LeveringenTab.jsx';
@@ -209,7 +209,7 @@ export default function DossierFormulier() {
     {acties.gratis_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('gratis-ongedaan', '"Gratis geleverd" ongedaan gemaakt.', { vraag: { titel: 'Gratis geleverd ongedaan maken', tekst: 'Het dossier gaat terug en kan weer gewijzigd en afgerekend worden. De werkbon wordt weer een concept (nieuwe versie).', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Gratis ongedaan</button>}
     {d.soort === 'klant' && d.regels.length > 0 && fase !== 'geannuleerd' && <button type="button" className="btn" onClick={() => open('overname')}>Overnamefiche</button>}
     {acties.betaling_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('betaling-ongedaan', 'Betaling ongedaan gemaakt.', { vraag: { titel: 'Betaling ongedaan maken', tekst: 'Het dossier gaat terug naar afgerekend.', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Betaling ongedaan</button>}
-    {acties.afrekening_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('afrekening-ongedaan', 'Afrekening ongedaan gemaakt.', { vraag: { titel: 'Afrekening ongedaan maken', tekst: `De verwijzing naar ${String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`} wordt gewist en het dossier kan weer gewijzigd worden. Pas dit ook aan in Accountable (bv. een creditnota).`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug', gevaarlijk: true } })}>Afrekening ongedaan</button>}
+    {acties.afrekening_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('afrekening-ongedaan', 'Afrekening ongedaan gemaakt.', { vraag: { titel: 'Afrekening ongedaan maken', tekst: `De verwijzing naar ${String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) || isKassabon(d.afgerekend_nummer) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`} wordt gewist en het dossier kan weer gewijzigd worden. Pas dit ook aan in Accountable (bv. een creditnota).`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug', gevaarlijk: true } })}>Afrekening ongedaan</button>}
     {acties.annuleren && <button type="button" className="btn ghost" title="Het hele dossier stopt: niets af te rekenen of te leveren" onClick={annuleren}>Dossier annuleren</button>}
     {acties.heropenen && <button type="button" className="btn" onClick={() => actie('heropenen', 'Dossier heropend.')}>Heropenen</button>}
     {acties.samenvoegen && <button type="button" className="btn ghost" title="Andere open dossiers van deze klant hierin samenvoegen (regels, printopdrachten, runs, leveringen, bijlagen)" onClick={() => open('samenvoegen')}>Samenvoegen…</button>}
@@ -274,9 +274,12 @@ export default function DossierFormulier() {
                 : <Veld label="Totaal">{uitkomst ? (uitkomst.volledig ? <b className="num">{euro(uitkomst.totaal)}</b> : <span className="badge b-warn">onvolledig</span>) : <span className="sub">—</span>}</Veld>}
               {!nieuw && d.afgerekend_op && (
                 <Veld label="Afgerekend">
-                  <span><span className="mono">{String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>{d.afrekening_pdf_op && d.afgerekend_soort === 'factuur' && !d.afrekening_gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}
+                  <span><span className="mono">{String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) || isKassabon(d.afgerekend_nummer) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>{d.afrekening_pdf_op && d.afgerekend_soort === 'factuur' && !d.afrekening_gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}
                     {d.afgerekend_via && <> · <Link naar={`/verkoop/${d.afgerekend_via.id}`}>via losse verkoop</Link>{d.afgerekend_via.soort === 'factuur' && !d.afgerekend_via.gemaild_op && <span className="badge b-crit" style={{ marginLeft: 6 }}>nog niet bij Accountable</span>}</>} · {datum(d.afgerekend_op)} · <span className="num">{euro(d.afgerekend_bedrag)}</span></span>
                 </Veld>
+              )}
+              {!nieuw && d.afgerekend_op && isKassabon(d.afgerekend_nummer) && !d.afgerekend_via && (
+                <Veld label="In Accountable"><AccountableNummer pad={`/dossiers/${d.id}/accountable-nummer`} waarde={d.accountable_nummer} onKlaar={herlaad} /></Veld>
               )}
               {!nieuw && d.samengevoegd_uit?.length > 0 && (
                 <Veld label="Samengevoegd uit"><span>{d.samengevoegd_uit.map((x, i) => <Fragment key={x.id}>{i > 0 && ', '}<Link naar={`/dossiers/${x.id}`}>{x.nummer}</Link> <span className="sub">{x.titel}</span></Fragment>)}</span></Veld>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Dialoog } from '../../schil/Omgeving.jsx';
+import { Dialoog, useOmgeving } from '../../schil/Omgeving.jsx';
 import { useData } from '../../schil/useData.js';
-import { BASE } from '../../lib/api.js';
+import { api, BASE } from '../../lib/api.js';
 import { euro, naarInvoer, vandaag, datum as fmtDatum } from '../../lib/formaat.js';
 import { klantNaam } from '../klanten/klant.js';
 import { mailTekst } from './MailDialoog.jsx';
@@ -102,24 +102,26 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
   const [mail, setMail] = useState(null);   // pas invullen zodra het nummer gekend is
   const [bezig, setBezig] = useState(false);
   const [nr, setNr] = useState('');   // bonnetje: nummer uit Accountable
+  // 11-11: eigen ERP-nummer (kassabon, eigen telling); het Accountable-nummer mag dan later
+  const [eigen, setEigen] = useState(true);
   const kaalNr = nr.trim().replace(/^bonnetje\s*/i, '').trim();
-  const nummer = factuur ? v?.nummer : kaalNr ? `Bonnetje ${kaalNr}` : null;
+  const nummer = factuur ? v?.nummer : eigen ? v?.eigen_nummer : kaalNr ? `Bonnetje ${kaalNr}` : null;
   const m = mail || { aan: k?.email || '', onderwerp: nummer ? `${nummer} – ${dossier.titel}` : '', tekst: mailTekst({ klant: k, bedrijf, wat: factuur ? 'je factuur' : 'je bonnetje', titel: dossier.titel }) };
   const zetMail = (sl, w) => setMail({ ...m, [sl]: w });
   // 30-09: een bonnetje gaat niet naar Accountable; mailen enkel als het naar de klant moet
   const mailen = factuur || naarKlant;
   const blokkeert = !v || !mailen ? null : !v.mail_ingesteld ? (factuur ? 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Een factuur moet naar Accountable gemaild worden.' : 'Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie): vink "ook naar de klant" uit.')
     : !v.pdf_mogelijk ? 'Geen Chrome, Edge of Chromium gevonden om de PDF te maken.' : null;
-  const kan = v && !blokkeert && !bezig && (!eenRegel || omschr.trim()) && (!naarKlant || m.aan.trim()) && (!factuur || vervaldatum >= dag) && (factuur || kaalNr);
+  const kan = v && !blokkeert && !bezig && (!eenRegel || omschr.trim()) && (!naarKlant || m.aan.trim()) && (!factuur || vervaldatum >= dag) && (factuur || eigen || kaalNr);
   async function ok() {
     setBezig(true);
-    try { await onBevestig({ datum: dag, ...(eenRegel ? { een_regel: true, omschrijving: omschr.trim() } : {}), ...(factuur ? { vervaldatum } : { nummer: kaalNr }), voorraad_leveren: leveren, naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) }); }
+    try { await onBevestig({ datum: dag, ...(eenRegel ? { een_regel: true, omschrijving: omschr.trim() } : {}), ...(factuur ? { vervaldatum } : { nummer: kaalNr, eigen_nummer: eigen }), voorraad_leveren: leveren, naar_klant: naarKlant, ...(naarKlant ? { aan: m.aan, onderwerp: m.onderwerp, tekst: m.tekst } : {}) }); }
     finally { setBezig(false); }
   }
   return (
     <Dialoog titel={factuur ? 'Factuur maken' : 'Bonnetje maken'} onSluit={onSluit} breed
       voet={<>
-        <button type="button" className="btn ghost" disabled={!v} onClick={() => openPdf(`/dossiers/${dossier.id}/${soort}/voorbeeld?datum=${dag}${factuur && vervaldatum ? `&vervaldatum=${vervaldatum}` : ''}${!factuur && kaalNr ? `&nummer=${encodeURIComponent(kaalNr)}` : ''}${eenRegel ? `&een_regel=1&omschrijving=${encodeURIComponent(omschr.trim())}` : ''}`)}>Voorbeeld (PDF)</button>
+        <button type="button" className="btn ghost" disabled={!v} onClick={() => openPdf(`/dossiers/${dossier.id}/${soort}/voorbeeld?datum=${dag}${factuur && vervaldatum ? `&vervaldatum=${vervaldatum}` : ''}${!factuur && eigen ? '&eigen=1' : ''}${!factuur && !eigen && kaalNr ? `&nummer=${encodeURIComponent(kaalNr)}` : ''}${eenRegel ? `&een_regel=1&omschrijving=${encodeURIComponent(omschr.trim())}` : ''}`)}>Voorbeeld (PDF)</button>
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={onSluit}>Annuleren</button>
         <button type="button" className="btn primary" disabled={!kan} onClick={ok}>{bezig ? 'Bezig…' : factuur ? (naarKlant ? 'Maken en mailen (klant + Accountable)' : 'Maken en mailen naar Accountable') : (naarKlant ? 'Maken en mailen naar de klant' : 'Bonnetje maken')}</button>
@@ -129,12 +131,21 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
       <AfwijkingOfferte dossier={dossier} />
       {factuur && v?.ontbreekt?.length > 0 && <div className="waarschuwing" style={{ margin: '0 0 12px', display: 'block' }}>Nog niet ingevuld: {v.ontbreekt.join(', ')}. Dat hoort op een factuur (Instellingen → Bedrijf, of de fiche van de klant).</div>}
       {factuur && v?.peppol_verplicht && <div className="waarschuwing" style={{ margin: '0 0 12px', display: 'block' }}>Belgische btw-plichtige klant: deze factuur moet via <b>Peppol</b>. Het ERP mailt ze naar Accountable; verstuur ze daarna vanuit Accountable via Peppol (Inkomsten → de factuur → versturen via Peppol). Mail de PDF dan niet als factuur naar de klant.</div>}
+      {!factuur && (
+        <fieldset className="keuzes" style={{ margin: '0 0 10px' }}>
+          <legend className="lbl" style={{ padding: 0 }}>Nummer op het bonnetje</legend>
+          <label className="keuze"><input type="radio" name="bn-soort" checked={eigen} onChange={() => setEigen(true)} />
+            <span>Eigen ERP-nummer <b className="mono">{v?.eigen_nummer || 'Kassabon …'}</b> <span className="sub">(eigen telling; het nummer uit Accountable vul je erbij in, nu of later)</span></span></label>
+          <label className="keuze"><input type="radio" name="bn-soort" checked={!eigen} onChange={() => setEigen(false)} />
+            <span>Nummer uit Accountable <span className="sub">(het bonnetje staat al in Accountable)</span></span></label>
+        </fieldset>
+      )}
       <div className="fgrid">
         <div><label htmlFor="bn-datum">{factuur ? 'Factuurdatum' : 'Datum (ontvangen)'}</label><input id="bn-datum" type="date" className="inp" max={vandaag()} value={dag} onChange={e => setDag(e.target.value || vandaag())} /></div>
         {factuur && <div><label htmlFor="bn-verval">Vervaldatum</label><input id="bn-verval" type="date" className="inp" min={dag} value={vervaldatum} onChange={e => setVerval(e.target.value || null)} /></div>}
         {factuur
           ? <div><span className="lbl">Nummer</span><div className="mono" style={{ padding: '8px 0' }}>{v?.nummer ?? '…'}</div></div>
-          : <div><label htmlFor="bn-nr">Nummer uit Accountable</label><input id="bn-nr" className="inp mono" autoFocus placeholder={v?.nummer_voorstel ? `bv. ${v.nummer_voorstel}` : 'bv. 2026-025'} value={nr} onChange={e => setNr(e.target.value)} /></div>}
+          : <div><label htmlFor="bn-nr">{eigen ? 'Nummer in Accountable (optioneel)' : 'Nummer uit Accountable'}</label><input id="bn-nr" className="inp mono" autoFocus={!eigen} placeholder={eigen ? 'kan ook later' : v?.nummer_voorstel ? `bv. ${v.nummer_voorstel}` : 'bv. 2026-025'} value={nr} onChange={e => setNr(e.target.value)} /></div>}
         <div><span className="lbl">Bedrag</span><div className="num" style={{ padding: '8px 0' }}><b>{v ? euro(v.bedrag) : '…'}</b> <span className="sub">{factuur ? 'btw niet van toepassing' : 'btw 0 %'}</span></div></div>
       </div>
       <div style={{ margin: '10px 0 0' }}>
@@ -158,7 +169,7 @@ export function BonnetjeDialoog({ dossier, bedrijf, soort = 'bonnetje', onSluit,
           <div style={{ gridColumn: '1/-1' }}><label htmlFor="bn-tekst">Bericht</label><textarea id="bn-tekst" className="inp" rows={5} value={m.tekst} onChange={e => zetMail('tekst', e.target.value)} /></div>
         </div>
       )}
-      {!factuur && <p className="note" style={{ marginBottom: 0 }}>Het bonnetje gaat <b>niet</b> naar Accountable (inkomsten@ leest het in als een factuur): maak het eerst in Accountable (dagontvangsten) en vul hierboven het nummer in dat Accountable gaf. De PDF download je daarna met "Bonnetje (PDF)".</p>}
+      {!factuur && <p className="note" style={{ marginBottom: 0 }}>Het bonnetje gaat <b>niet</b> naar Accountable (inkomsten@ leest het in als een factuur): zet het zelf in Accountable (dagontvangsten). {eigen ? 'Het nummer dat Accountable eraan geeft, vul je hierboven in of later bij het dossier: zo vindt de Accountable-import het terug.' : 'Vul hierboven het nummer in dat Accountable gaf.'} De PDF download je daarna met "Bonnetje (PDF)".</p>}
       {factuur && <p className="note" style={{ marginBottom: 0 }}>De factuur gaat altijd naar <b>{v?.accountable || 'Accountable'}</b>{naarKlant ? ' (in cc)' : ''}{v?.afzender ? <>, verstuurd vanaf <b>{v.afzender}</b></> : null}. Accountable verwerkt enkel mails vanaf je geregistreerde adres of een goedgekeurde alias; {factuur ? 'de factuur' : 'het bonnetje'} verschijnt er na enkele minuten onder "Te valideren".</p>}
     </Dialoog>
   );
@@ -284,5 +295,35 @@ export function Overnamefiche({ dossier, onSluit }) {
       </div>
       <p className="note" style={{ marginBottom: 0 }}>Vrijgesteld van btw (art. 56bis). {b.vast > 0 && `Waarvan ${euro(b.vast)} doorgerekende kosten (bv. verzending). `}Aangemaakt op {fmtDatum(dossier.aangemaakt_op)}.</p>
     </Dialoog>
+  );
+}
+
+// 11-11: kassabon (eigen ERP-nummer) → het nummer dat Accountable eraan gaf,
+// apart in te vullen (ook later); de Accountable-import koppelt erop.
+export const isKassabon = nummer => /^kassabon\b/i.test(String(nummer || ''));
+export function AccountableNummer({ pad, waarde, onKlaar }) {
+  const { melding } = useOmgeving();
+  const [open, setOpen] = useState(false);
+  const [nr, setNr] = useState('');
+  const [bezig, setBezig] = useState(false);
+  async function bewaar() {
+    setBezig(true);
+    try { await api.put(pad, { nummer: nr }); setOpen(false); melding(nr.trim() ? 'Nummer in Accountable bewaard.' : 'Nummer in Accountable gewist.'); await onKlaar?.(); }
+    catch (e) { melding(e.message, 'fout'); }
+    setBezig(false);
+  }
+  if (open) return (
+    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+      <input className="inp mono" style={{ width: 150 }} aria-label="Nummer in Accountable" placeholder="bv. 2026-025" value={nr} autoFocus
+        onChange={e => setNr(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') bewaar(); }} />
+      <button type="button" className="btn klein primary" disabled={bezig} onClick={bewaar}>Bewaren</button>
+      <button type="button" className="btn klein ghost" onClick={() => setOpen(false)}>Annuleren</button>
+    </span>
+  );
+  return (
+    <span>
+      {waarde ? <span className="mono">{waarde}</span> : <span className="badge b-warn">nog in te vullen</span>}
+      {' '}<button type="button" className="linkish" onClick={() => { setNr(waarde ? String(waarde).replace(/^bonnetje\s*/i, '') : ''); setOpen(true); }}>{waarde ? 'wijzigen' : 'invullen'}</button>
+    </span>
   );
 }

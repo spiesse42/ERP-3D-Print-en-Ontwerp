@@ -135,17 +135,18 @@ export function interpreteer(blad, kolommen) {
 // status: betalen (in de export betaald, in het ERP nog niet) / in_orde /
 // open (nog niet betaald) / niet_gevonden (geen dossier met dat nummer)
 export function vergelijk(db, rijen) {
-  const dossiers = db.prepare(`SELECT id, nummer, titel, afgerekend_soort, afgerekend_nummer, afgerekend_op, afgerekend_bedrag, betaald_op
+  const dossiers = db.prepare(`SELECT id, nummer, titel, afgerekend_soort, afgerekend_nummer, accountable_nummer, afgerekend_op, afgerekend_bedrag, betaald_op
     FROM dossiers WHERE afgerekend_nummer IS NOT NULL AND NOT ${VIA_VERKOOP('dossiers')}`).all();   // via een verkoop: zit in die verkoop
   // losse verkopen (26-09): een bonnetje is altijd al betaald; een factuur
   // (29-09) kan hier op betaald gezet worden, net als een dossier
-  for (const v of db.prepare(`SELECT id, nummer, omschrijving, datum, totaal, soort, betaald_op FROM verkopen WHERE geannuleerd_op IS NULL`).all()) {
+  for (const v of db.prepare(`SELECT id, nummer, accountable_nummer, omschrijving, datum, totaal, soort, betaald_op FROM verkopen WHERE geannuleerd_op IS NULL`).all()) {
     dossiers.push({ id: `v${v.id}`, verkoop_id: v.id, nummer: null, titel: v.omschrijving || 'Losse verkoop', afgerekend_soort: v.soort,
-      afgerekend_nummer: v.nummer, afgerekend_op: v.datum, afgerekend_bedrag: v.totaal, betaald_op: v.betaald_op });
+      afgerekend_nummer: v.nummer, accountable_nummer: v.accountable_nummer, afgerekend_op: v.datum, afgerekend_bedrag: v.totaal, betaald_op: v.betaald_op });
   }
-  const opNummer = new Map(dossiers.map(d => [norm(d.afgerekend_nummer), d]));
+  // 11-11: een kassabon (eigen ERP-nummer) wordt gevonden op zijn Accountable-nummer
+  const opNummer = new Map(dossiers.flatMap(d => [[norm(d.afgerekend_nummer), d], ...(d.accountable_nummer ? [[norm(d.accountable_nummer), d]] : [])]));
   const opKaal = new Map();
-  for (const d of dossiers) opKaal.set(kaal(d.afgerekend_nummer), [...(opKaal.get(kaal(d.afgerekend_nummer)) || []), d]);
+  for (const d of dossiers) for (const n of [d.afgerekend_nummer, d.accountable_nummer].filter(Boolean)) opKaal.set(kaal(n), [...(opKaal.get(kaal(n)) || []), d]);
   const zoek = nr => opNummer.get(norm(nr)) || (opKaal.get(kaal(nr))?.length === 1 ? opKaal.get(kaal(nr))[0] : null);
   const gezien = new Set();
   const uit = rijen.map(r => {
