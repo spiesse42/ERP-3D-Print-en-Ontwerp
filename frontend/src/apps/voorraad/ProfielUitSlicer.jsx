@@ -3,6 +3,7 @@ import { api } from '../../lib/api.js';
 import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { naarInvoer } from '../../lib/formaat.js';
+import { NietGeslicet } from '../dossiers/SlicerDialoog.jsx';
 
 // Printprofiel uit een slicerbestand (07-10): kies de plaat waarop dit
 // product staat en hoeveel stuks erop staan → tijd en gram per stuk, stuks
@@ -90,6 +91,7 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
         <input id="pp-slicer" type="file" className="sr-only" accept=".3mf,.gcode,.gco" disabled={bezig} onChange={e => { leesIn(e.target.files?.[0]); e.target.value = ''; }} />
         <p className="note">In Bambu Studio: <b>Slice all</b> en daarna Bestand → Exporteren → <i>Export all sliced file</i>. Enkel geslicete platen staan in het bestand.</p>
       </> : <>
+        <NietGeslicet nummers={d.niet_geslicet} />
         {d.platen.length > 1 && <label className="vinkje"><input type="checkbox" checked={meer} onChange={e => { setMeer(e.target.checked); if (e.target.checked) setLetters(false); }} /> Dit artikel bestaat uit meerdere platen (samen één stuk)</label>}
         {d.platen.length > 1 && <label className="vinkje"><input type="checkbox" checked={letters} onChange={e => { setLetters(e.target.checked); if (e.target.checked) setMeer(false); }} /> Elke plaat is een letter of teken (bv. bubble letters): een stuk = één letter</label>}
         {letters ? <>
