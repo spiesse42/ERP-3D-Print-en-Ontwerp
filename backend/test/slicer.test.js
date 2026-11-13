@@ -225,3 +225,12 @@ test('S9. stuks op de plaat uit de objecten: kopieën, vaste sets, gemengd; naam
   const r = await lees(await bambu3mf({ platen: [{ nr: 1, sec: 600, gewicht: 144.4, objecten: Array(25).fill('Sleutelhanger.stl'), filamenten: [{ slot: 1, type: 'PLA', kleur: '#000000', g: 144.4 }] }] }));
   assert.deepEqual([r.data.platen[0].stuks, r.data.platen[0].naam], [25, 'Sleutelhanger']);
 });
+
+test('S10. platen in het project die niet geslicet zijn ("Slice all 8/9") worden gemeld', async () => {
+  const p = n => ({ nr: n, sec: 600, gewicht: 5, objecten: ['X.stl'], filamenten: [{ slot: 1, type: 'PLA', kleur: '#1E88E5', g: 5 }] });
+  const r = await lees(await bambu3mf({ platen: [p(1), p(2)], namen: { 1: 'een', 2: 'twee', 3: 'drie' } }));
+  assert.deepEqual(r.data.platen.map(x => x.nummer), [1, 2]);
+  assert.deepEqual(r.data.niet_geslicet, [3]);
+  const alles = await lees(await bambu3mf({ platen: [p(1)], namen: { 1: 'een' } }));
+  assert.deepEqual(alles.data.niet_geslicet, []);
+});

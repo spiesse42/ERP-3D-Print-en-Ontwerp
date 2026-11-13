@@ -24,6 +24,7 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
   const [afbOpOfferte, setAfbOpOfferte] = useState(true);
   const [bewaren, setBewaren] = useState(true);
   const [bestand, setBestand] = useState(null);
+  const [nietGeslicet, setNietGeslicet] = useState([]);
 
   async function leesIn(bestand) {
     if (!bestand) return;
@@ -33,6 +34,7 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
       fd.append('bestand', bestand);
       const d = await api.upload('/slicer', fd);
       setBestand(bestand);
+      setNietGeslicet(d.niet_geslicet || []);
       setPrinterId(d.printer_id ? String(d.printer_id) : '');
       setPlaten(d.platen.map(p => ({ ...p, mee: true, omschrijving: p.naam || `Plaat ${p.nummer}`, aantal: String(p.stuks || 1),
         filamenten: p.filamenten.map(f => ({ ...f, keuze: f.keuze || '' })) })));
@@ -78,6 +80,7 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
         <input id="slicerbestand" type="file" className="sr-only" accept=".3mf,.gcode,.gco" disabled={bezig} onChange={e => { leesIn(e.target.files?.[0]); e.target.value = ''; }} />
         <p className="note">In Bambu Studio: <b>Slice plate</b> (enkel de plaat die je nodig hebt) of <b>Slice all</b>, daarna Bestand → Exporteren → <i>Export plate sliced file</i> of <i>Export all sliced file</i>. Enkel geslicete platen staan in het bestand. Een losse <b>.gcode</b> is altijd één plaat.</p>
       </> : <>
+        <NietGeslicet nummers={nietGeslicet} />
         <label className="lbl">Printer
           <select className="inp" value={printerId} onChange={e => setPrinterId(e.target.value)}>
             <option value="">Kies…</option>
@@ -123,5 +126,17 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
         {zonderFilament && <p className="note">Niet elk filament is herkend: kies het zelf, of voeg het toe in Voorraad (merk + type als prijsgroep). Zonder keuze telt dat filament niet mee in de prijs.</p>}
       </>}
     </Dialoog>
+  );
+}
+
+// 13-11: platen in het bestand die niet geslicet zijn (bv. "Slice all 8/9"):
+// niet ingelezen; zeg het, anders valt een plaat stilletjes weg.
+export function NietGeslicet({ nummers }) {
+  if (!nummers?.length) return null;
+  const lijst = nummers.length === 1 ? `Plaat ${nummers[0]} is` : `Platen ${nummers.slice(0, -1).join(', ')} en ${nummers.at(-1)} zijn`;
+  return (
+    <div className="waarschuwing" style={{ margin: '0 0 12px', display: 'block' }} role="alert">
+      {lijst} niet geslicet en {nummers.length === 1 ? 'werd' : 'werden'} niet ingelezen. Moet {nummers.length === 1 ? 'die plaat' : 'het'} mee? Slice alles in de slicer (wacht tot alle platen klaar zijn), exporteer opnieuw en lees het nieuwe bestand in.
+    </div>
   );
 }

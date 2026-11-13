@@ -113,11 +113,14 @@ export async function leesSlicerBestand(buffer, bestandsnaam = '') {
   const perSlot = (sleutel, slot) => lijst(instellingen[sleutel])[slot - 1] ?? null;
 
   const namen = new Map();
+  const alleIds = new Set();   // 13-11: alle platen in het project, ook niet geslicete
   const model = await leesTekst(zip, 'Metadata/model_settings.config');
   if (model) {
     for (const p of lijst(parser.parse(model)?.config?.plate)) {
+      const id = Number(meta(p, 'plater_id'));
+      if (Number.isInteger(id) && id > 0) alleIds.add(id);
       const naam = String(meta(p, 'plater_name') ?? '').trim();
-      if (naam) namen.set(Number(meta(p, 'plater_id')), naam);
+      if (naam) namen.set(id, naam);
     }
   }
 
@@ -149,5 +152,9 @@ export async function leesSlicerBestand(buffer, bestandsnaam = '') {
     });
   }
   uit.sort((a, b) => a.nummer - b.nummer);
-  return { printer_model: instellingen.printer_model || null, platen: uit };
+  // platen die in het project staan maar niet geslicet zijn (bv. "Slice all 8/9"
+  // of een mislukte plaat): niet ingelezen, wel melden
+  const geslicet = new Set(uit.map(p => p.nummer));
+  const niet_geslicet = [...alleIds].filter(id => !geslicet.has(id)).sort((a, b) => a - b);
+  return { printer_model: instellingen.printer_model || null, platen: uit, niet_geslicet };
 }
