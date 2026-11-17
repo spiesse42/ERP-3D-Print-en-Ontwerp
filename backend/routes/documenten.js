@@ -7,7 +7,7 @@ import { DomeinFout } from '../domein/hulp.js';
 import { logGebeurtenis } from '../domein/historiek.js';
 import { volgendNummer } from '../domein/nummering.js';
 import { leesDossier, leesRegelsVan, berekenDossier, datumOk, bewaarRegels, leesRegels } from '../domein/dossiers.js';
-import { offertesVan, nummerMetVersie, documentInhoud, eenRegelInhoud, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje, isErpFactuur, betaaltermijn } from '../domein/documenten.js';
+import { offertesVan, nummerMetVersie, documentInhoud, eenRegelInhoud, printregelsInhoud, controleerFotos, offerteFotos, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje, isErpFactuur, betaaltermijn } from '../domein/documenten.js';
 import { getBedrijfsgegevens } from '../domein/hulp.js';
 import { factuurHtml, factuurBestand, peppolVerplicht } from '../documenten/factuur.js';
 import { maakBonnetje, maakFactuur, leesBonnummer, bonnummerVoorstel, zetAccountableNummer } from '../domein/afrekening.js';
@@ -83,8 +83,9 @@ r.post('/dossiers/:id/offertes', metFouten((req, res) => {
   db.transaction(() => {
     const nummer = vorige ? vorige.nummer : volgendNummer(db, 'OFF');
     const versie = vorige ? vorige.versie + 1 : 1;
-    db.prepare('INSERT INTO offertes (dossier_id, nummer, versie, geldig_tot, levertermijn, opmerking) VALUES (?,?,?,?,?,?)')
-      .run(d.id, nummer, versie, plusDagen(vandaag(), geldigheidDagen(db)), vorige?.levertermijn ?? null, vorige?.opmerking ?? null);
+    db.prepare('INSERT INTO offertes (dossier_id, nummer, versie, geldig_tot, levertermijn, opmerking, een_regel, fotos) VALUES (?,?,?,?,?,?,?,?)')
+      .run(d.id, nummer, versie, plusDagen(vandaag(), geldigheidDagen(db)), vorige?.levertermijn ?? null, vorige?.opmerking ?? null,
+        vorige?.een_regel ?? null, vorige?.fotos?.length ? JSON.stringify(vorige.fotos) : null);
     log(db, d.id, `Offerte ${nummerMetVersie({ nummer, versie })} aangemaakt (concept)`);
   })();
   res.status(201).json(leesDossier(db, d.id));
@@ -96,8 +97,12 @@ r.put('/offertes/:id', metFouten((req, res) => {
   if (status !== 'concept') throw new DomeinFout('Een verstuurde offerte ligt vast. Maak een nieuwe versie.');
   const geldig = tekst(req.body?.geldig_tot);
   if (geldig && !datumOk(geldig)) throw new DomeinFout('Ongeldige datum bij "geldig tot"');
-  db.prepare('UPDATE offertes SET geldig_tot = ?, levertermijn = ?, opmerking = ? WHERE id = ?')
-    .run(geldig, tekst(req.body?.levertermijn), tekst(req.body?.opmerking), o.id);
+  // 17-11: printregels als één regel + foto's (ontbreekt het veld: blijft zoals het was)
+  const eenRegel = req.body?.een_regel === undefined ? o.een_regel : tekst(req.body.een_regel);
+  if (eenRegel && eenRegel.length > 200) throw new DomeinFout('De omschrijving voor de ene regel is te lang (maximum 200 tekens).');
+  const fotos = req.body?.fotos === undefined ? o.fotos : (f => (f.length ? JSON.stringify(f) : null))(controleerFotos(db, d.id, req.body.fotos));
+  db.prepare('UPDATE offertes SET geldig_tot = ?, levertermijn = ?, opmerking = ?, een_regel = ?, fotos = ? WHERE id = ?')
+    .run(geldig, tekst(req.body?.levertermijn), tekst(req.body?.opmerking), eenRegel, fotos, o.id);
   res.json(leesDossier(db, d.id));
 }));
 
@@ -171,9 +176,11 @@ r.post('/offertes/:id/antwoord-ongedaan', metFouten((req, res) => {
 
 function offerteDocument(db, o, d, status) {
   const verstuurd = !!o.verstuurd_op;
-  const inhoud = verstuurd ? JSON.parse(o.momentopname).document : documentInhoud(db, d, d.berekening);
+  const basis = verstuurd ? JSON.parse(o.momentopname).document : documentInhoud(db, d, d.berekening);
+  const inhoud = o.een_regel ? printregelsInhoud(basis, o.een_regel) : basis;
   return documentHtml({
     soort: 'OFFERTE', nummer: nummerMetVersie(o), datum: o.verstuurd_op || vandaag(), concept: !verstuurd, inhoud, opmerking: o.opmerking,
+    opmerkingTitel: 'Opmerkingen en voorwaarden', fotos: offerteFotos(db, d.id, o.fotos),
     info: [['Geldig tot', dmjDatum(o.geldig_tot || plusDagen(vandaag(), geldigheidDagen(db)))], ['Levertermijn', o.levertermijn],
       ...(status === 'vervangen' ? [['Status', 'vervangen door een nieuwere versie']] : [])],
   });

@@ -4,6 +4,9 @@
 // Een concept volgt altijd de huidige dossierregels. Bij versturen (offerte)
 // of definitief maken (werkbon, bij het afrekenen) wordt een MOMENTOPNAME
 // bewaard: precies wat de klant kreeg, ook als het dossier nadien wijzigt.
+import fs from 'fs';
+import path from 'path';
+import { bijlagenMap } from '../db/index.js';
 import { getBedrijfsgegevens, DomeinFout } from './hulp.js';
 import { offerteStatus } from './status/offerte.js';
 import { volgendNummer } from './nummering.js';
@@ -15,7 +18,7 @@ export function offertesVan(db, dossierId) {
   return rijen.map(o => {
     const m = o.momentopname ? JSON.parse(o.momentopname) : null;
     const { momentopname: _m, ...rest } = o;
-    return { ...rest, status: offerteStatus(o, { nieuwereVersie: o.versie < hoogste && !o.aanvaard_op && !o.geweigerd_op }),
+    return { ...rest, fotos: leesFotoIds(o.fotos), status: offerteStatus(o, { nieuwereVersie: o.versie < hoogste && !o.aanvaard_op && !o.geweigerd_op }),
       weergave: nummerMetVersie(o), regels_api: m?.regels_api, document: m?.document };
   });
 }
@@ -70,6 +73,8 @@ export function documentInhoud(db, dossier, berekening) {
       uren: r.type === 'printen' ? Math.round((b.tijd_u ?? 0) * 100) / 100 : null,
       // kleine afbeelding van de print (28-09), op offerte en werkbon
       afbeelding: r.type === 'printen' ? r.afbeelding || null : null,
+      // 17-11: soort regel, om de printregels op de offerte samen te voegen
+      soort: r.type,
     };
   });
   return {
@@ -89,6 +94,53 @@ export function eenRegelInhoud(inhoud, omschrijving) {
   if (o.length > 200) throw new DomeinFout('De omschrijving voor de ene regel is te lang (maximum 200 tekens).');
   const bedrag = Math.round(Number(inhoud.totaal) * 100) / 100;
   return { ...inhoud, regels: [{ omschrijving: o, aantal: 1, per_stuk: bedrag, bedrag, uren: null, afbeelding: null }] };
+}
+
+// 17-11: offerte met alle printregels als één regel (bv. een beeld in 3 delen).
+// Ontwerp, afwerking, artikels, kortingen… blijven apart; de ene regel komt op
+// de plaats van de eerste printregel. Het totaal blijft exact gelijk.
+export function printregelsInhoud(inhoud, omschrijving) {
+  const o = String(omschrijving ?? '').trim();
+  const print = inhoud.regels.filter(r => r.soort === 'printen');
+  if (!o || print.length === 0) return inhoud;
+  const bedrag = print.some(r => r.bedrag == null) ? null : Math.round(print.reduce((t, r) => t + Number(r.bedrag), 0) * 100) / 100;
+  const een = { omschrijving: o, aantal: 1, per_stuk: bedrag, bedrag, uren: null, afbeelding: null, soort: 'printen' };
+  const regels = [];
+  for (const r of inhoud.regels) {
+    if (r.soort !== 'printen') regels.push(r);
+    else if (r === print[0]) regels.push(een);
+  }
+  return { ...inhoud, regels };
+}
+
+// 17-11: foto's voor de pagina "Beelden" van een offerte: enkel foto-bijlagen
+// (png, jpg, webp) van dit dossier, als data-URI voor de PDF. Een intussen
+// verwijderde foto wordt gewoon overgeslagen.
+export const FOTO_TYPES = /^image\/(png|jpe?g|webp)$/;
+export const MAX_FOTOS = 12;
+export function leesFotoIds(waarde) {
+  try { const a = JSON.parse(waarde || '[]'); return Array.isArray(a) ? a.filter(Number.isInteger) : []; } catch { return []; }
+}
+export function controleerFotos(db, dossierId, ids) {
+  if (ids == null) return [];
+  if (!Array.isArray(ids)) throw new DomeinFout("Ongeldige lijst foto's");
+  const uniek = [...new Set(ids.map(Number))];
+  if (uniek.length > MAX_FOTOS) throw new DomeinFout(`Maximum ${MAX_FOTOS} foto's op een offerte.`);
+  for (const id of uniek) {
+    const b = Number.isInteger(id) ? db.prepare(`SELECT mimetype FROM bijlagen WHERE id = ? AND entiteit = 'dossier' AND entiteit_id = ?`).get(id, dossierId) : null;
+    if (!b) throw new DomeinFout('Een gekozen foto hoort niet bij dit dossier.');
+    if (!FOTO_TYPES.test(b.mimetype || '')) throw new DomeinFout('Enkel foto\'s in jpg, png of webp kunnen op de offerte.');
+  }
+  return uniek;
+}
+export function offerteFotos(db, dossierId, waarde) {
+  const uit = [];
+  for (const id of leesFotoIds(waarde)) {
+    const b = db.prepare(`SELECT pad, mimetype FROM bijlagen WHERE id = ? AND entiteit = 'dossier' AND entiteit_id = ?`).get(id, dossierId);
+    if (!b || !FOTO_TYPES.test(b.mimetype || '')) continue;
+    try { uit.push(`data:${b.mimetype};base64,${fs.readFileSync(path.join(bijlagenMap(), b.pad)).toString('base64')}`); } catch { /* bestand weg */ }
+  }
+  return uit;
 }
 
 export function geldigheidDagen(db) {

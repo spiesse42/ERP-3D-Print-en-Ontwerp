@@ -623,6 +623,13 @@ label.keuze input { margin-top:3px; }
 .dossier-fotos .foto-erbij { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border-style:dashed; color:var(--muted); font-size:12.5px; cursor:pointer; }
 .dossier-fotos .foto-erbij:hover { border-color:var(--accent); color:var(--ink); }
 .dossier-fotos .foto-erbij.bezig { cursor:progress; }
+/* 17-11: foto's kiezen voor de pagina "Beelden" van een offerte */
+.offerte-fotos { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.offerte-fotos .ofoto { position:relative; width:88px; height:88px; padding:0; border-radius:var(--radius); border:2px solid var(--line); background:var(--surface); overflow:hidden; cursor:pointer; opacity:.6; }
+.offerte-fotos .ofoto:hover { opacity:.9; border-color:var(--line-strong); }
+.offerte-fotos .ofoto.aan { opacity:1; border-color:var(--accent); }
+.offerte-fotos img { width:100%; height:100%; object-fit:cover; display:block; }
+.offerte-fotos .nr { position:absolute; top:4px; right:4px; min-width:20px; height:20px; border-radius:10px; background:var(--accent); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 5px; }
 
 /* Klant opzoeken op btw-nummer (29-09) */
 .opzoek { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--lijn, #e5e7eb); border-radius: 8px; background: var(--vlak, #fafafa); font-size: .9rem; }
