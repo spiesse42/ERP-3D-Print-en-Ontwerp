@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, BASE } from '../../lib/api.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
+import { useData } from '../../schil/useData.js';
 import Icoon from '../../schil/Icoon.jsx';
 import { Totalen } from '../../components/RegelEditor.jsx';
 import { euro, datum, naarInvoer } from '../../lib/formaat.js';
@@ -23,11 +24,52 @@ function useActies({ vuil, herlaad }) {
   };
 }
 
+// 17-11: foto-bijlagen die op de pagina "Beelden" van de offerte kunnen
+const OFFERTE_FOTO = /^image\/(png|jpe?g|webp)$/;
+const vanOfferte = o => ({ geldig_tot: o.geldig_tot || '', levertermijn: o.levertermijn || '', opmerking: o.opmerking || '', een_regel: o.een_regel || '', fotos: o.fotos || [] });
+const zelfde = (a, b) => a.geldig_tot === b.geldig_tot && a.levertermijn === b.levertermijn && a.opmerking === b.opmerking && a.een_regel === b.een_regel
+  && a.fotos.length === b.fotos.length && a.fotos.every((x, i) => x === b.fotos[i]);
+
+function OfferteOpmaak({ d, o, f, setF }) {
+  const { data } = useData(`/bijlagen/dossier/${d.id}`);
+  const fotos = (data || []).filter(b => OFFERTE_FOTO.test(b.mimetype || ''));
+  const printregels = d.regels.filter(r => r.type === 'printen').length;
+  const samen = f.een_regel !== '';
+  const wissel = id => setF(x => ({ ...x, fotos: x.fotos.includes(id) ? x.fotos.filter(y => y !== id) : [...x.fotos, id] }));
+  return (
+    <div className="offerte-opmaak" style={{ gridColumn: '1/-1' }}>
+      {printregels > 1 && <>
+        <label className="vinkje"><input type="checkbox" checked={samen}
+          onChange={e => setF(x => ({ ...x, een_regel: e.target.checked ? (d.titel || 'Printwerk') : '' }))} /> De {printregels} printregels als één regel op de offerte</label>
+        {samen && <input id={`o-een-${o.id}`} className="inp" aria-label="Omschrijving van de ene regel" maxLength={200} value={f.een_regel}
+          placeholder="bv. Beeld Sainte Geneviève, 3D-print in 3 delen, PETG, hoogte 60 cm" onChange={e => setF(x => ({ ...x, een_regel: e.target.value }))}
+          onBlur={e => { if (!e.target.value.trim()) setF(x => ({ ...x, een_regel: d.titel || 'Printwerk' })); }} />}
+        {samen && <div className="sub">Ontwerp, afwerking en andere regels blijven apart. Het totaal blijft gelijk.</div>}
+      </>}
+      <div className="lbl" style={{ marginTop: printregels > 1 ? 10 : 0 }}>Foto's op een aparte pagina "Beelden" {f.fotos.length > 0 && <span className="sub">({f.fotos.length} gekozen)</span>}</div>
+      {fotos.length === 0 ? <div className="sub">Nog geen foto's in dit dossier. Voeg ze bovenaan het dossier toe (jpg, png of webp).</div> : (
+        <div className="offerte-fotos">
+          {fotos.map(b => {
+            const aan = f.fotos.includes(b.id);
+            return (
+              <button key={b.id} type="button" className={`ofoto${aan ? ' aan' : ''}`} aria-pressed={aan} title={b.bestandsnaam} onClick={() => wissel(b.id)}>
+                <img src={`${BASE}/bijlagen/bestand/${b.id}`} alt={b.bestandsnaam} loading="lazy" />
+                {aan && <span className="nr">{f.fotos.indexOf(b.id) + 1}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OfferteKaart({ d, o, doe, vuil, onMail }) {
   const concept = o.status === 'concept';
-  const [f, setF] = useState({ geldig_tot: o.geldig_tot || '', levertermijn: o.levertermijn || '', opmerking: o.opmerking || '' });
-  useEffect(() => { setF({ geldig_tot: o.geldig_tot || '', levertermijn: o.levertermijn || '', opmerking: o.opmerking || '' }); }, [o.geldig_tot, o.levertermijn, o.opmerking]);
-  const gewijzigd = concept && (f.geldig_tot !== (o.geldig_tot || '') || f.levertermijn !== (o.levertermijn || '') || f.opmerking !== (o.opmerking || ''));
+  const [f, setF] = useState(() => vanOfferte(o));
+  const fotosSleutel = (o.fotos || []).join(',');
+  useEffect(() => { setF(vanOfferte(o)); }, [o.geldig_tot, o.levertermijn, o.opmerking, o.een_regel, fotosSleutel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const gewijzigd = concept && !zelfde(f, vanOfferte(o));
   const kanAntwoorden = o.status === 'verstuurd' || o.status === 'verlopen';
   const afgerekend = d.fase === 'afgerekend' || d.fase === 'betaald';
   return (
@@ -45,10 +87,12 @@ function OfferteKaart({ d, o, doe, vuil, onMail }) {
         <div className="fgrid" style={{ marginTop: 10 }}>
           <div><label htmlFor={`o-geldig-${o.id}`}>Geldig tot</label><input id={`o-geldig-${o.id}`} type="date" className="inp" value={f.geldig_tot} onChange={e => setF(x => ({ ...x, geldig_tot: e.target.value }))} /></div>
           <div><label htmlFor={`o-lever-${o.id}`}>Levertermijn</label><input id={`o-lever-${o.id}`} className="inp" placeholder="bv. 1 week na akkoord" value={f.levertermijn} onChange={e => setF(x => ({ ...x, levertermijn: e.target.value }))} /></div>
-          <div style={{ gridColumn: '1/-1' }}><label htmlFor={`o-opm-${o.id}`}>Opmerking op de offerte</label><textarea id={`o-opm-${o.id}`} className="inp" rows={2} value={f.opmerking} onChange={e => setF(x => ({ ...x, opmerking: e.target.value }))} placeholder="bv. Kleur naar keuze, ophalen in Geel mogelijk" /></div>
+          <div style={{ gridColumn: '1/-1' }}><label htmlFor={`o-opm-${o.id}`}>Opmerkingen en voorwaarden op de offerte</label><textarea id={`o-opm-${o.id}`} className="inp" rows={Math.min(12, Math.max(2, f.opmerking.split('\n').length + 1))} value={f.opmerking} onChange={e => setF(x => ({ ...x, opmerking: e.target.value }))} placeholder="bv. Kleur naar keuze, ophalen in Geel mogelijk" /></div>
+          <OfferteOpmaak d={d} o={o} f={f} setF={setF} />
         </div>
       )}
       {!concept && o.opmerking && <div className="sub" style={{ marginTop: 4 }}>Opmerking: {o.opmerking}</div>}
+      {!concept && (o.een_regel || o.fotos?.length > 0) && <div className="sub" style={{ marginTop: 4 }}>{[o.een_regel && `Printwerk als één regel: ${o.een_regel}`, o.fotos?.length && `${o.fotos.length} foto('s) op de pagina Beelden`].filter(Boolean).join(' · ')}</div>}
       <div className="doc-knoppen">
         {gewijzigd && <button type="button" className="btn primary" onClick={() => doe('put', `/offertes/${o.id}`, 'Offerte bewaard.', { body: f })}>Bewaren</button>}
         <button type="button" className="btn" disabled={gewijzigd} onClick={() => openPdf(`/offertes/${o.id}/pdf`)}><Icoon naam="lijst" maat={14} /> PDF</button>
