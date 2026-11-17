@@ -27,7 +27,7 @@ export const VRIJSTELLING_FACTUUR = 'Bijzondere vrijstellingsregeling kleine ond
 export const LANDEN = { BE: 'België', NL: 'Nederland', FR: 'Frankrijk', DE: 'Duitsland', LU: 'Luxemburg', ES: 'Spanje', IT: 'Italië', AT: 'Oostenrijk',
   PT: 'Portugal', IE: 'Ierland', DK: 'Denemarken', SE: 'Zweden', FI: 'Finland', PL: 'Polen', CZ: 'Tsjechië', GB: 'Verenigd Koninkrijk', CH: 'Zwitserland', NO: 'Noorwegen', US: 'Verenigde Staten' };
 // review (27-10): { google, facebook, google_kort, facebook_kort, qr } → blok "laat een review achter" (pakbon, bonnetje)
-export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerking, concept = false, toonUren = false, btwKolom = false, factuur = null, review = null }) {
+export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerking, concept = false, toonUren = false, btwKolom = false, factuur = null, review = null, opmerkingTitel = null, fotos = [] }) {
   const { bedrijf = {}, klant, dossier, regels, totaal, vast } = inhoud;
   const k = klant;
   const buitenland = k?.land && k.land !== 'BE' ? (LANDEN[k.land] || k.land) : null;
@@ -71,6 +71,17 @@ export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerkin
   .totaal-label{color:#b8c4d6;font-size:.8rem;letter-spacing:1px}
   .totaal-bedrag{font-size:1.9rem;font-weight:900;color:#2b9484}
   .opmerking{margin-top:16px;padding:12px 16px;border-left:4px solid #f59e0b;background:#fffbeb;border-radius:4px;color:#664400}
+  .opmerking.neutraal{border-left-color:#16345a;background:#f5f7fa;color:#333}
+  .opmerking.neutraal h3{margin:0 0 6px;font-size:.68rem;text-transform:uppercase;letter-spacing:1.5px;color:#16345a}
+  .slot{break-inside:avoid;page-break-inside:avoid}
+  .beelden{break-before:page;page-break-before:always;padding-top:40px}
+  .beelden h2{margin:0 0 16px;font-size:.8rem;text-transform:uppercase;letter-spacing:1.5px;color:#16345a;border-bottom:3px solid #16345a;padding-bottom:10px}
+  .beelden-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .beelden-grid.een{grid-template-columns:1fr}
+  .beeld{break-inside:avoid;page-break-inside:avoid;border:1px solid #e5e7eb;border-radius:8px;padding:8px;background:#fff;display:flex;align-items:center;justify-content:center;height:340px}
+  .beelden-grid.een .beeld{height:auto;max-height:900px;padding:12px}
+  .beelden-grid.een .beeld img{max-height:870px}
+  .beeld img{max-width:100%;max-height:100%;object-fit:contain;display:block}
   .footer{margin-top:32px;border-top:1px solid #eee;padding-top:12px;font-size:.72rem;color:#999;text-align:center;line-height:1.6}
   .btw-regel{margin-top:12px;font-size:.85rem;color:#333}
   .betaling{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-top:16px;padding:14px 18px;border:1px solid #e5e7eb;border-radius:8px;line-height:1.6}
@@ -122,13 +133,16 @@ ${factuur ? `<div class="btw-regel">${esc(factuur.tekst || VRIJSTELLING_FACTUUR)
   </div>
   ${factuur.qr ? `<div class="qr">${factuur.qr}<div class="sub">Betaal met je bank-app</div></div>` : ''}
 </div>` : ''}
-${opmerking ? `<div class="opmerking">${nl(opmerking)}</div>` : ''}
+<div class="slot">
+${opmerking ? (opmerkingTitel ? `<div class="opmerking neutraal"><h3>${esc(opmerkingTitel)}</h3>${nl(opmerking)}</div>` : `<div class="opmerking">${nl(opmerking)}</div>`) : ''}
 ${review ? `<div class="review">${review.qr}<div><strong>Tevreden over je bestelling?</strong> Laat een review achter${review.google ? ' op Google' : ''}: het helpt ons enorm. Scan de code${review.google_kort ? ` of ga naar ${esc(review.google_kort)}` : review.facebook_kort ? ` of ga naar ${esc(review.facebook_kort)}` : ''}.${review.google && review.facebook_kort ? `<div class="sub">Of op Facebook: ${esc(review.facebook_kort)}</div>` : ''} <div class="sub">Bedankt!</div></div></div>` : ''}
 <div class="footer">
   ${factuur ? esc(factuur.tekst || VRIJSTELLING_FACTUUR) : btwKolom ? esc(VRIJSTELLING) : 'Vrijgesteld van btw — art. 56bis Btw-wetboek'}
   ${bedrijf.iban && !factuur ? `<br>IBAN: ${esc(bedrijf.iban)}` : ''}
   ${factuur && (bedrijf.email || bedrijf.telefoon) ? `<br>${[bedrijf.email, bedrijf.telefoon].filter(Boolean).map(esc).join(' · ')}` : ''}
 </div>
+</div>
+${fotos.length ? `<div class="beelden"><h2>Beelden</h2><div class="beelden-grid${fotos.length === 1 ? ' een' : ''}">${fotos.map(f => `<div class="beeld"><img src="${esc(f)}" alt=""></div>`).join('')}</div></div>` : ''}
 </body></html>`;
 }
 
