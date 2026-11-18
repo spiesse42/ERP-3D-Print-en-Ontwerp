@@ -37,7 +37,11 @@ const plus = (d, n) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.ge
 const ACC = 'inkomsten@accountable.eu';
 const pdfOk = !!vindBrowser();
 let nl, be, zonder, d1, d2;
-const dossier = async (titel, klant_id) => ok(await vraag('POST', '/dossiers', { titel, klant_id, regels: [{ type: 'ontwerp', omschrijving: '3D-ontwerp: Emmer DPA', minuten: 72, tarief: 25 }] }), 201);
+// 18-11: enkel ontwerp = digitaal: eerst "bestand bezorgd", dan pas afrekenen
+const dossier = async (titel, klant_id) => {
+  const d = ok(await vraag('POST', '/dossiers', { titel, klant_id, regels: [{ type: 'ontwerp', omschrijving: '3D-ontwerp: Emmer DPA', minuten: 72, tarief: 25 }] }), 201);
+  return ok(await vraag('POST', `/dossiers/${d.id}/bezorgd`, { hoe: 'via WeTransfer' }), 200);
+};
 
 test('FA0. voorbereiding: bedrijf, klanten (NL, BE met btw), nummering verder vanaf 2026-003 uit Accountable', async () => {
   ok(await vraag('PUT', '/instellingen', { bedrijf_naam: 'Spiesschaert, David', bedrijf_adres: 'Constant Vanden Berghestraat 14, 8700 Aarsele', bedrijf_btw: 'BE0543857422',

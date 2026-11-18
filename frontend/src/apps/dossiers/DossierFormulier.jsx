@@ -23,6 +23,7 @@ import SlicerDialoog from './SlicerDialoog.jsx';
 import LettersDialoog from './LettersDialoog.jsx';
 import LettersTab from './LettersTab.jsx';
 import SamenvoegDialoog from './SamenvoegDialoog.jsx';
+import { BezorgdDialoog, BestandMailDialoog } from './BezorgDialogen.jsx';
 import DossierFotos, { bewaarFotos, bewaarBestand } from './DossierFotos.jsx';
 
 const LEEG = { soort: 'klant', klant_id: '', titel: '', notities: '', filament_inkoop: false };
@@ -174,6 +175,7 @@ export default function DossierFormulier() {
     : vuil ? 'Sla eerst je wijzigingen op.'
     : d.regels.length === 0 ? 'Voeg eerst regels toe.'
     : !(d.werkbon || d.zonder_werkbon)?.volledig ? 'Eerst moeten alle regels berekend kunnen worden.'
+    : d.digitaal && !d.bezorgd_op ? 'Bezorg eerst het digitale bestand aan de klant ("Bestand mailen" of "Bestand bezorgd").'
     : null;
   const toonAfrekenen = !nieuw && d.soort === 'klant' && voorAfrekening;
   const afrekenKnop = toonAfrekenen && (<>
@@ -202,6 +204,10 @@ export default function DossierFormulier() {
   const annuleren = () => actie('annuleren', 'Dossier geannuleerd.', { vraag: { titel: 'Dossier annuleren', tekst: `${d.nummer} annuleren? Het hele dossier stopt: er wordt niets afgerekend of geleverd, en open printopdrachten worden mee geannuleerd. Krijgt de klant het wel, maar zonder te betalen? Gebruik dan "Gratis geleverd". Heropenen kan later nog.`, bevestigLabel: 'Dossier annuleren', annuleerLabel: 'Terug' } });
   const workflow = nieuw ? null : <>
     {acties.starten && <button type="button" className="btn" disabled={vuil} title={vuil ? 'Sla eerst je wijzigingen op.' : startUitleg} onClick={starten}><Icoon naam="start" maat={14} /> Starten</button>}
+    {acties.bezorgen && <>
+      <button type="button" className="btn primary" disabled={vuil} title="Het ontwerpbestand naar de klant mailen; daarna kan je afrekenen" onClick={() => open('bestand-mail')}>Bestand mailen</button>
+      <button type="button" className="btn" disabled={vuil} title="Het bestand is al bij de klant (bv. via WeTransfer of WhatsApp)" onClick={() => open('bezorgd')}>Bestand bezorgd</button>
+    </>}
     {afrekenKnop}
     {bonnetjeKnoppen}
     {acties.betaald && <button type="button" className="btn" onClick={() => open('betaald')}>Betaald</button>}
@@ -210,6 +216,8 @@ export default function DossierFormulier() {
     {d.soort === 'klant' && d.regels.length > 0 && fase !== 'geannuleerd' && <button type="button" className="btn" onClick={() => open('overname')}>Overnamefiche</button>}
     {acties.betaling_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('betaling-ongedaan', 'Betaling ongedaan gemaakt.', { vraag: { titel: 'Betaling ongedaan maken', tekst: 'Het dossier gaat terug naar afgerekend.', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Betaling ongedaan</button>}
     {acties.afrekening_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('afrekening-ongedaan', 'Afrekening ongedaan gemaakt.', { vraag: { titel: 'Afrekening ongedaan maken', tekst: `De verwijzing naar ${String(d.afgerekend_nummer).toLowerCase().startsWith(`${d.afgerekend_soort} `) || isKassabon(d.afgerekend_nummer) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`} wordt gewist en het dossier kan weer gewijzigd worden. Pas dit ook aan in Accountable (bv. een creditnota).`, bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug', gevaarlijk: true } })}>Afrekening ongedaan</button>}
+    {d.digitaal && d.bezorgd_op && voorAfrekening && <button type="button" className="btn ghost" title={`Bezorgd op ${datum(d.bezorgd_op)}${d.bezorgd_hoe ? ` (${d.bezorgd_hoe})` : ''}`} onClick={() => open('bestand-mail')}>Bestand opnieuw mailen</button>}
+    {acties.bezorgd_ongedaan && <button type="button" className="btn ghost" onClick={() => actie('bezorgd-ongedaan', '"Bestand bezorgd" ongedaan gemaakt.', { vraag: { titel: 'Bestand bezorgd ongedaan maken', tekst: 'Het dossier gaat terug: afrekenen kan pas weer als het bestand bezorgd is.', bevestigLabel: 'Ongedaan maken', annuleerLabel: 'Terug' } })}>Bezorgd ongedaan</button>}
     {acties.annuleren && <button type="button" className="btn ghost" title="Het hele dossier stopt: niets af te rekenen of te leveren" onClick={annuleren}>Dossier annuleren</button>}
     {acties.heropenen && <button type="button" className="btn" onClick={() => actie('heropenen', 'Dossier heropend.')}>Heropenen</button>}
     {acties.samenvoegen && <button type="button" className="btn ghost" title="Andere open dossiers van deze klant hierin samenvoegen (regels, printopdrachten, runs, leveringen, bijlagen)" onClick={() => open('samenvoegen')}>Samenvoegen…</button>}
@@ -229,12 +237,12 @@ export default function DossierFormulier() {
           {!nieuw && (
             <div className="sheet-status">
               <div className="btns">{workflow}</div>
-              {fase !== 'geannuleerd' && fase !== 'samengevoegd' && stappen.length > 1 && <Statusbalk stappen={stappen.map(s => FASE[s][1])} huidig={stappen.indexOf(fase)} />}
+              {fase !== 'geannuleerd' && fase !== 'samengevoegd' && stappen.length > 1 && <Statusbalk stappen={stappen.map(s => (s === 'geleverd' && d?.digitaal ? 'Bezorgd' : FASE[s][1]))} huidig={stappen.indexOf(fase)} />}
             </div>
           )}
           {!nieuw && <VolgendeStap d={d} vuil={vuil} afrekenReden={afrekenReden} onStarten={starten} onAfrekenen={() => open('afrekenen')}
             onBonnetje={() => open('bonnetje')} onFactuur={() => open('factuur')} onBonnetjeMailen={() => open('bonnetje-mail')}
-            onBetaald={() => open('betaald')} onGratis={() => open('gratis')} onHeropenen={() => actie('heropenen', 'Dossier heropend.')} onAnnuleren={annuleren}
+            onBetaald={() => open('betaald')} onGratis={() => open('gratis')} onBestandMailen={() => open('bestand-mail')} onBezorgd={() => open('bezorgd')} onHeropenen={() => actie('heropenen', 'Dossier heropend.')} onAnnuleren={annuleren}
             naarTab={t => { setTab(t); document.querySelector('.tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
             herlaad={async () => { await herlaad(); setVersie(v => v + 1); }} />}
           <div className="sheet-head">
@@ -355,6 +363,10 @@ export default function DossierFormulier() {
           return true;
         } catch (e) { melding(e.message, 'fout'); return false; }
       }} />}
+      {dialoog === 'bezorgd' && <BezorgdDialoog onSluit={() => setDialoog(null)}
+        onBevestig={async f => { if (await actie('bezorgd', 'Bestand staat als bezorgd: je kan nu afrekenen.', { body: f })) setDialoog(null); }} />}
+      {dialoog === 'bestand-mail' && <BestandMailDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)}
+        onVerstuur={async f => { if (await actie('bestand-mailen', `Bestand gemaild naar ${f.aan}${d.bezorgd_op ? '' : ': je kan nu afrekenen'}.`, { body: f })) setDialoog(null); }} />}
       {dialoog === 'overname' && <Overnamefiche dossier={d} onSluit={() => setDialoog(null)} />}
       {dialoog === 'bonnetje' && <BonnetjeDialoog dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onBevestig={bonnetjeMaken} />}
       {dialoog === 'factuur' && <BonnetjeDialoog soort="factuur" dossier={d} bedrijf={bedrijfNaam} onSluit={() => setDialoog(null)} onBevestig={f => bonnetjeMaken(f, 'factuur')} />}

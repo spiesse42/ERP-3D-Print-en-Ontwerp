@@ -46,11 +46,20 @@ export function leverStatus(lijst) {
   return lijst.some(x => x.geleverd > 0) ? 'deels' : 'geen';
 }
 
+// 18-11: digitaal ontwerp = niets fysieks te leveren (geen print- of
+// voorraadartikelregels) en minstens één ontwerp- of aanpassingsregel. Het
+// "leveren" is dan het bestand bezorgen: geleverd zodra bezorgd_op gezet is.
+export function isDigitaal(regels, leverbareLijst) {
+  return regels.length > 0 && leverbareLijst.length === 0 && regels.some(r => r.type === 'ontwerp' || r.type === 'aanpassing');
+}
+export function digitaleLever(d, digitaal) { return digitaal ? (d.bezorgd_op ? 'geleverd' : null) : undefined; }
+
 // Snelle versie voor lijsten (zonder omschrijvingen/voorraad).
-export function leverStatusVan(db, dossierId) {
-  const regels = db.prepare(`SELECT r.id, r.type, r.aantal, a.type AS artikel_type FROM dossier_regels r
-    LEFT JOIN artikelen a ON a.id = r.artikel_id WHERE r.dossier_id = ?`).all(dossierId)
-    .filter(r => r.type === 'printen' || (r.type === 'artikel' && r.artikel_type && r.artikel_type !== 'dienst'));
+export function leverStatusVan(db, dossierId, d = null) {
+  const alle = db.prepare(`SELECT r.id, r.type, r.aantal, a.type AS artikel_type FROM dossier_regels r
+    LEFT JOIN artikelen a ON a.id = r.artikel_id WHERE r.dossier_id = ?`).all(dossierId);
+  const regels = alle.filter(r => r.type === 'printen' || (r.type === 'artikel' && r.artikel_type && r.artikel_type !== 'dienst'));
+  if (d && isDigitaal(alle, regels)) return digitaleLever(d, true);
   const g = geleverdPerRegel(db, dossierId);
   return leverStatus(regels.map(r => { const n = g.get(r.id) || 0; return { geleverd: n, rest: Number(r.aantal ?? 1) - n }; }));
 }

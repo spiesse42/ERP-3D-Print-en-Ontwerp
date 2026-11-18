@@ -15,6 +15,8 @@ import { overzicht as nummerOverzicht } from '../domein/nummering.js';
 import { start } from '../domein/uitvoering.js';
 import { synchroniseer } from '../productie/opdrachten.js';
 import { OFFERTE_STATUS, vandaag } from '../domein/status/offerte.js';
+import { WACHT_OP_BESTAND, wachtOpBestand } from '../domein/status/dossier.js';
+const VOOR_AFREKENING_FASES = ['nieuw', 'offerte', 'akkoord', 'gepland', 'productie', 'klaar', 'afgerond', 'deels', 'geleverd'];
 import { documentHtml, dmjDatum } from '../documenten/sjabloon.js';
 import { htmlNaarPdf, vindBrowser } from '../documenten/pdf.js';
 import { verstuurMail, MailFout, mailIngesteld, geldigAdres } from '../documenten/mail.js';
@@ -371,7 +373,7 @@ function vervalDatum(db, v, datum) {
 // bewaren: de werkbon wordt zo nodig gemaakt in een transactie die daarna
 // teruggedraaid wordt, zodat het exact hetzelfde is als bij het echte maken.
 function documentVoorstel(db, d0, datum, soort, eenRegel = null) {
-  if (!d0.acties.afrekenen) throw new DomeinFout(d0.soort !== 'klant' ? 'Enkel een klantopdracht wordt afgerekend.' : 'Dit dossier is al afgerekend, gratis geleverd of geannuleerd.');
+  if (!d0.acties.afrekenen) throw new DomeinFout(d0.soort !== 'klant' ? 'Enkel een klantopdracht wordt afgerekend.' : wachtOpBestand(d0) && VOOR_AFREKENING_FASES.includes(d0.fase) ? WACHT_OP_BESTAND : 'Dit dossier is al afgerekend, gratis geleverd of geannuleerd.');
   if (soort === 'factuur' && !d0.klant_id) throw new DomeinFout('Een factuur is altijd op naam: kies eerst de klant van dit dossier (of maak een bonnetje).');
   let uit = null;
   try {

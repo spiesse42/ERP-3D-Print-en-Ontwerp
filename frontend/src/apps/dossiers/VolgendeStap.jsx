@@ -7,7 +7,7 @@ import { BevestigDialoog } from '../productie/opdracht.jsx';
 // "Volgende stap" bovenaan een dossier (25-09): één zin met wat er nu moet
 // gebeuren en de knop erbij. De zin komt uit de backend (volgende_stap);
 // hier enkel de knop per soort. Plus de uitleg "Hoe werkt een dossier?".
-export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBonnetje, onFactuur, onBonnetjeMailen, onBetaald, onGratis, onHeropenen, onAnnuleren, naarTab, herlaad }) {
+export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrekenen, onBonnetje, onFactuur, onBonnetjeMailen, onBetaald, onGratis, onBestandMailen, onBezorgd, onHeropenen, onAnnuleren, naarTab, herlaad }) {
   const { melding, navigeer, bevestig: bevestigVraag } = useOmgeving();
   const [bevestig, setBevestig] = useState(null);
   const [uitleg, setUitleg] = useState(false);
@@ -58,6 +58,8 @@ export default function VolgendeStap({ d, vuil, afrekenReden, onStarten, onAfrek
       ? <>{knop('Factuur maken', onFactuur, { uit: !!afrekenReden })}{knop('Bonnetje maken', onBonnetje, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>
       : <>{knop('Bonnetje maken', onBonnetje, { uit: !!afrekenReden })}{d.klant_id && knop('Factuur maken', onFactuur, { primair: false, uit: !!afrekenReden })}{d.acties?.gratis && knop('Gratis geleverd', onGratis, { primair: false })}</>),
     // 10-10: na het printen eerst leveren of laten ophalen
+    // 18-11: digitaal ontwerp — eerst het bestand bezorgen
+    bezorgen: () => <>{knop('Bestand mailen', onBestandMailen)}{knop('Al bezorgd (WeTransfer, WhatsApp…)', onBezorgd, { primair: false })}</>,
     leveren_of_ophalen: () => <>{naar('Leveren (pakbon)', 'leveringen')}{knop('Opgehaald door de klant', opgehaald, { primair: false })}</>,
     bonnetje_mailen: () => knop(d.afgerekend_soort === 'factuur' ? 'Factuur mailen' : 'Bonnetje mailen', onBonnetjeMailen),
     verkoop_mailen: () => knop('Naar de verkoop', () => navigeer(`/verkoop/${s.verkoop_id}`)),
