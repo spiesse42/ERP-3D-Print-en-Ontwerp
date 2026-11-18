@@ -14,6 +14,8 @@ import { maakWerkbon, afrekeningWeergave } from '../domein/documenten.js';
 import { rekenAf, maakAfrekeningOngedaan } from '../domein/afrekening.js';
 import { voegSamen } from '../domein/samenvoegen.js';
 import { vandaag } from '../domein/status/offerte.js';
+import { WACHT_OP_BESTAND, wachtOpBestand } from '../domein/status/dossier.js';
+import { verstuurVrij, MailFout, mailIngesteld } from '../documenten/mail.js';
 import { leverRestUitVoorraad } from '../domein/leveringen.js';
 import { voorbeeldLetters, voegLettersToe } from '../domein/letters.js';
 import { kleurenPalet } from '../integraties/kleurenpalet.js';
@@ -196,9 +198,14 @@ const NIET_TOEGELATEN = {
   afrekenen: d => (d.soort !== 'klant' ? 'Enkel een klantopdracht wordt afgerekend.'
     : d.fase === 'samengevoegd' ? VAST.samengevoegd
     : ['afgerekend', 'betaald', 'geannuleerd', 'gratis'].includes(d.fase) ? 'Dit dossier is al afgerekend, gratis geleverd of geannuleerd.'
+    : wachtOpBestand(d) ? WACHT_OP_BESTAND
     : 'Voeg eerst regels toe.'),
   gratis: d => (d.soort !== 'klant' ? 'Enkel een klantopdracht kan gratis geleverd worden.'
-    : !d.regels.length ? 'Voeg eerst regels toe.' : 'Dit dossier is al afgerekend, gratis geleverd of geannuleerd.'),
+    : !d.regels.length ? 'Voeg eerst regels toe.' : wachtOpBestand(d) && !['afgerekend', 'betaald', 'geannuleerd', 'gratis', 'samengevoegd'].includes(d.fase) ? WACHT_OP_BESTAND
+    : 'Dit dossier is al afgerekend, gratis geleverd of geannuleerd.'),
+  bezorgen: d => (!d.digitaal ? 'Enkel bij een dossier met enkel ontwerp (niets fysieks te leveren) wordt een bestand bezorgd.'
+    : d.bezorgd_op ? `Het bestand is al bezorgd (${dmj(d.bezorgd_op)}).` : 'Dit dossier is afgerekend, gratis geleverd of geannuleerd.'),
+  bezorgd_ongedaan: d => (!d.bezorgd_op ? 'Het bestand staat nog niet als bezorgd.' : 'Dit dossier is al afgerekend of afgesloten: maak dat eerst ongedaan.'),
   gratis_ongedaan: () => 'Dit dossier is niet als gratis geleverd afgesloten.',
   starten: d => (d.gestart_op ? 'Dit dossier is al gestart.'
     : !d.acties.bewerken ? 'Dit dossier is afgerekend of geannuleerd.'
@@ -266,6 +273,56 @@ r.post('/:id/annuleren', actie('annuleren', (db, d) => {
   db.prepare(`UPDATE dossiers SET geannuleerd_op = date('now') WHERE id = ?`).run(d.id);
   logGebeurtenis(db, 'dossier', d.id, 'status', `Geannuleerd${n ? ` (${n} open printopdracht${n > 1 ? 'en' : ''} mee geannuleerd)` : ''}`);
 }));
+// 18-11: digitaal ontwerp — bestand bezorgd (met de hand: WeTransfer, WhatsApp…)
+function zetBezorgd(db, d, datum, hoe) {
+  db.prepare('UPDATE dossiers SET bezorgd_op = ?, bezorgd_hoe = ? WHERE id = ?').run(datum, hoe, d.id);
+  logGebeurtenis(db, 'dossier', d.id, 'status', `Digitaal bestand bezorgd op ${dmj(datum)}${hoe ? ` (${hoe})` : ''}`);
+}
+r.post('/:id/bezorgd', actie('bezorgen', (db, d, body) => {
+  const datum = body.datum || vandaag();
+  if (!datumOk(datum)) throw new DomeinFout('Vul een geldige datum in');
+  if (datum > vandaag()) throw new DomeinFout('De datum kan niet in de toekomst liggen.');
+  const hoe = String(body.hoe ?? '').trim().slice(0, 200) || null;
+  zetBezorgd(db, d, datum, hoe);
+}));
+r.post('/:id/bezorgd-ongedaan', actie('bezorgd_ongedaan', (db, d) => {
+  db.prepare('UPDATE dossiers SET bezorgd_op = NULL, bezorgd_hoe = NULL WHERE id = ?').run(d.id);
+  logGebeurtenis(db, 'dossier', d.id, 'status', '"Bestand bezorgd" ongedaan gemaakt');
+}));
+// Bestand mailen vanuit het ERP: gekozen bijlagen van het dossier naar de
+// klant; gelukt → meteen "bezorgd". Max. 18 MB samen (Gmail laat 25 MB toe,
+// bijlagen worden ~1/3 groter in een mail). Groter: WeTransfer + "Bestand bezorgd".
+const MAX_MAIL_BYTES = 18 * 1024 * 1024;
+r.post('/:id/bestand-mailen', async (req, res) => {
+  const db = getDb();
+  try {
+    const id = idVan(req);
+    const d = haal(db, id);
+    if (!d.digitaal || !['nieuw', 'offerte', 'akkoord', 'gepland', 'geleverd'].includes(d.fase)) throw new DomeinFout(NIET_TOEGELATEN.bezorgen({ ...d, bezorgd_op: null }));
+    if (!mailIngesteld()) throw new DomeinFout('Mailen is nog niet ingesteld (smtp_user/smtp_pass in de add-on-configuratie). Stuur het bestand zelf en kies dan "Bestand bezorgd".');
+    const ids = [...new Set((Array.isArray(req.body?.bijlagen) ? req.body.bijlagen : []).map(Number))];
+    if (!ids.length) throw new DomeinFout('Kies minstens één bestand om mee te sturen.');
+    const bijlagen = ids.map(b => {
+      const x = Number.isInteger(b) ? db.prepare(`SELECT * FROM bijlagen WHERE id = ? AND entiteit = 'dossier' AND entiteit_id = ?`).get(b, d.id) : null;
+      if (!x) throw new DomeinFout('Een gekozen bestand hoort niet bij dit dossier.');
+      return x;
+    });
+    const totaal = bijlagen.reduce((n, b) => n + (b.grootte || 0), 0);
+    if (totaal > MAX_MAIL_BYTES) throw new DomeinFout(`De bestanden zijn samen ${(totaal / 1048576).toFixed(1).replace('.', ',')} MB: te groot om te mailen (max. 18 MB). Stuur ze via WeTransfer en kies dan "Bestand bezorgd".`);
+    const inhoud = bijlagen.map(b => {
+      try { return { naam: b.bestandsnaam, inhoud: fs.readFileSync(path.join(bijlagenMap(), b.pad)), type: /^(image|application\/pdf)/.test(b.mimetype || '') ? b.mimetype : 'application/octet-stream' }; }
+      catch { throw new DomeinFout(`Het bestand "${b.bestandsnaam}" is niet meer gevonden. Voeg het opnieuw toe bij Bijlagen.`); }
+    });
+    const aan = String(req.body?.aan ?? '').trim();
+    await verstuurVrij({ aan, onderwerp: req.body?.onderwerp || `Je ontwerp: ${d.titel || d.nummer}`, tekst: req.body?.tekst || '', bijlagen: inhoud });
+    const namen = bijlagen.map(b => b.bestandsnaam).join(', ');
+    db.transaction(() => {
+      if (!d.bezorgd_op) zetBezorgd(db, d, vandaag(), `gemaild naar ${aan}: ${namen}`.slice(0, 200));
+      else logGebeurtenis(db, 'dossier', d.id, 'status', `Bestand opnieuw gemaild naar ${aan}: ${namen}`);
+    })();
+    res.json(leesDossier(db, id));
+  } catch (e) { res.status(e.status || (e instanceof DomeinFout || e instanceof MailFout ? 400 : 500)).json({ error: e.message }); }
+});
 r.post('/:id/heropenen', actie('heropenen', (db, d) => {
   db.prepare('UPDATE dossiers SET geannuleerd_op = NULL WHERE id = ?').run(d.id);
   logGebeurtenis(db, 'dossier', d.id, 'status', 'Heropend');

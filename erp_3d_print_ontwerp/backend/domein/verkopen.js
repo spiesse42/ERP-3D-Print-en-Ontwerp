@@ -17,6 +17,7 @@
 // 29-09: soort 'factuur' = zelfde verkoop, maar nummer uit de reeks FAC, een
 // klant verplicht, een vervaldatum en NIET meteen betaald ("Betaald" in de
 // verkoop zet ook de dossiers erop op betaald).
+import { WACHT_OP_BESTAND, wachtOpBestand } from './status/dossier.js';
 import { DomeinFout, rond, getBedrijfsgegevens, VIA_VERKOOP } from './hulp.js';
 import { logGebeurtenis } from './historiek.js';
 import { boekUit } from './voorraad.js';
@@ -67,7 +68,7 @@ export function dossierInfo(db, dossierId) {
   const d = leesDossier(db, Number(dossierId));
   if (!d) throw new DomeinFout('Onbekend dossier');
   if (d.soort !== 'klant') throw new DomeinFout(`${d.nummer} is geen klantopdracht: enkel een klantopdracht wordt afgerekend.`);
-  if (!d.acties.afrekenen) throw new DomeinFout(`${d.nummer} is al afgerekend, gratis geleverd of geannuleerd.`);
+  if (!d.acties.afrekenen) throw new DomeinFout(wachtOpBestand(d) && !['afgerekend', 'betaald', 'gratis', 'geannuleerd', 'samengevoegd'].includes(d.fase) ? `${d.nummer}: ${WACHT_OP_BESTAND}` : `${d.nummer} is al afgerekend, gratis geleverd of geannuleerd.`);
   const wb = d.werkbon || d.zonder_werkbon;
   const offerte = d.werkbon ? d.werkbon.basis === 'offerte' : d.offertes.some(o => o.aanvaard_op);
   const waarschuwingen = [];

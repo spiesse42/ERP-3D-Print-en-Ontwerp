@@ -7,7 +7,7 @@ import { berekenMetDb } from './berekening.js';
 import { faseVan, actiesVan, stappenVan } from './status/dossier.js';
 import { offertesVan, laatsteVerstuurde, werkbonVan, documentInhoud, afrekeningWeergave, isErpBonnetje, isErpFactuur, isErpDocument } from './documenten.js';
 import { peppolVerplicht } from '../documenten/factuur.js';
-import { leverbaar, leverStatus, leverStatusVan, leveringenVan, controleerGeleverd, nogTeLeveren } from './leveringen.js';
+import { leverbaar, leverStatus, leverStatusVan, leveringenVan, controleerGeleverd, nogTeLeveren, isDigitaal, digitaleLever } from './leveringen.js';
 import { productieVan, productieOverzicht, metingenPerRegel, controleerPrintopdrachten, wisOpdrachtenVanRegels } from '../productie/opdrachten.js';
 
 export const SOORTEN = { klant: 'Klantopdracht', eigen: 'Voorraad', intern: 'Intern' };
@@ -247,17 +247,19 @@ export function leesDossier(db, dossierId) {
   const zonderWerkelijk = l => JSON.stringify(l.map(({ id: _i, werkelijk: _w, gemeten: _g, afbeelding: _a, slicer_bijlage_id: _s, slicer_plaat: _p, slicer_bestandsnaam: _n, ...x }) => x));
   const wijkt_af_van_offerte = !!aanvaard && zonderWerkelijk(aanvaard.regels_api || []) !== zonderWerkelijk(regels);
   const lever_lijst = d.soort === 'klant' ? leverbaar(db, dossierId, regels) : [];
-  const lever = leverStatus(lever_lijst);
+  // 18-11: digitaal ontwerp → "geleverd" = bestand bezorgd
+  const digitaal = d.soort === 'klant' && isDigitaal(regels, lever_lijst);
+  const lever = digitaal ? digitaleLever(d, true) : leverStatus(lever_lijst);
   const leveringen = leveringenVan(db, dossierId);
   const productie = productieOverzicht(db, dossierId, regels);
   const prod = productie.status;
   const opts = { aantalRegels: regels.length, offerte, werkbon, verstuurdeOffertes: offertes.filter(o => o.verstuurd_op).length, lever, leveringen: leveringen.length,
-    prod, printopdrachten: productie.aantal_opdrachten };
+    prod, printopdrachten: productie.aantal_opdrachten, digitaal };
   // samenvoegen (29-09): waarin dit dossier opging, of wat hierin opging
   const samengevoegd_in_nummer = d.samengevoegd_in ? db.prepare('SELECT nummer FROM dossiers WHERE id = ?').get(d.samengevoegd_in)?.nummer ?? null : null;
   const samengevoegd_uit = db.prepare('SELECT id, nummer, titel, samengevoegd_op FROM dossiers WHERE samengevoegd_in = ? ORDER BY id').all(dossierId);
   const uit = { ...d, klant_gegevens, samengevoegd_in_nummer, samengevoegd_uit, fase: faseVan(d, { offerte, lever, prod }), stappen: stappenVan(d, { lever, prod }), acties: actiesVan(d, opts),
-    leverbaar: lever_lijst, lever_status: lever, leveringen, productie,
+    leverbaar: lever_lijst, lever_status: lever, leveringen, productie, digitaal,
     // 29-10: letterbestellingen (namen/kleuren) voor de overzichten
     letters: (() => { try { return JSON.parse(d.letters || '[]'); } catch { return []; } })(),
     regels, berekening, offertes: offertes.map(({ regels_api: _r, document: _doc, ...o }) => o), werkbon, zonder_werkbon, wijkt_af_van_offerte, overname };
@@ -372,6 +374,11 @@ export function volgendeStap(d) {
     const tekort = p.regels.find(r => r.goed < r.besteld);
     if (tekort) return { soort: 'plannen', tekst: `Voor "${tekort.omschrijving || 'Printwerk'}" zijn nog ${nlGetal(tekort.besteld - tekort.goed)} stuks nodig: plan een printopdracht (tab Productie).`, extra: [] };
   }
+  // 18-11: digitaal ontwerp: eerst het bestand bezorgen, pas daarna afrekenen
+  if (klant && d.digitaal && !d.bezorgd_op) {
+    return { soort: 'bezorgen', tekst: 'Bezorg eerst het digitale bestand aan de klant: mail het vanuit het ERP ("Bestand mailen") of duid aan dat je het al bezorgde (bv. via WeTransfer of WhatsApp). Daarna volgt het afrekenen.',
+      extra: ['Het bestand (bv. .3mf, .stl, .step) voeg je toe in het tabblad Bijlagen, of rechtstreeks in het venster "Bestand mailen".'] };
+  }
   // 10-10: eerst leveren of laten ophalen, daarna afrekenen (afrekenen
   // vooraf blijft mogelijk via de knoppen bovenaan, bv. bij vooruitbetaling)
   if (klant && ['geen', 'deels'].includes(d.lever_status) && (d.leverbaar || []).some(x => x.rest > 1e-9)) {
@@ -381,7 +388,7 @@ export function volgendeStap(d) {
   if (klant) {
     const reden = !(d.werkbon || d.zonder_werkbon)?.volledig ? ' Eerst moeten alle regels berekend kunnen worden.' : '';
     return { soort: 'afrekenen', tekst: `${p?.status === 'klaar' ? 'Alles is geprint. ' : ''}Nog af te rekenen: ${d.klant_gegevens?.type === 'zakelijk' ? 'maak de factuur ("Factuur maken": het ERP mailt ze naar Accountable), of maak toch een bonnetje' : 'maak het bonnetje ("Bonnetje maken"; zelf in Accountable ingeven), of een factuur ("Factuur maken": het ERP mailt ze naar Accountable)'}.${reden}`,
-      kan: !reden, extra: [...extra, ...afwijking(d), 'Krijgt de klant het zonder te betalen? Kies "Gratis geleverd". Gaat de opdracht niet door? "Dossier annuleren".'] };
+      kan: !reden, extra: [...extra, ...(d.digitaal && d.bezorgd_op ? [`Bestand bezorgd op ${String(d.bezorgd_op).split('-').reverse().join('-')}${d.bezorgd_hoe ? ` (${d.bezorgd_hoe})` : ''}.`] : []), ...afwijking(d), 'Krijgt de klant het zonder te betalen? Kies "Gratis geleverd". Gaat de opdracht niet door? "Dossier annuleren".'] };
   }
   return { soort: 'klaar', tekst: d.soort === 'eigen' ? 'Alles is geprint; de goede stuks staan in voorraad.' : 'Alles is geprint.', extra: [] };
 }
@@ -399,7 +406,7 @@ export function leesDossiers(db, { archief = '0', klant_id = null } = {}) {
   return rijen.map(d => {
     const b = d.aantal_regels ? berekenDossier(db, leesRegelsVan(db, d.id), 'schatting', tarieven, d.filament_inkoop, d.soort, d.klant_id) : { totaal: 0, volledig: true };
     const offerte = laatsteVerstuurde(offertesVan(db, d.id));
-    const lever = d.soort === 'klant' ? leverStatusVan(db, d.id) : null;
+    const lever = d.soort === 'klant' ? leverStatusVan(db, d.id, d) : null;
     const prod = productieVan(db, d.id);
     // 23-10: voorraad (eigen) heeft geen verkoopprijs → het bedrag is de geschatte productiekost
     const voorraad = d.soort === 'eigen';

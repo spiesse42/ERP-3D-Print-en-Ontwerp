@@ -58,10 +58,15 @@ export function stappenVan(d, { lever = null, prod = null } = {}) {
 
 // Welke acties nu toegelaten zijn; de backend controleert ze, de frontend
 // toont enkel de knoppen die hier "true" zijn.
-export function actiesVan(d, { aantalRegels = 0, offerte = null, werkbon = null, verstuurdeOffertes = 0, lever = null, leveringen = 0, prod = null, printopdrachten = 0 } = {}) {
+// 18-11: waarom afrekenen (nog) niet kan bij een digitaal ontwerp
+export const WACHT_OP_BESTAND = 'Bezorg eerst het digitale bestand aan de klant ("Bestand mailen" of "Bestand bezorgd"). Daarna kan je afrekenen.';
+export const wachtOpBestand = d => d?.soort === 'klant' && !!d.digitaal && !d.bezorgd_op;
+
+export function actiesVan(d, { aantalRegels = 0, offerte = null, werkbon = null, verstuurdeOffertes = 0, lever = null, leveringen = 0, prod = null, printopdrachten = 0, digitaal = false } = {}) {
   const fase = faseVan(d, { offerte, lever, prod });
   const klant = d.soort === 'klant';
   const open = VOOR_AFREKENING.includes(fase);
+  const wachtOpBestand = klant && digitaal && !d.bezorgd_op;
   return {
     bewerken: open,                                           // kop + regels
     // nieuwe offerte(versie); ook als er al geprint wordt zonder akkoord
@@ -70,9 +75,13 @@ export function actiesVan(d, { aantalRegels = 0, offerte = null, werkbon = null,
     // Starten (25-09): werkbon (klant) + printopdrachten; eenmalig
     starten: open && !d.gestart_op && aantalRegels > 0 && (klant || prod != null),
     // zonder werkbon maakt afrekenen hem eerst zelf aan (25-09)
-    afrekenen: klant && open && aantalRegels > 0,
+    // 18-11: digitaal ontwerp → pas na "bestand bezorgd"
+    afrekenen: klant && open && aantalRegels > 0 && !wachtOpBestand,
     // gratis geleverd (25-09): klant betaalt niets; geen omzet, wel kost in Marges
-    gratis: klant && open && aantalRegels > 0,
+    gratis: klant && open && aantalRegels > 0 && !wachtOpBestand,
+    // 18-11: digitaal bestand bezorgen (mailen of met de hand aanduiden)
+    bezorgen: klant && open && digitaal && !d.bezorgd_op,
+    bezorgd_ongedaan: klant && open && digitaal && !!d.bezorgd_op,
     gratis_ongedaan: fase === 'gratis',
     betaald: fase === 'afgerekend',
     betaling_ongedaan: fase === 'betaald' && d.afgerekend_soort === 'factuur',
