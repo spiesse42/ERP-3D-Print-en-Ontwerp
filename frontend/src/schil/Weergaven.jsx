@@ -65,7 +65,8 @@ export function Chip({ aan, onClick, children }) {
 // kolommen: [{ kop, cel: rij => node, klasse?, sorteer?: rij => waarde }]
 // groepen:  [{ titel, rijen }]  of rijen zonder groepering
 // kaart:    rij => { titel, rechts, regel, onder, badge }  (voor de gsm-weergave)
-export function Lijst({ kolommen, groepen, sleutel, onOpen, kaart, sortering, onSorteer, leeg }) {
+// rijKlasse (19-11): optionele extra klasse per rij (bv. 'ontwerp')
+export function Lijst({ kolommen, groepen, sleutel, onOpen, kaart, sortering, onSorteer, leeg, rijKlasse }) {
   const totaal = groepen.reduce((s, g) => s + g.rijen.length, 0);
   if (!totaal) return <div className="leeg">{leeg}</div>;
   return (
@@ -87,7 +88,7 @@ export function Lijst({ kolommen, groepen, sleutel, onOpen, kaart, sortering, on
             <Fragment key={gi}>
               {g.titel && <tr className="grp"><td colSpan={kolommen.length}>{g.titel} <span className="sub">({g.rijen.length})</span></td></tr>}
               {g.rijen.map(r => (
-                <tr key={sleutel(r)} className="row" tabIndex={0}
+                <tr key={sleutel(r)} className={`row${rijKlasse?.(r) ? ` ${rijKlasse(r)}` : ''}`} tabIndex={0}
                   onClick={() => onOpen(r)} onKeyDown={e => { if (e.key === 'Enter') onOpen(r); }}>
                   {kolommen.map((k, i) => <td key={i} className={k.klasse || ''}>{k.cel(r)}</td>)}
                 </tr>
@@ -103,7 +104,7 @@ export function Lijst({ kolommen, groepen, sleutel, onOpen, kaart, sortering, on
             {g.rijen.map(r => {
               const c = kaart(r);
               return (
-                <button type="button" key={sleutel(r)} className="mcard" onClick={() => onOpen(r)}>
+                <button type="button" key={sleutel(r)} className={`mcard${c.klasse ? ` ${c.klasse}` : ''}`} onClick={() => onOpen(r)}>
                   <span className="l1"><b>{c.titel}</b><span>{c.rechts}</span></span>
                   {c.regel && <span>{c.regel}</span>}
                   <span className="l1"><span className="sub">{c.onder}</span>{c.badge}</span>
@@ -146,7 +147,7 @@ export function Kanban({ kolommen, sleutel, onOpen, kaart, leeg }) {
           {k.rijen.map(r => {
             const c = kaart(r);
             return (
-              <button type="button" key={sleutel(r)} className="kkaart" onClick={() => onOpen(r)}>
+              <button type="button" key={sleutel(r)} className={`kkaart${c.klasse ? ` ${c.klasse}` : ''}`} onClick={() => onOpen(r)}>
                 <span className="l1"><b>{c.titel}</b>{c.rechts}</span>
                 {c.regel && <span className="sub">{c.regel}</span>}
                 {c.badges && <span className="badges" style={{ marginTop: 0 }}>{c.badges}</span>}

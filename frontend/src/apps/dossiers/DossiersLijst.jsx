@@ -15,6 +15,7 @@ export default function DossiersLijst() {
   const [soort, setSoort] = useState(null);
   const [afTeRekenen, setAfTeRekenen] = useState(false);
   const [archief, setArchief] = useState(false);
+  const [ontwerp, setOntwerp] = useState(false);   // 19-11: enkel ontwerpdossiers
   const [weergave, setWeergaveState] = useState(() => onthoud('dossiers.weergave', 'kaarten'));
   const [sortering, setSortering] = useState({ kolom: 0, op: false });
   const pad = `/dossiers?archief=${archief ? 1 : 0}${klantFilter ? `&klant=${klantFilter}` : ''}`;
@@ -24,7 +25,7 @@ export default function DossiersLijst() {
 
   const kolommen = [
     { kop: 'Nummer', cel: d => <span className="mono">{d.nummer}</span>, sorteer: d => d.nummer },
-    { kop: 'Titel', cel: d => <b>{d.titel}</b>, sorteer: d => d.titel.toLowerCase() },
+    { kop: 'Titel', cel: d => <><b>{d.titel}</b>{d.digitaal && <> <span className="badge b-ontwerp" title="Enkel ontwerp: digitaal bestand">ontwerp</span></>}</>, sorteer: d => d.titel.toLowerCase() },
     { kop: 'Klant', cel: d => d.klant || <span className="sub">{d.soort === 'klant' ? '—' : SOORT[d.soort]}</span>, sorteer: d => (d.klant || '').toLowerCase() },
     { kop: 'Aangemaakt', cel: d => <span className="num">{datum(d.aangemaakt_op)}</span>, sorteer: d => d.aangemaakt_op },
     { kop: 'Fase', cel: d => <FaseBadge fase={d.fase} />, sorteer: d => FASE_VOLGORDE.indexOf(d.fase) },
@@ -36,18 +37,20 @@ export default function DossiersLijst() {
     const q = zoek.trim().toLowerCase();
     let l = data.filter(d => (!soort || d.soort === soort)
       && (!afTeRekenen || (d.soort === 'klant' && VOOR_AFREKENING.includes(d.fase)))
+      && (!ontwerp || d.digitaal)
       && (!q || [d.nummer, d.titel, d.klant, d.afgerekend_nummer].some(v => String(v || '').toLowerCase().includes(q))));
     const s = kolommen[sortering.kolom]?.sorteer;
     if (s) l = [...l].sort((a, b) => { const x = s(a), y = s(b); return (x < y ? -1 : x > y ? 1 : 0) * (sortering.op ? 1 : -1); });
     return l;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, zoek, soort, afTeRekenen, sortering]);
+  }, [data, zoek, soort, afTeRekenen, ontwerp, sortering]);
 
   const klantNaam = data?.find(d => String(d.klant_id) === klantFilter)?.klant;
   const facetten = [];
   if (klantFilter) facetten.push({ label: `Klant: ${klantNaam || klantFilter}`, onWeg: () => setParams({}) });
   if (soort) facetten.push({ label: SOORT[soort], onWeg: () => setSoort(null) });
   if (afTeRekenen) facetten.push({ label: 'Nog af te rekenen', onWeg: () => setAfTeRekenen(false) });
+  if (ontwerp) facetten.push({ label: 'Ontwerp', onWeg: () => setOntwerp(false) });
   if (archief) facetten.push({ label: 'Gearchiveerd', onWeg: () => setArchief(false) });
 
   const open = d => navigeer(`/dossiers/${d.id}`);
@@ -58,7 +61,8 @@ export default function DossiersLijst() {
     titel: d.titel,
     rechts: <span className="num">{d.volledig ? euro(d.totaal) : '—'}</span>,
     regel: [d.nummer, d.klant || SOORT[d.soort]].filter(Boolean).join(' · '),
-    badges: <>{!d.volledig && <span className="badge b-warn">onvolledig</span>}{['afgerekend', 'betaald', 'gratis'].includes(d.fase) && (d.lever_status === 'geen' || d.lever_status === 'deels') && <span className="badge b-warn">nog te leveren</span>}{['afgerekend', 'betaald', 'gratis'].includes(d.fase) && ['geen', 'gepland', 'productie'].includes(d.prod_status) && <span className="badge b-info">nog te printen</span>}{d.afgerekend_nummer && <span className="badge b-neutral">{/^kassabon\b/i.test(d.afgerekend_nummer) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>}</>,
+    klasse: d.digitaal ? 'ontwerp' : null,
+    badges: <>{d.digitaal && <span className="badge b-ontwerp" title="Enkel ontwerp: digitaal bestand">ontwerp</span>}{!d.volledig && <span className="badge b-warn">onvolledig</span>}{['afgerekend', 'betaald', 'gratis'].includes(d.fase) && (d.lever_status === 'geen' || d.lever_status === 'deels') && <span className="badge b-warn">nog te leveren</span>}{['afgerekend', 'betaald', 'gratis'].includes(d.fase) && ['geen', 'gepland', 'productie'].includes(d.prod_status) && <span className="badge b-info">nog te printen</span>}{d.afgerekend_nummer && <span className="badge b-neutral">{/^kassabon\b/i.test(d.afgerekend_nummer) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>}</>,
   });
 
   return (
@@ -70,13 +74,14 @@ export default function DossiersLijst() {
         filters={<>
           <Chip aan={afTeRekenen} onClick={() => setAfTeRekenen(a => !a)}>Nog af te rekenen</Chip>
           {Object.entries(SOORT).map(([w, l]) => <Chip key={w} aan={soort === w} onClick={() => setSoort(s => (s === w ? null : w))}>{l}</Chip>)}
+          <Chip aan={ontwerp} onClick={() => setOntwerp(a => !a)}>Ontwerp</Chip>
           <Chip aan={archief} onClick={() => setArchief(a => !a)}>Gearchiveerd</Chip>
         </>}
         teller={data ? `${rijen.length} / ${data.length}` : null}
         weergave={weergave} onWeergave={setWeergave}
       />
       {fout ? <Fout tekst={fout} /> : !data && laden ? <Laden /> : weergave === 'lijst' ? (
-        <Lijst kolommen={kolommen} groepen={[{ titel: null, rijen }]} sleutel={d => d.id} onOpen={open}
+        <Lijst kolommen={kolommen} groepen={[{ titel: null, rijen }]} sleutel={d => d.id} onOpen={open} rijKlasse={d => (d.digitaal ? 'ontwerp' : null)}
           sortering={sortering} onSorteer={i => setSortering(s => ({ kolom: i, op: s.kolom === i ? !s.op : true }))}
           kaart={d => ({ ...kaart(d), rechts: <FaseBadge fase={d.fase} />, onder: d.volledig ? euro(d.totaal) : 'onvolledig' })}
           leeg={leeg} />
