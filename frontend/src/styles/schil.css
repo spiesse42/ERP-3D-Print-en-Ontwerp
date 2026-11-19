@@ -9,6 +9,7 @@
   --ink:#241a12; --paper:#faf6ee; --surface:#fffcf6; --sunken:#f2ebdc; --line:#e2d8c3; --line-strong:#cdbf9f;
   --muted:#6f6453; --accent:#e2601c; --accent-ink:#fff6ec; --accent-dim:#fbe4d2; --accent-deep:#a4430f;
   --pos:#3f7d4a; --pos-bg:#e4f2e6; --warn:#94600f; --warn-bg:#faedd6; --crit:#b3362a; --crit-bg:#fbe1dd; --info:#335f93; --info-bg:#e6eef7;
+  --ontwerp:#7a3fb8; --ontwerp-bg:#f3ebfb;   /* 19-11: ontwerpdossiers (enkel digitaal ontwerp) */
   --grafiek:#2a6cc4;   /* staven in grafieken (stap 7), gevalideerd tegen --surface */
   --bar:#241a12; --bar-line:#3c2d1e; --bar-text:#e8dccb; --bar-dim:#b5a28b;
   --radius:3px; --radius-lg:5px;
@@ -23,6 +24,7 @@
     --ink:#f1e7d8; --paper:#18120d; --surface:#221a13; --sunken:#2c2219; --line:#3a2e22; --line-strong:#524230;
     --muted:#b09f88; --accent:#f07a3a; --accent-ink:#1b120b; --accent-dim:#4a2a17; --accent-deep:#f39a66;
     --pos:#86c592; --pos-bg:#1e3224; --warn:#e3ab52; --warn-bg:#3a2b12; --crit:#f08a7c; --crit-bg:#3d1f1a; --info:#8fb4e3; --info-bg:#1b293a;
+    --ontwerp:#c9a2ef; --ontwerp-bg:#2b1f3a;
     --grafiek:#5a95e3;
     --bar:#100b07; --bar-line:#2a2017; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
   }
@@ -382,6 +384,12 @@ fieldset.regeleditor:disabled .regel-kop > button, fieldset.regeleditor:disabled
 .kanban .kolom h3 { position:sticky; top:0; z-index:1; background:var(--sunken); margin:-8px -8px 0; padding:10px 12px 6px; border-radius:var(--radius-lg) var(--radius-lg) 0 0; }
 .kkaart { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg); padding:10px 12px; display:flex; flex-direction:column; gap:4px; text-align:left; width:100%; color:inherit; }
 .kkaart:hover { border-color:var(--accent); }
+/* 19-11: ontwerpdossiers (enkel ontwerp, digitaal bestand) in paars */
+.kkaart.ontwerp, .mcard.ontwerp { background:var(--ontwerp-bg); border-left:4px solid var(--ontwerp); }
+table.list tr.row.ontwerp td { background:var(--ontwerp-bg); }
+table.list tr.row.ontwerp td:first-child { box-shadow:inset 4px 0 0 var(--ontwerp); }
+table.list tr.row.ontwerp:hover td { background:var(--accent-dim); }
+.b-ontwerp { background:var(--ontwerp-bg); color:var(--ontwerp); border:1px solid var(--ontwerp); }
 .kkaart .l1 { display:flex; justify-content:space-between; gap:8px; }
 .kkaart .l1 b { overflow-wrap:anywhere; }
 /* factuur/bestelbon inlezen (25-09) */
