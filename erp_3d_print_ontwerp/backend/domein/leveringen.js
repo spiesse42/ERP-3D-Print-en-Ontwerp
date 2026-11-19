@@ -55,11 +55,14 @@ export function isDigitaal(regels, leverbareLijst) {
 export function digitaleLever(d, digitaal) { return digitaal ? (d.bezorgd_op ? 'geleverd' : null) : undefined; }
 
 // Snelle versie voor lijsten (zonder omschrijvingen/voorraad).
-export function leverStatusVan(db, dossierId, d = null) {
+// 19-11: metDigitaal → { lever, digitaal } (lijst: ontwerpdossiers in kleur)
+export function leverStatusVan(db, dossierId, d = null, { metDigitaal = false } = {}) {
   const alle = db.prepare(`SELECT r.id, r.type, r.aantal, a.type AS artikel_type FROM dossier_regels r
     LEFT JOIN artikelen a ON a.id = r.artikel_id WHERE r.dossier_id = ?`).all(dossierId);
   const regels = alle.filter(r => r.type === 'printen' || (r.type === 'artikel' && r.artikel_type && r.artikel_type !== 'dienst'));
-  if (d && isDigitaal(alle, regels)) return digitaleLever(d, true);
+  const digitaal = isDigitaal(alle, regels);
+  if (metDigitaal) return { lever: leverStatusVan(db, dossierId, d), digitaal };
+  if (d && digitaal) return digitaleLever(d, true);
   const g = geleverdPerRegel(db, dossierId);
   return leverStatus(regels.map(r => { const n = g.get(r.id) || 0; return { geleverd: n, rest: Number(r.aantal ?? 1) - n }; }));
 }
