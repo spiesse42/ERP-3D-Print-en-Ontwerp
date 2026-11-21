@@ -18,7 +18,7 @@ export function offertesVan(db, dossierId) {
   return rijen.map(o => {
     const m = o.momentopname ? JSON.parse(o.momentopname) : null;
     const { momentopname: _m, ...rest } = o;
-    return { ...rest, fotos: leesFotoIds(o.fotos), status: offerteStatus(o, { nieuwereVersie: o.versie < hoogste && !o.aanvaard_op && !o.geweigerd_op }),
+    return { ...rest, fotos: leesFotoIds(o.fotos), staffel: leesStaffelKeuze(o.staffel), status: offerteStatus(o, { nieuwereVersie: o.versie < hoogste && !o.aanvaard_op && !o.geweigerd_op }),
       weergave: nummerMetVersie(o), regels_api: m?.regels_api, document: m?.document };
   });
 }
@@ -141,6 +141,11 @@ export function offerteFotos(db, dossierId, waarde) {
     try { uit.push(`data:${b.mimetype};base64,${fs.readFileSync(path.join(bijlagenMap(), b.pad)).toString('base64')}`); } catch { /* bestand weg */ }
   }
   return uit;
+}
+
+// 21-11: gekozen prijs per aantal van een offerte ({ regel_id, aantallen } of null)
+export function leesStaffelKeuze(waarde) {
+  try { const s = JSON.parse(waarde || 'null'); return s && Number.isInteger(s.regel_id) && Array.isArray(s.aantallen) ? s : null; } catch { return null; }
 }
 
 export function geldigheidDagen(db) {

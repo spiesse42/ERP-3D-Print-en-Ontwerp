@@ -61,7 +61,9 @@ export function leverStatusVan(db, dossierId, d = null, { metDigitaal = false } 
     LEFT JOIN artikelen a ON a.id = r.artikel_id WHERE r.dossier_id = ?`).all(dossierId);
   const regels = alle.filter(r => r.type === 'printen' || (r.type === 'artikel' && r.artikel_type && r.artikel_type !== 'dienst'));
   const digitaal = isDigitaal(alle, regels);
-  if (metDigitaal) return { lever: leverStatusVan(db, dossierId, d), digitaal };
+  if (metDigitaal) return { lever: leverStatusVan(db, dossierId, d), digitaal,
+    // 21-11: badges "ontwerp" / "print" in de dossierlijst
+    heeft_ontwerp: alle.some(r => r.type === 'ontwerp' || r.type === 'aanpassing'), heeft_print: alle.some(r => r.type === 'printen') };
   if (d && digitaal) return digitaleLever(d, true);
   const g = geleverdPerRegel(db, dossierId);
   return leverStatus(regels.map(r => { const n = g.get(r.id) || 0; return { geleverd: n, rest: Number(r.aantal ?? 1) - n }; }));
