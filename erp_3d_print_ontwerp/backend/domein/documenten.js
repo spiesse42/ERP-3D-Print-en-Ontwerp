@@ -143,9 +143,15 @@ export function offerteFotos(db, dossierId, waarde) {
   return uit;
 }
 
-// 21-11: gekozen prijs per aantal van een offerte ({ regel_id, aantallen } of null)
+// 21-11: gekozen prijs per aantal van een offerte: lijst van
+// { regel_id, aantallen, extra } (één per printregel). Oud: één object.
 export function leesStaffelKeuze(waarde) {
-  try { const s = JSON.parse(waarde || 'null'); return s && Number.isInteger(s.regel_id) && Array.isArray(s.aantallen) ? s : null; } catch { return null; }
+  try {
+    const s = JSON.parse(waarde || 'null');
+    return (Array.isArray(s) ? s : s ? [s] : [])
+      .filter(x => x && Number.isInteger(x.regel_id) && Array.isArray(x.aantallen))
+      .map(x => ({ regel_id: x.regel_id, aantallen: x.aantallen, extra: Array.isArray(x.extra) ? x.extra.filter(Number.isInteger) : [] }));
+  } catch { return []; }
 }
 
 export function geldigheidDagen(db) {
