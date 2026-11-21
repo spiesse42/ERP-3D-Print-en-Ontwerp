@@ -97,7 +97,10 @@ test('B4. met printwerk is het geen digitaal dossier: niets verandert', async ()
   const p = db.prepare('SELECT id FROM printers LIMIT 1').get().id;
   const d = (await vraag('POST', '/dossiers', { titel: 'Print', klant_id: klant, regels: [{ type: 'ontwerp', minuten: 30 }, { type: 'printen', printer_id: p, aantal: 1, tijd_min: 60, materialen: [] }] })).data;
   assert.equal(d.digitaal, false);
-  assert.equal((await vraag('GET', '/dossiers')).data.find(x => x.id === d.id).digitaal, false);
+  const inLijst = (await vraag('GET', '/dossiers')).data.find(x => x.id === d.id);
+  assert.equal(inLijst.digitaal, false);
+  assert.equal(inLijst.heeft_ontwerp, true, 'badge ontwerp');
+  assert.equal(inLijst.heeft_print, true, 'badge print');
   assert.equal(d.acties.bezorgen, false);
   assert.equal(d.acties.afrekenen, true);
   assert.match((await vraag('POST', `/dossiers/${d.id}/bezorgd`, {})).data.error, /enkel ontwerp/);

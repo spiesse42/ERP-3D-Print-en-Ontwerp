@@ -27,7 +27,7 @@ export const VRIJSTELLING_FACTUUR = 'Bijzondere vrijstellingsregeling kleine ond
 export const LANDEN = { BE: 'België', NL: 'Nederland', FR: 'Frankrijk', DE: 'Duitsland', LU: 'Luxemburg', ES: 'Spanje', IT: 'Italië', AT: 'Oostenrijk',
   PT: 'Portugal', IE: 'Ierland', DK: 'Denemarken', SE: 'Zweden', FI: 'Finland', PL: 'Polen', CZ: 'Tsjechië', GB: 'Verenigd Koninkrijk', CH: 'Zwitserland', NO: 'Noorwegen', US: 'Verenigde Staten' };
 // review (27-10): { google, facebook, google_kort, facebook_kort, qr } → blok "laat een review achter" (pakbon, bonnetje)
-export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerking, concept = false, toonUren = false, btwKolom = false, factuur = null, review = null, opmerkingTitel = null, fotos = [] }) {
+export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerking, concept = false, toonUren = false, btwKolom = false, factuur = null, review = null, opmerkingTitel = null, fotos = [], staffel = null }) {
   const { bedrijf = {}, klant, dossier, regels, totaal, vast } = inhoud;
   const k = klant;
   const buitenland = k?.land && k.land !== 'BE' ? (LANDEN[k.land] || k.land) : null;
@@ -74,6 +74,10 @@ export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerkin
   .opmerking.neutraal{border-left-color:#16345a;background:#f5f7fa;color:#333}
   .opmerking.neutraal h3{margin:0 0 6px;font-size:.68rem;text-transform:uppercase;letter-spacing:1.5px;color:#16345a}
   .slot{break-inside:avoid;page-break-inside:avoid}
+  .staffel{margin-top:18px;break-inside:avoid;page-break-inside:avoid}
+  .staffel h3{margin:0 0 2px;font-size:.68rem;text-transform:uppercase;letter-spacing:1.5px;color:#16345a}
+  .staffel table{margin:8px 0 4px}
+  .staffel td,.staffel th{padding:7px 12px}
   .beelden{break-before:page;page-break-before:always;padding-top:40px}
   .beelden h2{margin:0 0 16px;font-size:.8rem;text-transform:uppercase;letter-spacing:1.5px;color:#16345a;border-bottom:3px solid #16345a;padding-bottom:10px}
   .beelden-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -132,6 +136,15 @@ ${factuur ? `<div class="btw-regel">${esc(factuur.tekst || VRIJSTELLING_FACTUUR)
     Mededeling: <strong>${esc(factuur.betaling.mededeling)}</strong>
   </div>
   ${factuur.qr ? `<div class="qr">${factuur.qr}<div class="sub">Betaal met je bank-app</div></div>` : ''}
+</div>` : ''}
+${staffel?.rijen?.length ? `<div class="staffel">
+  <h3>Prijs per aantal (indicatief)</h3>
+  <div class="sub">${esc(staffel.omschrijving)}</div>
+  <table>
+    <thead><tr><th>Aantal</th><th class="r">Prijs per stuk</th><th class="r">Totaal</th></tr></thead>
+    <tbody>${staffel.rijen.map(x => `<tr><td>${getal(x.aantal)} stuks</td><td class="r">${euro(x.per_stuk)}</td><td class="r">${euro(x.totaal)}</td></tr>`).join('')}</tbody>
+  </table>
+  <div class="sub">Indicatieve prijzen bij het vermelde aantal. Eenmalige kosten (bv. ontwerp) en verzending zijn niet inbegrepen. De definitieve prijs volgt het gekozen aantal.</div>
 </div>` : ''}
 <div class="slot">
 ${opmerking ? (opmerkingTitel ? `<div class="opmerking neutraal"><h3>${esc(opmerkingTitel)}</h3>${nl(opmerking)}</div>` : `<div class="opmerking">${nl(opmerking)}</div>`) : ''}

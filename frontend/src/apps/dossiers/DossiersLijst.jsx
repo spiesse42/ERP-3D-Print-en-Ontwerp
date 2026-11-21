@@ -6,6 +6,17 @@ import { ControlePaneel, Chip, Lijst, Kanban, Laden, Fout } from '../../schil/We
 import { euro, datum } from '../../lib/formaat.js';
 import { FASE, FASE_VOLGORDE, SOORT, FaseBadge, VOOR_AFREKENING } from './dossier.jsx';
 
+// 19-11/21-11: badge "ontwerp" (paars) bij ontwerpwerk; samen met printwerk
+// ook "print" (blauwgroen). Enkel ontwerp = digitaal: hele kaart/rij paars.
+function SoortBadges({ d }) {
+  const ontwerp = d.heeft_ontwerp || d.digitaal;
+  if (!ontwerp) return null;
+  return <>
+    <span className="badge b-ontwerp" title={d.digitaal ? 'Enkel ontwerp: digitaal bestand' : 'Met ontwerpwerk'}>ontwerp</span>
+    {d.heeft_print && <span className="badge b-print" title="Met printwerk">print</span>}
+  </>;
+}
+
 // Dossiers (stap 5a): lijst en kanban per fase. De fase komt uit de backend.
 export default function DossiersLijst() {
   const { navigeer } = useOmgeving();
@@ -25,7 +36,7 @@ export default function DossiersLijst() {
 
   const kolommen = [
     { kop: 'Nummer', cel: d => <span className="mono">{d.nummer}</span>, sorteer: d => d.nummer },
-    { kop: 'Titel', cel: d => <><b>{d.titel}</b>{d.digitaal && <> <span className="badge b-ontwerp" title="Enkel ontwerp: digitaal bestand">ontwerp</span></>}</>, sorteer: d => d.titel.toLowerCase() },
+    { kop: 'Titel', cel: d => <><b>{d.titel}</b> <SoortBadges d={d} /></>, sorteer: d => d.titel.toLowerCase() },
     { kop: 'Klant', cel: d => d.klant || <span className="sub">{d.soort === 'klant' ? '—' : SOORT[d.soort]}</span>, sorteer: d => (d.klant || '').toLowerCase() },
     { kop: 'Aangemaakt', cel: d => <span className="num">{datum(d.aangemaakt_op)}</span>, sorteer: d => d.aangemaakt_op },
     { kop: 'Fase', cel: d => <FaseBadge fase={d.fase} />, sorteer: d => FASE_VOLGORDE.indexOf(d.fase) },
@@ -37,7 +48,7 @@ export default function DossiersLijst() {
     const q = zoek.trim().toLowerCase();
     let l = data.filter(d => (!soort || d.soort === soort)
       && (!afTeRekenen || (d.soort === 'klant' && VOOR_AFREKENING.includes(d.fase)))
-      && (!ontwerp || d.digitaal)
+      && (!ontwerp || d.heeft_ontwerp || d.digitaal)
       && (!q || [d.nummer, d.titel, d.klant, d.afgerekend_nummer].some(v => String(v || '').toLowerCase().includes(q))));
     const s = kolommen[sortering.kolom]?.sorteer;
     if (s) l = [...l].sort((a, b) => { const x = s(a), y = s(b); return (x < y ? -1 : x > y ? 1 : 0) * (sortering.op ? 1 : -1); });
@@ -62,7 +73,7 @@ export default function DossiersLijst() {
     rechts: <span className="num">{d.volledig ? euro(d.totaal) : '—'}</span>,
     regel: [d.nummer, d.klant || SOORT[d.soort]].filter(Boolean).join(' · '),
     klasse: d.digitaal ? 'ontwerp' : null,
-    badges: <>{d.digitaal && <span className="badge b-ontwerp" title="Enkel ontwerp: digitaal bestand">ontwerp</span>}{!d.volledig && <span className="badge b-warn">onvolledig</span>}{['afgerekend', 'betaald', 'gratis'].includes(d.fase) && (d.lever_status === 'geen' || d.lever_status === 'deels') && <span className="badge b-warn">nog te leveren</span>}{['afgerekend', 'betaald', 'gratis'].includes(d.fase) && ['geen', 'gepland', 'productie'].includes(d.prod_status) && <span className="badge b-info">nog te printen</span>}{d.afgerekend_nummer && <span className="badge b-neutral">{/^kassabon\b/i.test(d.afgerekend_nummer) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>}</>,
+    badges: <><SoortBadges d={d} />{!d.volledig && <span className="badge b-warn">onvolledig</span>}{['afgerekend', 'betaald', 'gratis'].includes(d.fase) && (d.lever_status === 'geen' || d.lever_status === 'deels') && <span className="badge b-warn">nog te leveren</span>}{['afgerekend', 'betaald', 'gratis'].includes(d.fase) && ['geen', 'gepland', 'productie'].includes(d.prod_status) && <span className="badge b-info">nog te printen</span>}{d.afgerekend_nummer && <span className="badge b-neutral">{/^kassabon\b/i.test(d.afgerekend_nummer) ? d.afgerekend_nummer : `${d.afgerekend_soort} ${d.afgerekend_nummer}`}</span>}</>,
   });
 
   return (
