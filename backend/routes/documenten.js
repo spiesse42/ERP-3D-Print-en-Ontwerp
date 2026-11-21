@@ -9,7 +9,7 @@ import { volgendNummer } from '../domein/nummering.js';
 import { leesDossier, leesRegelsVan, berekenDossier, datumOk, bewaarRegels, leesRegels } from '../domein/dossiers.js';
 import { offertesVan, nummerMetVersie, documentInhoud, eenRegelInhoud, printregelsInhoud, controleerFotos, offerteFotos, leesStaffelKeuze, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje, isErpFactuur, betaaltermijn } from '../domein/documenten.js';
 import { getBedrijfsgegevens } from '../domein/hulp.js';
-import { berekenStaffel, leesAantallen } from '../domein/staffel.js';
+import { berekenStaffel, leesAantallen, kanMeePerStuk } from '../domein/staffel.js';
 import { factuurHtml, factuurBestand, peppolVerplicht } from '../documenten/factuur.js';
 import { maakBonnetje, maakFactuur, leesBonnummer, bonnummerVoorstel, zetAccountableNummer } from '../domein/afrekening.js';
 import { overzicht as nummerOverzicht } from '../domein/nummering.js';
@@ -89,7 +89,8 @@ r.post('/dossiers/:id/offertes', metFouten((req, res) => {
     db.prepare('INSERT INTO offertes (dossier_id, nummer, versie, geldig_tot, levertermijn, opmerking, een_regel, fotos, staffel) VALUES (?,?,?,?,?,?,?,?,?)')
       .run(d.id, nummer, versie, plusDagen(vandaag(), geldigheidDagen(db)), vorige?.levertermijn ?? null, vorige?.opmerking ?? null,
         vorige?.een_regel ?? null, vorige?.fotos?.length ? JSON.stringify(vorige.fotos) : null,
-        vorige?.staffel && d.regels.some(x => x.id === vorige.staffel.regel_id) ? JSON.stringify(vorige.staffel) : null);
+        vorige?.staffel && d.regels.some(x => x.id === vorige.staffel.regel_id)
+          ? JSON.stringify({ ...vorige.staffel, extra: (vorige.staffel.extra || []).filter(id => d.regels.some(x => x.id === id)) }) : null);
     log(db, d.id, `Offerte ${nummerMetVersie({ nummer, versie })} aangemaakt (concept)`);
   })();
   res.status(201).json(leesDossier(db, d.id));
@@ -99,7 +100,7 @@ r.post('/dossiers/:id/offertes', metFouten((req, res) => {
 r.post('/dossiers/:id/staffel', metFouten((req, res) => {
   const db = getDb();
   const d = dossier(db, idVan(req.params.id));
-  res.json(berekenStaffel(db, d, req.body?.regel_id, req.body?.aantallen));
+  res.json(berekenStaffel(db, d, req.body?.regel_id, req.body?.aantallen, req.body?.extra));
 }));
 
 r.put('/offertes/:id', metFouten((req, res) => {
@@ -122,7 +123,13 @@ r.put('/offertes/:id', metFouten((req, res) => {
       if (!regel || regel.type !== 'printen') throw new DomeinFout('Kies een printregel van dit dossier voor de prijs per aantal.');
       const aantallen = leesAantallen(st.aantallen);
       if (!aantallen.length) throw new DomeinFout('Vul minstens één aantal in voor de prijs per aantal (bv. 50, 100, 200).');
-      staffel = JSON.stringify({ regel_id: regel.id, aantallen });
+      const alle = leesRegelsVan(db, d.id);
+      const extra = [...new Set((Array.isArray(st.extra) ? st.extra : []).map(Number))];
+      for (const id of extra) {
+        const x = alle.find(y => y.id === id);
+        if (!x || !kanMeePerStuk(db, x)) throw new DomeinFout('Enkel een artikel (bv. sleutelring) of een extra kost per stuk van dit dossier kan per stuk meetellen.');
+      }
+      staffel = JSON.stringify({ regel_id: regel.id, aantallen, ...(extra.length ? { extra } : {}) });
     }
   }
   db.prepare('UPDATE offertes SET geldig_tot = ?, levertermijn = ?, opmerking = ?, een_regel = ?, fotos = ?, staffel = ? WHERE id = ?')
@@ -149,7 +156,7 @@ function versturen(db, o, d) {
   const geldig = o.geldig_tot || plusDagen(vandaag(), geldigheidDagen(db));
   if (geldig < vandaag()) throw new DomeinFout('"Geldig tot" ligt in het verleden. Pas de datum aan.');
   const keuze = leesStaffelKeuze(o.staffel);
-  const staffel = keuze ? berekenStaffel(db, d, keuze.regel_id, keuze.aantallen) : null;
+  const staffel = keuze ? berekenStaffel(db, d, keuze.regel_id, keuze.aantallen, keuze.extra) : null;
   const momentopname = { regels_api: leesRegelsVan(db, d.id), document: { ...documentInhoud(db, d, d.berekening), ...(staffel ? { staffel } : {}) } };
   db.prepare('UPDATE offertes SET verstuurd_op = ?, geldig_tot = ?, momentopname = ?, totaal = ? WHERE id = ?')
     .run(vandaag(), geldig, JSON.stringify(momentopname), d.berekening.totaal, o.id);
@@ -206,7 +213,7 @@ function offerteDocument(db, o, d, status) {
   const inhoud = o.een_regel ? printregelsInhoud(basis, o.een_regel) : basis;
   // 21-11: prijs per aantal — verstuurd: zoals vastgelegd; concept: live
   const keuze = leesStaffelKeuze(o.staffel);
-  const staffel = verstuurd ? basis.staffel || null : keuze ? berekenStaffel(db, d, keuze.regel_id, keuze.aantallen) : null;
+  const staffel = verstuurd ? basis.staffel || null : keuze ? berekenStaffel(db, d, keuze.regel_id, keuze.aantallen, keuze.extra) : null;
   return documentHtml({
     soort: 'OFFERTE', nummer: nummerMetVersie(o), datum: o.verstuurd_op || vandaag(), concept: !verstuurd, inhoud, opmerking: o.opmerking,
     opmerkingTitel: 'Opmerkingen en voorwaarden', fotos: offerteFotos(db, d.id, o.fotos), staffel,

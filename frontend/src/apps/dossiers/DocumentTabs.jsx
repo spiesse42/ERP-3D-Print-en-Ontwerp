@@ -27,7 +27,7 @@ function useActies({ vuil, herlaad }) {
 // 17-11: foto-bijlagen die op de pagina "Beelden" van de offerte kunnen
 const OFFERTE_FOTO = /^image\/(png|jpe?g|webp)$/;
 const vanOfferte = o => ({ geldig_tot: o.geldig_tot || '', levertermijn: o.levertermijn || '', opmerking: o.opmerking || '', een_regel: o.een_regel || '', fotos: o.fotos || [],
-  staffel: o.staffel ? { regel_id: o.staffel.regel_id, aantallen: o.staffel.aantallen.join(', ') } : null });
+  staffel: o.staffel ? { regel_id: o.staffel.regel_id, aantallen: o.staffel.aantallen.join(', '), extra: o.staffel.extra || [] } : null });
 const zelfde = (a, b) => a.geldig_tot === b.geldig_tot && a.levertermijn === b.levertermijn && a.opmerking === b.opmerking && a.een_regel === b.een_regel
   && a.fotos.length === b.fotos.length && a.fotos.every((x, i) => x === b.fotos[i]) && JSON.stringify(a.staffel) === JSON.stringify(b.staffel);
 
@@ -38,11 +38,17 @@ function StaffelKeuze({ d, f, setF }) {
   const st = f.staffel;
   const [voorbeeld, setVoorbeeld] = useState(null);
   const [fout, setFout] = useState(null);
-  const sleutel = st ? `${st.regel_id}|${st.aantallen}` : '';
+  const sleutel = st ? `${st.regel_id}|${st.aantallen}|${(st.extra || []).join(',')}` : '';
+  // 21-11: artikels (bv. sleutelring, geen vaste prijs zoals verzending) en extra kosten per stuk tellen 1 per stuk mee
+  const vast = new Set((d.berekening?.regels || []).filter(r => r._berekend?.vaste_prijs).map(r => r.id));
+  const perStuk = d.regels.filter(r => r.id && ((r.type === 'artikel' && r.artikel_id && !vast.has(r.id)) || (r.type === 'extra' && r.per_stuk)));
+  const berekend = new Map((d.berekening?.regels || []).map(r => [r.id, r]));
+  const naamVan = r => r.omschrijving || berekend.get(r.id)?.naam || (r.type === 'artikel' ? 'Artikel' : 'Extra kost');
+  const wisselExtra = id => setF(x => ({ ...x, staffel: { ...x.staffel, extra: (x.staffel.extra || []).includes(id) ? x.staffel.extra.filter(y => y !== id) : [...(x.staffel.extra || []), id] } }));
   useEffect(() => {
     if (!st?.regel_id || !String(st.aantallen).trim()) { setVoorbeeld(null); setFout(null); return undefined; }
     const t = setTimeout(async () => {
-      try { setVoorbeeld(await api.post(`/dossiers/${d.id}/staffel`, { regel_id: st.regel_id, aantallen: st.aantallen })); setFout(null); }
+      try { setVoorbeeld(await api.post(`/dossiers/${d.id}/staffel`, { regel_id: st.regel_id, aantallen: st.aantallen, extra: st.extra || [] })); setFout(null); }
       catch (e) { setVoorbeeld(null); setFout(e.message); }
     }, 350);
     return () => clearTimeout(t);
@@ -52,7 +58,7 @@ function StaffelKeuze({ d, f, setF }) {
   return (
     <div style={{ marginTop: 10 }}>
       <label className="vinkje"><input type="checkbox" checked={!!st}
-        onChange={e => setF(x => ({ ...x, staffel: e.target.checked ? { regel_id: standaard(), aantallen: '50, 100, 200' } : null }))} /> Prijs per aantal tonen (indicatief)</label>
+        onChange={e => setF(x => ({ ...x, staffel: e.target.checked ? { regel_id: standaard(), aantallen: '48, 96, 192', extra: [] } : null }))} /> Prijs per aantal tonen (indicatief)</label>
       {st && <>
         <div className="fgrid" style={{ marginTop: 4 }}>
           <div><label htmlFor={`st-regel-${d.id}`}>Printregel</label>
@@ -62,6 +68,12 @@ function StaffelKeuze({ d, f, setF }) {
           <div><label htmlFor={`st-aantal-${d.id}`}>Aantallen</label>
             <input id={`st-aantal-${d.id}`} className="inp" placeholder="bv. 50, 100, 200" value={st.aantallen} onChange={e => setF(x => ({ ...x, staffel: { ...x.staffel, aantallen: e.target.value } }))} /></div>
         </div>
+        {perStuk.length > 0 && (
+          <div className="vinkjes" style={{ marginTop: 6 }}>
+            <span className="sub">Per stuk meerekenen (1 per stuk):</span>
+            {perStuk.map(r => <label key={r.id} className="vinkje"><input type="checkbox" checked={(st.extra || []).includes(r.id)} onChange={() => wisselExtra(r.id)} /> {naamVan(r)}</label>)}
+          </div>
+        )}
         {fout && <div className="note fout" style={{ marginTop: 6 }}>{fout}</div>}
         {voorbeeld && (
           <table className="staffel-tabel">
@@ -69,7 +81,7 @@ function StaffelKeuze({ d, f, setF }) {
             <tbody>{voorbeeld.rijen.map(x => <tr key={x.aantal}><td>{x.aantal} stuks</td><td className="r num">{x.platen ?? '—'}</td><td className="r num"><b>{euro(x.per_stuk)}</b></td><td className="r num">{euro(x.totaal)}</td></tr>)}</tbody>
           </table>
         )}
-        <div className="sub">Herrekent "{print.find(r => r.id === st.regel_id)?.omschrijving || 'Printwerk'}" per aantal (printtijd, filament en platen). Het totaal van de offerte verandert niet; eenmalige kosten zoals ontwerp tellen niet mee.</div>
+        <div className="sub">Herrekent "{print.find(r => r.id === st.regel_id)?.omschrijving || 'Printwerk'}"{voorbeeld?.extra?.length ? ` + ${voorbeeld.extra.join(', ')}` : ''} per aantal (printtijd, filament en platen). Het totaal van de offerte verandert niet; eenmalige kosten zoals ontwerp tellen niet mee.</div>
       </>}
     </div>
   );

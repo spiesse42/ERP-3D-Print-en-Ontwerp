@@ -139,7 +139,7 @@ ${factuur ? `<div class="btw-regel">${esc(factuur.tekst || VRIJSTELLING_FACTUUR)
 </div>` : ''}
 ${staffel?.rijen?.length ? `<div class="staffel">
   <h3>Prijs per aantal (indicatief)</h3>
-  <div class="sub">${esc(staffel.omschrijving)}</div>
+  <div class="sub">${esc(staffel.omschrijving)}${staffel.extra?.length ? `, inclusief ${esc(staffel.extra.join(', '))}` : ''}</div>
   <table>
     <thead><tr><th>Aantal</th><th class="r">Prijs per stuk</th><th class="r">Totaal</th></tr></thead>
     <tbody>${staffel.rijen.map(x => `<tr><td>${getal(x.aantal)} stuks</td><td class="r">${euro(x.per_stuk)}</td><td class="r">${euro(x.totaal)}</td></tr>`).join('')}</tbody>
