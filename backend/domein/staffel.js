@@ -43,19 +43,39 @@ export function leesAantallen(waarde) {
   return uniek;
 }
 
-// → { regel_id, omschrijving, rijen: [{ aantal, per_stuk, totaal, platen }] }
+// 21-11: regels die per stuk mee kunnen in de staffel (bv. sleutelring):
+// een artikel (geen vaste prijs zoals verzending) of een extra kost per stuk.
+// Ze tellen 1 per stuk mee, wat hun aantal op de regel ook is.
+export function kanMeePerStuk(db, r) {
+  if (r.type === 'extra') return !!r.per_stuk;
+  if (r.type !== 'artikel' || !r.artikel_id) return false;
+  const a = db.prepare('SELECT vaste_prijs FROM artikelen WHERE id = ?').get(r.artikel_id);
+  return !!a && !a.vaste_prijs;
+}
+
+// → { regel_id, omschrijving, extra: [namen], rijen: [{ aantal, per_stuk, totaal, platen }] }
 // per_stuk naar boven afgerond op de cent; totaal = per_stuk × aantal (zo
 // kan de klant het zelf narekenen).
-export function berekenStaffel(db, d, regelId, aantallen) {
+export function berekenStaffel(db, d, regelId, aantallen, extraIds = []) {
   const regels = leesRegelsVan(db, d.id);
   const r = regels.find(x => x.id === Number(regelId));
   if (!r || r.type !== 'printen') throw new DomeinFout('Kies een printregel van dit dossier voor de prijs per aantal.');
-  const rijen = leesAantallen(aantallen).map(aantal => {
-    const b = berekenDossier(db, [regelVoorAantal(r, aantal)], 'schatting', null, d.filament_inkoop, d.soort, d.klant_id);
-    const rb = b.regels?.[0]?._berekend;
-    if (!b.volledig || rb?.eindbedrag == null) throw new DomeinFout(`De regel "${r.omschrijving || 'Printwerk'}" kan niet berekend worden: ${b.fout || rb?.fout || 'vul eerst printer, tijd en filament in'}.`);
-    const per_stuk = Math.ceil(r4(rb.eindbedrag / aantal) * 100) / 100;
-    return { aantal, per_stuk, totaal: Math.round(per_stuk * aantal * 100) / 100, platen: rb.detail?.platen ?? null };
+  const extra = [...new Set((extraIds || []).map(Number))].map(id => {
+    const x = regels.find(y => y.id === id);
+    if (!x || !kanMeePerStuk(db, x)) throw new DomeinFout('Enkel een artikel (bv. sleutelring) of een extra kost per stuk van dit dossier kan per stuk meetellen.');
+    return x;
   });
-  return { regel_id: r.id, omschrijving: r.omschrijving || 'Printwerk', rijen };
+  const naamVan = x => x.omschrijving || (x.artikel_id ? db.prepare('SELECT naam FROM artikelen WHERE id = ?').get(x.artikel_id)?.naam : null) || 'Extra';
+  const rijen = leesAantallen(aantallen).map(aantal => {
+    const mee = extra.map(x => ({ ...x, aantal, handmatig_bedrag: null, korting: null }));
+    const b = berekenDossier(db, [regelVoorAantal(r, aantal), ...mee], 'schatting', null, d.filament_inkoop, d.soort, d.klant_id);
+    const rb = b.regels?.[0]?._berekend;
+    if (!b.volledig || b.totaal == null) {
+      const f = (b.regels || []).map(x => x._berekend?.fout).find(Boolean);
+      throw new DomeinFout(`De prijs per aantal kan niet berekend worden: ${b.fout || f || 'vul eerst printer, tijd en filament in'}.`);
+    }
+    const per_stuk = Math.ceil(r4(b.totaal / aantal) * 100) / 100;
+    return { aantal, per_stuk, totaal: Math.round(per_stuk * aantal * 100) / 100, platen: rb?.detail?.platen ?? null };
+  });
+  return { regel_id: r.id, omschrijving: r.omschrijving || 'Printwerk', extra: extra.map(naamVan), rijen };
 }
