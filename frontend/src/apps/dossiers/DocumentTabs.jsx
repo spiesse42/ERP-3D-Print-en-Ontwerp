@@ -26,9 +26,54 @@ function useActies({ vuil, herlaad }) {
 
 // 17-11: foto-bijlagen die op de pagina "Beelden" van de offerte kunnen
 const OFFERTE_FOTO = /^image\/(png|jpe?g|webp)$/;
-const vanOfferte = o => ({ geldig_tot: o.geldig_tot || '', levertermijn: o.levertermijn || '', opmerking: o.opmerking || '', een_regel: o.een_regel || '', fotos: o.fotos || [] });
+const vanOfferte = o => ({ geldig_tot: o.geldig_tot || '', levertermijn: o.levertermijn || '', opmerking: o.opmerking || '', een_regel: o.een_regel || '', fotos: o.fotos || [],
+  staffel: o.staffel ? { regel_id: o.staffel.regel_id, aantallen: o.staffel.aantallen.join(', ') } : null });
 const zelfde = (a, b) => a.geldig_tot === b.geldig_tot && a.levertermijn === b.levertermijn && a.opmerking === b.opmerking && a.een_regel === b.een_regel
-  && a.fotos.length === b.fotos.length && a.fotos.every((x, i) => x === b.fotos[i]);
+  && a.fotos.length === b.fotos.length && a.fotos.every((x, i) => x === b.fotos[i]) && JSON.stringify(a.staffel) === JSON.stringify(b.staffel);
+
+// 21-11: prijs per aantal (staffel) — één printregel herrekend voor andere
+// aantallen; live voorbeeld uit de backend, zelfde berekening als op de PDF.
+function StaffelKeuze({ d, f, setF }) {
+  const print = d.regels.filter(r => r.type === 'printen' && r.id);
+  const st = f.staffel;
+  const [voorbeeld, setVoorbeeld] = useState(null);
+  const [fout, setFout] = useState(null);
+  const sleutel = st ? `${st.regel_id}|${st.aantallen}` : '';
+  useEffect(() => {
+    if (!st?.regel_id || !String(st.aantallen).trim()) { setVoorbeeld(null); setFout(null); return undefined; }
+    const t = setTimeout(async () => {
+      try { setVoorbeeld(await api.post(`/dossiers/${d.id}/staffel`, { regel_id: st.regel_id, aantallen: st.aantallen })); setFout(null); }
+      catch (e) { setVoorbeeld(null); setFout(e.message); }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [sleutel, d.berekening?.totaal]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!print.length) return null;
+  const standaard = () => (print.find(r => Number(r.per_plaat) > 0) || [...print].sort((a, b) => Number(b.aantal) - Number(a.aantal))[0]).id;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <label className="vinkje"><input type="checkbox" checked={!!st}
+        onChange={e => setF(x => ({ ...x, staffel: e.target.checked ? { regel_id: standaard(), aantallen: '50, 100, 200' } : null }))} /> Prijs per aantal tonen (indicatief)</label>
+      {st && <>
+        <div className="fgrid" style={{ marginTop: 4 }}>
+          <div><label htmlFor={`st-regel-${d.id}`}>Printregel</label>
+            <select id={`st-regel-${d.id}`} className="inp" value={st.regel_id} onChange={e => setF(x => ({ ...x, staffel: { ...x.staffel, regel_id: Number(e.target.value) } }))}>
+              {print.map(r => <option key={r.id} value={r.id}>{r.omschrijving || 'Printwerk'} ({r.aantal} st.{Number(r.per_plaat) > 0 ? `, ${r.per_plaat} per plaat` : ''})</option>)}
+            </select></div>
+          <div><label htmlFor={`st-aantal-${d.id}`}>Aantallen</label>
+            <input id={`st-aantal-${d.id}`} className="inp" placeholder="bv. 50, 100, 200" value={st.aantallen} onChange={e => setF(x => ({ ...x, staffel: { ...x.staffel, aantallen: e.target.value } }))} /></div>
+        </div>
+        {fout && <div className="note fout" style={{ marginTop: 6 }}>{fout}</div>}
+        {voorbeeld && (
+          <table className="staffel-tabel">
+            <thead><tr><th>Aantal</th><th className="r">Platen</th><th className="r">Prijs per stuk</th><th className="r">Totaal</th></tr></thead>
+            <tbody>{voorbeeld.rijen.map(x => <tr key={x.aantal}><td>{x.aantal} stuks</td><td className="r num">{x.platen ?? '—'}</td><td className="r num"><b>{euro(x.per_stuk)}</b></td><td className="r num">{euro(x.totaal)}</td></tr>)}</tbody>
+          </table>
+        )}
+        <div className="sub">Herrekent "{print.find(r => r.id === st.regel_id)?.omschrijving || 'Printwerk'}" per aantal (printtijd, filament en platen). Het totaal van de offerte verandert niet; eenmalige kosten zoals ontwerp tellen niet mee.</div>
+      </>}
+    </div>
+  );
+}
 
 function OfferteOpmaak({ d, o, f, setF }) {
   const { data } = useData(`/bijlagen/dossier/${d.id}`);
@@ -46,7 +91,8 @@ function OfferteOpmaak({ d, o, f, setF }) {
           onBlur={e => { if (!e.target.value.trim()) setF(x => ({ ...x, een_regel: d.titel || 'Printwerk' })); }} />}
         {samen && <div className="sub">Ontwerp, afwerking en andere regels blijven apart. Het totaal blijft gelijk.</div>}
       </>}
-      <div className="lbl" style={{ marginTop: printregels > 1 ? 10 : 0 }}>Foto's op een aparte pagina "Beelden" {f.fotos.length > 0 && <span className="sub">({f.fotos.length} gekozen)</span>}</div>
+      <StaffelKeuze d={d} f={f} setF={setF} />
+      <div className="lbl" style={{ marginTop: 10 }}>Foto's op een aparte pagina "Beelden" {f.fotos.length > 0 && <span className="sub">({f.fotos.length} gekozen)</span>}</div>
       {fotos.length === 0 ? <div className="sub">Nog geen foto's in dit dossier. Voeg ze bovenaan het dossier toe (jpg, png of webp).</div> : (
         <div className="offerte-fotos">
           {fotos.map(b => {
@@ -68,7 +114,8 @@ function OfferteKaart({ d, o, doe, vuil, onMail }) {
   const concept = o.status === 'concept';
   const [f, setF] = useState(() => vanOfferte(o));
   const fotosSleutel = (o.fotos || []).join(',');
-  useEffect(() => { setF(vanOfferte(o)); }, [o.geldig_tot, o.levertermijn, o.opmerking, o.een_regel, fotosSleutel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const staffelSleutel = JSON.stringify(o.staffel || null);
+  useEffect(() => { setF(vanOfferte(o)); }, [o.geldig_tot, o.levertermijn, o.opmerking, o.een_regel, fotosSleutel, staffelSleutel]); // eslint-disable-line react-hooks/exhaustive-deps
   const gewijzigd = concept && !zelfde(f, vanOfferte(o));
   const kanAntwoorden = o.status === 'verstuurd' || o.status === 'verlopen';
   const afgerekend = d.fase === 'afgerekend' || d.fase === 'betaald';
@@ -92,7 +139,7 @@ function OfferteKaart({ d, o, doe, vuil, onMail }) {
         </div>
       )}
       {!concept && o.opmerking && <div className="sub" style={{ marginTop: 4 }}>Opmerking: {o.opmerking}</div>}
-      {!concept && (o.een_regel || o.fotos?.length > 0) && <div className="sub" style={{ marginTop: 4 }}>{[o.een_regel && `Printwerk als één regel: ${o.een_regel}`, o.fotos?.length && `${o.fotos.length} foto('s) op de pagina Beelden`].filter(Boolean).join(' · ')}</div>}
+      {!concept && (o.een_regel || o.fotos?.length > 0 || o.staffel) && <div className="sub" style={{ marginTop: 4 }}>{[o.een_regel && `Printwerk als één regel: ${o.een_regel}`, o.fotos?.length && `${o.fotos.length} foto('s) op de pagina Beelden`, o.staffel && `prijs per aantal: ${o.staffel.aantallen.join(', ')}`].filter(Boolean).join(' · ')}</div>}
       <div className="doc-knoppen">
         {gewijzigd && <button type="button" className="btn primary" onClick={() => doe('put', `/offertes/${o.id}`, 'Offerte bewaard.', { body: f })}>Bewaren</button>}
         <button type="button" className="btn" disabled={gewijzigd} onClick={() => openPdf(`/offertes/${o.id}/pdf`)}><Icoon naam="lijst" maat={14} /> PDF</button>

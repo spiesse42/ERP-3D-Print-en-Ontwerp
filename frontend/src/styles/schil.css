@@ -10,6 +10,7 @@
   --muted:#6f6453; --accent:#e2601c; --accent-ink:#fff6ec; --accent-dim:#fbe4d2; --accent-deep:#a4430f;
   --pos:#3f7d4a; --pos-bg:#e4f2e6; --warn:#94600f; --warn-bg:#faedd6; --crit:#b3362a; --crit-bg:#fbe1dd; --info:#335f93; --info-bg:#e6eef7;
   --ontwerp:#7a3fb8; --ontwerp-bg:#f3ebfb;   /* 19-11: ontwerpdossiers (enkel digitaal ontwerp) */
+  --print:#1d7468; --print-bg:#e2f3f0;       /* 21-11: badge "print" */
   --grafiek:#2a6cc4;   /* staven in grafieken (stap 7), gevalideerd tegen --surface */
   --bar:#241a12; --bar-line:#3c2d1e; --bar-text:#e8dccb; --bar-dim:#b5a28b;
   --radius:3px; --radius-lg:5px;
@@ -25,6 +26,7 @@
     --muted:#b09f88; --accent:#f07a3a; --accent-ink:#1b120b; --accent-dim:#4a2a17; --accent-deep:#f39a66;
     --pos:#86c592; --pos-bg:#1e3224; --warn:#e3ab52; --warn-bg:#3a2b12; --crit:#f08a7c; --crit-bg:#3d1f1a; --info:#8fb4e3; --info-bg:#1b293a;
     --ontwerp:#c9a2ef; --ontwerp-bg:#2b1f3a;
+    --print:#7fd1c4; --print-bg:#173330;
     --grafiek:#5a95e3;
     --bar:#100b07; --bar-line:#2a2017; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
   }
@@ -390,6 +392,8 @@ table.list tr.row.ontwerp td { background:var(--ontwerp-bg); }
 table.list tr.row.ontwerp td:first-child { box-shadow:inset 4px 0 0 var(--ontwerp); }
 table.list tr.row.ontwerp:hover td { background:var(--accent-dim); }
 .b-ontwerp { background:var(--ontwerp-bg); color:var(--ontwerp); border:1px solid var(--ontwerp); }
+.b-print { background:var(--print-bg); color:var(--print); border:1px solid var(--print); }
+.badge.b-ontwerp + .badge.b-print { margin-left:4px; }
 .kkaart .l1 { display:flex; justify-content:space-between; gap:8px; }
 .kkaart .l1 b { overflow-wrap:anywhere; }
 /* factuur/bestelbon inlezen (25-09) */
@@ -631,6 +635,11 @@ label.keuze input { margin-top:3px; }
 .dossier-fotos .foto-erbij { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border-style:dashed; color:var(--muted); font-size:12.5px; cursor:pointer; }
 .dossier-fotos .foto-erbij:hover { border-color:var(--accent); color:var(--ink); }
 .dossier-fotos .foto-erbij.bezig { cursor:progress; }
+/* 21-11: prijs per aantal (offerte) */
+.staffel-tabel { width:100%; max-width:560px; border-collapse:collapse; margin:8px 0 4px; font-size:13.5px; }
+.staffel-tabel th { text-align:left; font-size:12px; color:var(--muted); font-weight:600; padding:4px 8px; border-bottom:1px solid var(--line); }
+.staffel-tabel td { padding:5px 8px; border-bottom:1px solid var(--line); }
+.staffel-tabel .r { text-align:right; }
 /* 17-11: foto's kiezen voor de pagina "Beelden" van een offerte */
 .offerte-fotos { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
 .offerte-fotos .ofoto { position:relative; width:88px; height:88px; padding:0; border-radius:var(--radius); border:2px solid var(--line); background:var(--surface); overflow:hidden; cursor:pointer; opacity:.6; }

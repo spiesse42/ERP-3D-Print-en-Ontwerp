@@ -406,13 +406,13 @@ export function leesDossiers(db, { archief = '0', klant_id = null } = {}) {
   return rijen.map(d => {
     const b = d.aantal_regels ? berekenDossier(db, leesRegelsVan(db, d.id), 'schatting', tarieven, d.filament_inkoop, d.soort, d.klant_id) : { totaal: 0, volledig: true };
     const offerte = laatsteVerstuurde(offertesVan(db, d.id));
-    const lv = d.soort === 'klant' ? leverStatusVan(db, d.id, d, { metDigitaal: true }) : { lever: null, digitaal: false };
+    const lv = d.soort === 'klant' ? leverStatusVan(db, d.id, d, { metDigitaal: true }) : { lever: null, digitaal: false, heeft_ontwerp: false, heeft_print: false };
     const lever = lv.lever;
     const prod = productieVan(db, d.id);
     // 23-10: voorraad (eigen) heeft geen verkoopprijs → het bedrag is de geschatte productiekost
     const voorraad = d.soort === 'eigen';
     const totaal = voorraad ? (b.productiekost ? Math.round(b.productiekost.kost * 100) / 100 : 0) : b.totaal;
-    return { ...d, fase: faseVan(d, { offerte, lever, prod }), lever_status: lever, prod_status: prod, digitaal: lv.digitaal, totaal, volledig: b.volledig, bedrag_soort: voorraad ? 'kost' : 'prijs' };
+    return { ...d, fase: faseVan(d, { offerte, lever, prod }), lever_status: lever, prod_status: prod, digitaal: lv.digitaal, heeft_ontwerp: lv.heeft_ontwerp, heeft_print: lv.heeft_print, totaal, volledig: b.volledig, bedrag_soort: voorraad ? 'kost' : 'prijs' };
   });
 }
 
