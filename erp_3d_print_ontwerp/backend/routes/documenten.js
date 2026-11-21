@@ -9,7 +9,7 @@ import { volgendNummer } from '../domein/nummering.js';
 import { leesDossier, leesRegelsVan, berekenDossier, datumOk, bewaarRegels, leesRegels } from '../domein/dossiers.js';
 import { offertesVan, nummerMetVersie, documentInhoud, eenRegelInhoud, printregelsInhoud, controleerFotos, offerteFotos, leesStaffelKeuze, geldigheidDagen, plusDagen, maakWerkbon, isErpBonnetje, isErpFactuur, betaaltermijn } from '../domein/documenten.js';
 import { getBedrijfsgegevens } from '../domein/hulp.js';
-import { berekenStaffel, leesAantallen, kanMeePerStuk } from '../domein/staffel.js';
+import { berekenStaffel, leesAantallen, kanMeePerStuk, leesPrijzen } from '../domein/staffel.js';
 import { factuurHtml, factuurBestand, peppolVerplicht } from '../documenten/factuur.js';
 import { maakBonnetje, maakFactuur, leesBonnummer, bonnummerVoorstel, zetAccountableNummer } from '../domein/afrekening.js';
 import { overzicht as nummerOverzicht } from '../domein/nummering.js';
@@ -100,7 +100,8 @@ r.post('/dossiers/:id/offertes', metFouten((req, res) => {
 r.post('/dossiers/:id/staffel', metFouten((req, res) => {
   const db = getDb();
   const d = dossier(db, idVan(req.params.id));
-  res.json(berekenStaffel(db, d, req.body?.regel_id, req.body?.aantallen, req.body?.extra));
+  const aantallen = leesAantallen(req.body?.aantallen);
+  res.json(berekenStaffel(db, d, req.body?.regel_id, aantallen, req.body?.extra, leesPrijzen(req.body?.prijzen, aantallen)));
 }));
 
 r.put('/offertes/:id', metFouten((req, res) => {
@@ -132,7 +133,8 @@ r.put('/offertes/:id', metFouten((req, res) => {
         const x = alle.find(y => y.id === id);
         if (!x || !kanMeePerStuk(db, x)) throw new DomeinFout('Enkel een artikel (bv. sleutelring) of een extra kost per stuk van dit dossier kan per stuk meetellen.');
       }
-      return { regel_id: regel.id, aantallen, ...(extra.length ? { extra } : {}) };
+      const prijzen = leesPrijzen(st.prijzen, aantallen);
+      return { regel_id: regel.id, aantallen, ...(extra.length ? { extra } : {}), ...(Object.keys(prijzen).length ? { prijzen } : {}) };
     });
     staffel = uit.length ? JSON.stringify(uit) : null;
   }
@@ -159,7 +161,7 @@ function versturen(db, o, d) {
   if (!d.klant_id) throw new DomeinFout('Kies eerst een klant voor dit dossier.');
   const geldig = o.geldig_tot || plusDagen(vandaag(), geldigheidDagen(db));
   if (geldig < vandaag()) throw new DomeinFout('"Geldig tot" ligt in het verleden. Pas de datum aan.');
-  const staffels = leesStaffelKeuze(o.staffel).map(k => berekenStaffel(db, d, k.regel_id, k.aantallen, k.extra));
+  const staffels = leesStaffelKeuze(o.staffel).map(k => berekenStaffel(db, d, k.regel_id, k.aantallen, k.extra, k.prijzen));
   const momentopname = { regels_api: leesRegelsVan(db, d.id), document: { ...documentInhoud(db, d, d.berekening), ...(staffels.length ? { staffels } : {}) } };
   db.prepare('UPDATE offertes SET verstuurd_op = ?, geldig_tot = ?, momentopname = ?, totaal = ? WHERE id = ?')
     .run(vandaag(), geldig, JSON.stringify(momentopname), d.berekening.totaal, o.id);
@@ -216,7 +218,7 @@ function offerteDocument(db, o, d, status) {
   const inhoud = o.een_regel ? printregelsInhoud(basis, o.een_regel) : basis;
   // 21-11: prijs per aantal — verstuurd: zoals vastgelegd; concept: live
   const staffels = verstuurd ? basis.staffels || (basis.staffel ? [basis.staffel] : [])
-    : leesStaffelKeuze(o.staffel).map(k => berekenStaffel(db, d, k.regel_id, k.aantallen, k.extra));
+    : leesStaffelKeuze(o.staffel).map(k => berekenStaffel(db, d, k.regel_id, k.aantallen, k.extra, k.prijzen));
   return documentHtml({
     soort: 'OFFERTE', nummer: nummerMetVersie(o), datum: o.verstuurd_op || vandaag(), concept: !verstuurd, inhoud, opmerking: o.opmerking,
     opmerkingTitel: 'Opmerkingen en voorwaarden', fotos: offerteFotos(db, d.id, o.fotos), staffels,

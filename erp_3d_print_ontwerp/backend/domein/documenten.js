@@ -150,7 +150,8 @@ export function leesStaffelKeuze(waarde) {
     const s = JSON.parse(waarde || 'null');
     return (Array.isArray(s) ? s : s ? [s] : [])
       .filter(x => x && Number.isInteger(x.regel_id) && Array.isArray(x.aantallen))
-      .map(x => ({ regel_id: x.regel_id, aantallen: x.aantallen, extra: Array.isArray(x.extra) ? x.extra.filter(Number.isInteger) : [] }));
+      .map(x => ({ regel_id: x.regel_id, aantallen: x.aantallen, extra: Array.isArray(x.extra) ? x.extra.filter(Number.isInteger) : [],
+        prijzen: x.prijzen && typeof x.prijzen === 'object' ? x.prijzen : {} }));
   } catch { return []; }
 }
 

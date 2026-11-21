@@ -9,7 +9,7 @@ import { DomeinFout } from './hulp.js';
 import { volgendNummer } from './nummering.js';
 import { boekUit, voorraadVan } from './voorraad.js';
 import { logGebeurtenis } from './historiek.js';
-import { boekOnderdelenUit } from './onderdelen.js';
+import { boekOnderdelenUit, boekRegelOnderdelenUit } from './onderdelen.js';
 
 const r3 = x => Math.round(x * 1000) / 1000;
 const STANDAARD = { printen: 'Printwerk' };
@@ -136,6 +136,12 @@ export function maakLevering(db, dossier, body) {
   const tekort = [];
   for (const r of regels) {
     const lrId = Number(ins.run(id, r.regel_id, r.aantal, r.omschrijving).lastInsertRowid);
+    // 21-11: onderdelen op de printregel zelf
+    const eigen = dossier.soort === 'klant' ? (dossier.regels || []).find(x => x.id === r.regel_id)?.onderdelen : null;
+    if (eigen?.length) {
+      tekort.push(...boekRegelOnderdelenUit(db, { lijst: eigen, aantal: r.aantal, regelId: lrId,
+        notitie: `Levering ${nummer} (dossier ${dossier.nummer}, onderdeel)` }));
+    }
     if (productVan.has(r.regel_id)) {
       tekort.push(...boekOnderdelenUit(db, { artikelId: productVan.get(r.regel_id), aantal: r.aantal, regelId: lrId, bronType: 'levering_regel',
         notitie: `Levering ${nummer} (dossier ${dossier.nummer}, onderdeel)` }));
