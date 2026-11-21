@@ -636,6 +636,9 @@ label.keuze input { margin-top:3px; }
 .dossier-fotos .foto-erbij:hover { border-color:var(--accent); color:var(--ink); }
 .dossier-fotos .foto-erbij.bezig { cursor:progress; }
 /* 21-11: prijs per aantal (offerte) */
+.staffel-blok { margin-top:8px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); }
+.staffel-aantal { display:grid; grid-template-columns:1fr auto; column-gap:6px; align-items:end; }
+.staffel-aantal label { grid-column:1 / -1; }
 .staffel-tabel { width:100%; max-width:560px; border-collapse:collapse; margin:8px 0 4px; font-size:13.5px; }
 .staffel-tabel th { text-align:left; font-size:12px; color:var(--muted); font-weight:600; padding:4px 8px; border-bottom:1px solid var(--line); }
 .staffel-tabel td { padding:5px 8px; border-bottom:1px solid var(--line); }
