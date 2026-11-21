@@ -64,7 +64,7 @@ test('S2. voorbeeld en bewaren op de offerte; per stuk daalt met het aantal', as
   o = (await vraag('POST', `/dossiers/${dos.id}/offertes`)).data.offertes[0];
   const r = await vraag('PUT', `/offertes/${o.id}`, { staffel: { regel_id: regel.id, aantallen: '50, 100, 200' } });
   assert.equal(r.status, 200, JSON.stringify(r.data));
-  assert.deepEqual(r.data.offertes[0].staffel, [{ regel_id: regel.id, aantallen: [50, 100, 200], extra: [] }], 'oude vorm (één object) wordt een lijst');
+  assert.deepEqual(r.data.offertes[0].staffel, [{ regel_id: regel.id, aantallen: [50, 100, 200], extra: [], prijzen: {} }], 'oude vorm (één object) wordt een lijst');
   assert.match((await vraag('PUT', `/offertes/${o.id}`, { staffel: { regel_id: regel.id, aantallen: '' } })).data.error, /minstens één aantal/);
   // andere velden aanpassen laat de staffel staan
   assert.deepEqual((await vraag('PUT', `/offertes/${o.id}`, { levertermijn: '2 weken' })).data.offertes[0].staffel[0].aantallen, [50, 100, 200]);
@@ -76,7 +76,7 @@ test('S3. versturen legt de prijzen vast; nieuwe versie neemt de keuze over', as
   const m = JSON.parse(getDb().prepare('SELECT momentopname FROM offertes WHERE id = ?').get(o.id).momentopname);
   assert.deepEqual(m.document.staffels[0].rijen, voor);
   const d = (await vraag('POST', `/dossiers/${dos.id}/offertes`)).data;
-  assert.deepEqual(d.offertes.find(x => x.versie === 2).staffel, [{ regel_id: regel.id, aantallen: [50, 100, 200], extra: [] }]);
+  assert.deepEqual(d.offertes.find(x => x.versie === 2).staffel, [{ regel_id: regel.id, aantallen: [50, 100, 200], extra: [], prijzen: {} }]);
   const uit = await vraag('PUT', `/offertes/${d.offertes.find(x => x.versie === 2).id}`, { staffel: null });
   assert.deepEqual(uit.data.offertes.find(x => x.versie === 2).staffel, []);
 });
@@ -136,4 +136,55 @@ test('S4. sjabloon: tabel "Prijs per aantal"', () => {
   assert.equal((twee.match(/Prijs per aantal \(indicatief\)/g) || []).length, 1, 'één kop');
   assert.match(html, /<td>50 stuks<\/td><td class="r">€ 1,20<\/td><td class="r">€ 60,00<\/td>/);
   assert.doesNotMatch(documentHtml({ soort: 'OFFERTE', nummer: 'O', datum: '2026-11-21', inhoud }), /Prijs per aantal/);
+});
+
+test('S5. eigen prijs per aantal gaat voor; vastgelegd bij versturen', async () => {
+  const p = getDb().prepare(`SELECT id FROM printers WHERE naam = 'Bambu Lab A1 Mini'`).get().id;
+  const pg = getDb().prepare('SELECT id FROM filament_types LIMIT 1').get().id;
+  const k = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'G', naam: 'H' })).data.id;
+  const d = (await vraag('POST', '/dossiers', { titel: 'Eigen prijs', klant_id: k, regels: [
+    { type: 'printen', omschrijving: 'Hanger', printer_id: p, aantal: 16, per_plaat: 16, tijd_min: 240, materialen: [{ filament_type_id: pg, gram: 80 }] }] })).data;
+  const rid = d.regels[0].id;
+  const v = (await vraag('POST', `/dossiers/${d.id}/staffel`, { regel_id: rid, aantallen: '48, 96', prijzen: { 48: '1,10', 96: '' } })).data;
+  assert.equal(v.rijen[0].per_stuk, 1.1);
+  assert.equal(v.rijen[0].eigen, true);
+  assert.equal(v.rijen[0].totaal, 52.8);
+  assert.ok(v.rijen[0].berekend > 0 && v.rijen[0].berekend !== 1.1);
+  assert.equal(v.rijen[1].eigen, false);
+  assert.equal(v.rijen[1].per_stuk, v.rijen[1].berekend);
+  assert.match((await vraag('POST', `/dossiers/${d.id}/staffel`, { regel_id: rid, aantallen: '48', prijzen: { 48: 'x' } })).data.error, /Eigen prijs bij 48/);
+  const o = (await vraag('POST', `/dossiers/${d.id}/offertes`)).data.offertes[0];
+  const r = await vraag('PUT', `/offertes/${o.id}`, { staffel: [{ regel_id: rid, aantallen: '48, 96', prijzen: { 48: 1.1, 192: 5 } }] });
+  assert.deepEqual(r.data.offertes[0].staffel[0].prijzen, { 48: 1.1 }, 'enkel prijzen van gekozen aantallen');
+  await vraag('POST', `/offertes/${o.id}/versturen`);
+  const m = JSON.parse(getDb().prepare('SELECT momentopname FROM offertes WHERE id = ?').get(o.id).momentopname);
+  assert.equal(m.document.staffels[0].rijen[0].per_stuk, 1.1);
+});
+
+test('S6. onderdelen per stuk op de printregel: in de regelprijs, in de staffel, uitgeboekt bij levering', async () => {
+  const db = getDb();
+  const p = db.prepare(`SELECT id FROM printers WHERE naam = 'Bambu Lab A1 Mini'`).get().id;
+  const pg = db.prepare('SELECT id FROM filament_types LIMIT 1').get().id;
+  const ring = (await vraag('POST', '/voorraad/artikelen', { type: 'artikel', naam: 'Ring 20 mm', verkoopprijs: 0.3, wordt_verkocht: true, wordt_gekocht: true })).data.id;
+  await vraag('POST', `/voorraad/artikelen/${ring}/boeking`, { richting: 'in', aantal: 100, prijs_per_eenheid: 0.08 });
+  const k = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'I', naam: 'J' })).data.id;
+  const regel = extra => ({ type: 'printen', omschrijving: 'Hanger', printer_id: p, aantal: 16, per_plaat: 16, tijd_min: 240, materialen: [{ filament_type_id: pg, gram: 80 }], ...extra });
+  const zonder = (await vraag('POST', '/dossiers', { titel: 'Zonder ring', klant_id: k, regels: [regel({})] })).data;
+  const d = (await vraag('POST', '/dossiers', { titel: 'Met ring', klant_id: k, regels: [regel({ onderdelen: [{ artikel_id: ring, aantal: 1 }] })] })).data;
+  assert.equal(d.regels.length, 1, 'geen aparte regel');
+  assert.deepEqual(d.regels[0].onderdelen, [{ artikel_id: ring, aantal: 1 }]);
+  assert.equal(zonder.regels[0].onderdelen, undefined, 'zonder onderdelen: veld weg (oude offertes blijven gelijk)');
+  // 16 ringen à € 0,30 (verkoopprijs) in de regelprijs
+  assert.ok(Math.abs(d.berekening.totaal - zonder.berekening.totaal - 4.8) < 0.02, `${d.berekening.totaal} - ${zonder.berekening.totaal}`);
+  const st = (await vraag('POST', `/dossiers/${d.id}/staffel`, { regel_id: d.regels[0].id, aantallen: '48' })).data.rijen[0];
+  const st0 = (await vraag('POST', `/dossiers/${zonder.id}/staffel`, { regel_id: zonder.regels[0].id, aantallen: '48' })).data.rijen[0];
+  assert.ok(Math.abs(st.per_stuk - st0.per_stuk - 0.3) < 0.015, 'ring zit per stuk in de staffel');
+  // ongeldige onderdelen
+  assert.match((await vraag('POST', '/dossiers', { titel: 'X', klant_id: k, regels: [regel({ onderdelen: [{ artikel_id: ring, aantal: 0 }] })] })).data.error, /groter dan 0/);
+  assert.match((await vraag('POST', '/dossiers', { titel: 'X', klant_id: k, regels: [regel({ onderdelen: [{ artikel_id: ring }, { artikel_id: ring }] })] })).data.error, /twee keer/);
+  // levering: 16 ringen uit voorraad
+  const lev = await vraag('POST', `/dossiers/${d.id}/leveringen`, { datum: new Date().toISOString().slice(0, 10), regels: [{ regel_id: d.regels[0].id, aantal: 16 }] });
+  assert.ok([200, 201].includes(lev.status), JSON.stringify(lev.data));
+  const art = (await vraag('GET', `/voorraad/artikelen/${ring}`)).data;
+  assert.equal(art.voorraad ?? art.op_voorraad ?? art.stock, 84, JSON.stringify(Object.keys(art)));
 });

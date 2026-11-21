@@ -14,7 +14,7 @@ export const TYPES = [['printen', 'Printen'], ['ontwerp', 'Ontwerp'], ['aanpassi
 let teller = 0;
 export const nieuweRegel = (type = 'printen') => ({
   sleutel: `r${++teller}`, type, omschrijving: '',
-  printer_id: '', tijd_u: '', tijd_m: '', aantal: '1', voorbereiding_min: '', nabewerking_min: '', materialen: [{ keuze: '', gram: '' }],
+  printer_id: '', tijd_u: '', tijd_m: '', aantal: '1', voorbereiding_min: '', nabewerking_min: '', materialen: [{ keuze: '', gram: '' }], onderdelen: [],
   minuten: '', tarief: '', artikel_id: '', bedrag: '', per_stuk: false, handmatig_bedrag: '', afbeelding: '',
   slicer_bijlage_id: null, slicer_plaat: null, slicer_bestandsnaam: '', per_plaat: '', korting: {},
 });
@@ -58,6 +58,8 @@ export function naarApi(r) {
     const maal = (v, f) => { const x = nr(v); return x === null || f === 1 ? x : r4(Number(x) * f); };
     return { ...basis, afbeelding: r.afbeelding || null, slicer_bijlage_id: r.slicer_bijlage_id || null, slicer_plaat: r.slicer_bijlage_id ? r.slicer_plaat || null : null, printer_id: r.printer_id || null, aantal: nr(r.aantal) ?? 1, tijd_min: r4((u * 60 + m) * n), artikel_id: r.artikel_id || null,
       per_stuk: !!r.per_stuk, per_plaat: nr(r.per_plaat), plaat_van: r.plaat_van || null,
+      // 21-11: onderdelen per stuk (sleutelring…), in de prijs van deze regel
+      onderdelen: (r.onderdelen || []).filter(o => o.artikel_id).map(o => ({ artikel_id: Number(o.artikel_id), aantal: nr(o.aantal) ?? 1 })),
       voorbereiding_min: maal(r.voorbereiding_min, pl), nabewerking_min: maal(r.nabewerking_min, nb),
       materialen: r.materialen.filter(x => x.keuze).map(x => {
         const [soort, id] = x.keuze.split(':');
@@ -116,7 +118,8 @@ export function vanApi(r) {
       voorbereiding_min: deel(r.voorbereiding_min, pl), nabewerking_min: deel(r.nabewerking_min, nb),
       materialen: (r.materialen || []).length
         ? r.materialen.map(x => ({ keuze: x.artikel_id ? `a:${x.artikel_id}` : `p:${x.filament_type_id}`, gram: deel(x.gram, n) }))
-        : [{ keuze: '', gram: '' }] });
+        : [{ keuze: '', gram: '' }],
+      onderdelen: (r.onderdelen || []).map(o => ({ artikel_id: String(o.artikel_id), aantal: alsInvoer(o.aantal ?? 1) })) });
   } else if (r.type === 'ontwerp' || r.type === 'aanpassing') {
     Object.assign(f, { minuten: alsInvoer(r.minuten), tarief: alsInvoer(r.tarief) });
   } else if (r.type === 'artikel') {
@@ -229,7 +232,7 @@ function Totaal({ r }) {
 // alleenKost (23-10): dossier "Voorraad" — geen verkoopprijs, korting of eindbedrag, enkel de productiekost.
 // productKeuze (24-10): enkel bij een klantdossier — het product van een
 // printregel; zijn onderdelen (sleutelring…) tellen mee in prijs en levering.
-export default function RegelEditor({ regels, onWijzig, uitkomst, printers, filamenten, prijsgroepen, artikelen, tarieven, herkomst, onArtikelGemaakt, alleenLezen = false, eindproducten = null, producten = null, alleenKost = false, productKeuze = null, onProfielBewaard = null }) {
+export default function RegelEditor({ regels, onWijzig, uitkomst, printers, filamenten, prijsgroepen, artikelen, tarieven, herkomst, onArtikelGemaakt, alleenLezen = false, eindproducten = null, producten = null, alleenKost = false, productKeuze = null, onProfielBewaard = null, onderdeelKeuze = null }) {
   const actueel = useRef(regels);
   actueel.current = regels;
   const { melding, bevestig } = useOmgeving();
@@ -325,6 +328,21 @@ export default function RegelEditor({ regels, onWijzig, uitkomst, printers, fila
                   ))}
                   <button type="button" className="linkish" onClick={() => zet(i, { materialen: [...r.materialen, { keuze: '', gram: '' }] })}>+ kleur (multicolor)</button>
                 </div>
+                {onderdeelKeuze && (
+                  <div className="materialen" title="Per geprint stuk, bv. 1 sleutelring per sleutelhanger: zit in de prijs van deze regel (geen aparte regel op de offerte) en gaat bij de levering uit voorraad">
+                    {(r.onderdelen || []).map((o, k) => (
+                      <div className="materiaal" key={k}>
+                        <select className="inp" aria-label={`Onderdeel ${k + 1}`} value={o.artikel_id} onChange={e => zet(i, { onderdelen: r.onderdelen.map((x, j) => (j === k ? { ...x, artikel_id: e.target.value } : x)) })}>
+                          <option value="">Onderdeel kiezen…</option>
+                          {onderdeelKeuze.map(a => <option key={a.id} value={a.id}>{a.weergave}</option>)}
+                        </select>
+                        <span className="unit"><input className="inp num" inputMode="decimal" aria-label={`Aantal per stuk van onderdeel ${k + 1}`} value={o.aantal} onChange={e => zet(i, { onderdelen: r.onderdelen.map((x, j) => (j === k ? { ...x, aantal: e.target.value } : x)) })} /><span>/stuk</span></span>
+                        <button type="button" className="btn ghost" aria-label={`Onderdeel ${k + 1} weghalen`} onClick={() => zet(i, { onderdelen: r.onderdelen.filter((_, j) => j !== k) })}><Icoon naam="kruis" maat={12} /></button>
+                      </div>
+                    ))}
+                    {!alleenLezen && <button type="button" className="linkish" onClick={() => zet(i, { onderdelen: [...(r.onderdelen || []), { artikel_id: '', aantal: '1' }] })}>+ onderdeel per stuk (bv. sleutelring)</button>}
+                  </div>
+                )}
                 {(r.per_stuk || platen(r) > 1) && <Totaal r={r} />}
                 {(r.slicer_bijlage_id || r.slicer_wacht) && (
                   <div className="regel-slicer sub">

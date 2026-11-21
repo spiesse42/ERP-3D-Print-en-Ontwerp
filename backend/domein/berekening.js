@@ -4,7 +4,7 @@
 import { getTarieven } from './hulp.js';
 import { bereken } from './rekenmotor.js';
 import { kostPerKg, telOpbouw } from '../productie/kost.js';
-import { leesOnderdelen } from './onderdelen.js';
+import { leesOnderdelen, regelOnderdelen } from './onderdelen.js';
 import { afsprakenVan } from './klantprijzen.js';
 
 // Voorbereide opdrachten per databank hergebruiken (29-09): de dossierlijst
@@ -66,7 +66,9 @@ export function verrijk(db, regels, { filamentInkoop = false, onderdelen = true,
         const ink = pg ? kostPerKg(db, m) : null;   // 08-10: voor "inkoop × opslag"
         return { ...m, naam: pg?.naam ?? m.naam ?? null, prijs_per_kg: pg ? pg.verkoopprijs_per_kg : null, inkoop_per_kg: ink == null ? null : Math.round(ink * 100) / 100 };
       });
-      const delen = onderdelen && r.artikel_id ? leesOnderdelen(db, r.artikel_id).map(o => ({ naam: o.naam, aantal: o.aantal, prijs: o.prijs })) : [];
+      const delen = onderdelen ? [...(r.artikel_id ? leesOnderdelen(db, r.artikel_id).map(o => ({ naam: o.naam, aantal: o.aantal, prijs: o.prijs })) : []),
+        // 21-11: onderdelen op de regel zelf (sleutelring…)
+        ...regelOnderdelen(db, r.onderdelen).map(o => ({ naam: o.naam, aantal: o.aantal, prijs: o.prijs }))] : [];
       return { ...r, printer, materialen, onderdelen: delen, ...metAfspraak(r), ...(onderdelen ? productPrijs(r) : {}) };
     }
     if (r?.type === 'artikel') {
