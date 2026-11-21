@@ -89,8 +89,8 @@ r.post('/dossiers/:id/offertes', metFouten((req, res) => {
     db.prepare('INSERT INTO offertes (dossier_id, nummer, versie, geldig_tot, levertermijn, opmerking, een_regel, fotos, staffel) VALUES (?,?,?,?,?,?,?,?,?)')
       .run(d.id, nummer, versie, plusDagen(vandaag(), geldigheidDagen(db)), vorige?.levertermijn ?? null, vorige?.opmerking ?? null,
         vorige?.een_regel ?? null, vorige?.fotos?.length ? JSON.stringify(vorige.fotos) : null,
-        vorige?.staffel && d.regels.some(x => x.id === vorige.staffel.regel_id)
-          ? JSON.stringify({ ...vorige.staffel, extra: (vorige.staffel.extra || []).filter(id => d.regels.some(x => x.id === id)) }) : null);
+        (st => (st.length ? JSON.stringify(st) : null))((vorige?.staffel || []).filter(x => d.regels.some(y => y.id === x.regel_id))
+          .map(x => ({ ...x, extra: (x.extra || []).filter(id => d.regels.some(y => y.id === id)) }))));
     log(db, d.id, `Offerte ${nummerMetVersie({ nummer, versie })} aangemaakt (concept)`);
   })();
   res.status(201).json(leesDossier(db, d.id));
@@ -113,24 +113,28 @@ r.put('/offertes/:id', metFouten((req, res) => {
   const eenRegel = req.body?.een_regel === undefined ? o.een_regel : tekst(req.body.een_regel);
   if (eenRegel && eenRegel.length > 200) throw new DomeinFout('De omschrijving voor de ene regel is te lang (maximum 200 tekens).');
   const fotos = req.body?.fotos === undefined ? o.fotos : (f => (f.length ? JSON.stringify(f) : null))(controleerFotos(db, d.id, req.body.fotos));
-  // 21-11: prijs per aantal: { regel_id, aantallen } of null (uit)
+  // 21-11: prijs per aantal: lijst [{ regel_id, aantallen, extra }] (leeg/null = uit), één per printregel
   let staffel = o.staffel;
   if (req.body?.staffel !== undefined) {
-    const st = req.body.staffel;
-    if (!st || !st.regel_id) staffel = null;
-    else {
-      const regel = d.regels.find(x => x.id === Number(st.regel_id));
+    const lijst = Array.isArray(req.body.staffel) ? req.body.staffel : req.body.staffel ? [req.body.staffel] : [];
+    if (lijst.length > 10) throw new DomeinFout('Maximum 10 printregels met een prijs per aantal.');
+    const alle = leesRegelsVan(db, d.id);
+    const gezien = new Set();
+    const uit = lijst.map(st => {
+      const regel = alle.find(x => x.id === Number(st?.regel_id));
       if (!regel || regel.type !== 'printen') throw new DomeinFout('Kies een printregel van dit dossier voor de prijs per aantal.');
+      if (gezien.has(regel.id)) throw new DomeinFout(`"${regel.omschrijving || 'Printwerk'}" staat al in de prijs per aantal.`);
+      gezien.add(regel.id);
       const aantallen = leesAantallen(st.aantallen);
-      if (!aantallen.length) throw new DomeinFout('Vul minstens één aantal in voor de prijs per aantal (bv. 50, 100, 200).');
-      const alle = leesRegelsVan(db, d.id);
+      if (!aantallen.length) throw new DomeinFout(`Vul minstens één aantal in voor "${regel.omschrijving || 'Printwerk'}" (bv. 48, 96, 192).`);
       const extra = [...new Set((Array.isArray(st.extra) ? st.extra : []).map(Number))];
       for (const id of extra) {
         const x = alle.find(y => y.id === id);
         if (!x || !kanMeePerStuk(db, x)) throw new DomeinFout('Enkel een artikel (bv. sleutelring) of een extra kost per stuk van dit dossier kan per stuk meetellen.');
       }
-      staffel = JSON.stringify({ regel_id: regel.id, aantallen, ...(extra.length ? { extra } : {}) });
-    }
+      return { regel_id: regel.id, aantallen, ...(extra.length ? { extra } : {}) };
+    });
+    staffel = uit.length ? JSON.stringify(uit) : null;
   }
   db.prepare('UPDATE offertes SET geldig_tot = ?, levertermijn = ?, opmerking = ?, een_regel = ?, fotos = ?, staffel = ? WHERE id = ?')
     .run(geldig, tekst(req.body?.levertermijn), tekst(req.body?.opmerking), eenRegel, fotos, staffel, o.id);
@@ -155,9 +159,8 @@ function versturen(db, o, d) {
   if (!d.klant_id) throw new DomeinFout('Kies eerst een klant voor dit dossier.');
   const geldig = o.geldig_tot || plusDagen(vandaag(), geldigheidDagen(db));
   if (geldig < vandaag()) throw new DomeinFout('"Geldig tot" ligt in het verleden. Pas de datum aan.');
-  const keuze = leesStaffelKeuze(o.staffel);
-  const staffel = keuze ? berekenStaffel(db, d, keuze.regel_id, keuze.aantallen, keuze.extra) : null;
-  const momentopname = { regels_api: leesRegelsVan(db, d.id), document: { ...documentInhoud(db, d, d.berekening), ...(staffel ? { staffel } : {}) } };
+  const staffels = leesStaffelKeuze(o.staffel).map(k => berekenStaffel(db, d, k.regel_id, k.aantallen, k.extra));
+  const momentopname = { regels_api: leesRegelsVan(db, d.id), document: { ...documentInhoud(db, d, d.berekening), ...(staffels.length ? { staffels } : {}) } };
   db.prepare('UPDATE offertes SET verstuurd_op = ?, geldig_tot = ?, momentopname = ?, totaal = ? WHERE id = ?')
     .run(vandaag(), geldig, JSON.stringify(momentopname), d.berekening.totaal, o.id);
   log(db, d.id, `Offerte ${nummerMetVersie(o)} verstuurd (${euro(d.berekening.totaal)}, geldig tot ${dmjDatum(geldig)})`);
@@ -212,11 +215,11 @@ function offerteDocument(db, o, d, status) {
   const basis = verstuurd ? JSON.parse(o.momentopname).document : documentInhoud(db, d, d.berekening);
   const inhoud = o.een_regel ? printregelsInhoud(basis, o.een_regel) : basis;
   // 21-11: prijs per aantal — verstuurd: zoals vastgelegd; concept: live
-  const keuze = leesStaffelKeuze(o.staffel);
-  const staffel = verstuurd ? basis.staffel || null : keuze ? berekenStaffel(db, d, keuze.regel_id, keuze.aantallen, keuze.extra) : null;
+  const staffels = verstuurd ? basis.staffels || (basis.staffel ? [basis.staffel] : [])
+    : leesStaffelKeuze(o.staffel).map(k => berekenStaffel(db, d, k.regel_id, k.aantallen, k.extra));
   return documentHtml({
     soort: 'OFFERTE', nummer: nummerMetVersie(o), datum: o.verstuurd_op || vandaag(), concept: !verstuurd, inhoud, opmerking: o.opmerking,
-    opmerkingTitel: 'Opmerkingen en voorwaarden', fotos: offerteFotos(db, d.id, o.fotos), staffel,
+    opmerkingTitel: 'Opmerkingen en voorwaarden', fotos: offerteFotos(db, d.id, o.fotos), staffels,
     info: [['Geldig tot', dmjDatum(o.geldig_tot || plusDagen(vandaag(), geldigheidDagen(db)))], ['Levertermijn', o.levertermijn],
       ...(status === 'vervangen' ? [['Status', 'vervangen door een nieuwere versie']] : [])],
   });

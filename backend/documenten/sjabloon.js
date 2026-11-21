@@ -27,7 +27,9 @@ export const VRIJSTELLING_FACTUUR = 'Bijzondere vrijstellingsregeling kleine ond
 export const LANDEN = { BE: 'België', NL: 'Nederland', FR: 'Frankrijk', DE: 'Duitsland', LU: 'Luxemburg', ES: 'Spanje', IT: 'Italië', AT: 'Oostenrijk',
   PT: 'Portugal', IE: 'Ierland', DK: 'Denemarken', SE: 'Zweden', FI: 'Finland', PL: 'Polen', CZ: 'Tsjechië', GB: 'Verenigd Koninkrijk', CH: 'Zwitserland', NO: 'Noorwegen', US: 'Verenigde Staten' };
 // review (27-10): { google, facebook, google_kort, facebook_kort, qr } → blok "laat een review achter" (pakbon, bonnetje)
-export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerking, concept = false, toonUren = false, btwKolom = false, factuur = null, review = null, opmerkingTitel = null, fotos = [], staffel = null }) {
+export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerking, concept = false, toonUren = false, btwKolom = false, factuur = null, review = null, opmerkingTitel = null, fotos = [], staffel = null, staffels = null }) {
+  // 21-11: prijs per aantal, één tabel per printregel
+  const tabellen = (staffels || (staffel ? [staffel] : [])).filter(x => x?.rijen?.length);
   const { bedrijf = {}, klant, dossier, regels, totaal, vast } = inhoud;
   const k = klant;
   const buitenland = k?.land && k.land !== 'BE' ? (LANDEN[k.land] || k.land) : null;
@@ -74,10 +76,14 @@ export function documentHtml({ soort, nummer, datum, info = [], inhoud, opmerkin
   .opmerking.neutraal{border-left-color:#16345a;background:#f5f7fa;color:#333}
   .opmerking.neutraal h3{margin:0 0 6px;font-size:.68rem;text-transform:uppercase;letter-spacing:1.5px;color:#16345a}
   .slot{break-inside:avoid;page-break-inside:avoid}
-  .staffel{margin-top:18px;break-inside:avoid;page-break-inside:avoid}
-  .staffel h3{margin:0 0 2px;font-size:.68rem;text-transform:uppercase;letter-spacing:1.5px;color:#16345a}
-  .staffel table{margin:8px 0 4px}
-  .staffel td,.staffel th{padding:7px 12px}
+  .staffel-kop{margin-top:18px;break-after:avoid;page-break-after:avoid}
+  .staffel-kop h3{margin:0;font-size:.68rem;text-transform:uppercase;letter-spacing:1.5px;color:#16345a}
+  .staffel{margin-top:8px;break-inside:avoid;page-break-inside:avoid}
+  .staffels.twee{display:grid;grid-template-columns:1fr 1fr;column-gap:18px}
+  .staffel-naam{font-weight:600;font-size:.9rem}
+  .staffel-noot{margin-top:4px}
+  .staffel table{margin:4px 0 2px}
+  .staffel td,.staffel th{padding:5px 10px}
   .beelden{break-before:page;page-break-before:always;padding-top:40px}
   .beelden h2{margin:0 0 16px;font-size:.8rem;text-transform:uppercase;letter-spacing:1.5px;color:#16345a;border-bottom:3px solid #16345a;padding-bottom:10px}
   .beelden-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -137,16 +143,16 @@ ${factuur ? `<div class="btw-regel">${esc(factuur.tekst || VRIJSTELLING_FACTUUR)
   </div>
   ${factuur.qr ? `<div class="qr">${factuur.qr}<div class="sub">Betaal met je bank-app</div></div>` : ''}
 </div>` : ''}
-${staffel?.rijen?.length ? `<div class="staffel">
-  <h3>Prijs per aantal (indicatief)</h3>
-  <div class="sub">${esc(staffel.omschrijving)}${staffel.extra?.length ? `, inclusief ${esc(staffel.extra.join(', '))}` : ''}</div>
+${tabellen.length ? `<div class="staffel-kop"><h3>Prijs per aantal (indicatief)</h3></div>
+<div class="staffels${tabellen.length > 1 ? ' twee' : ''}">${tabellen.map(st => `<div class="staffel">
+  <div class="staffel-naam">${esc(st.omschrijving)}${st.extra?.length ? `<span class="sub">, inclusief ${esc(st.extra.join(', '))}</span>` : ''}</div>
   <table>
-    <thead><tr><th>Aantal</th><th class="r">Prijs per stuk</th><th class="r">Totaal</th></tr></thead>
-    <tbody>${staffel.rijen.map(x => `<tr><td>${getal(x.aantal)} stuks</td><td class="r">${euro(x.per_stuk)}</td><td class="r">${euro(x.totaal)}</td></tr>`).join('')}</tbody>
+    <thead><tr><th>Aantal</th><th class="r">Per stuk</th><th class="r">Totaal</th></tr></thead>
+    <tbody>${st.rijen.map(x => `<tr><td>${getal(x.aantal)} stuks</td><td class="r">${euro(x.per_stuk)}</td><td class="r">${euro(x.totaal)}</td></tr>`).join('')}</tbody>
   </table>
-  <div class="sub">Indicatieve prijzen bij het vermelde aantal. Eenmalige kosten (bv. ontwerp) en verzending zijn niet inbegrepen. De definitieve prijs volgt het gekozen aantal.</div>
-</div>` : ''}
+</div>`).join('')}</div>` : ''}
 <div class="slot">
+${tabellen.length ? '<div class="sub staffel-noot">Prijs per aantal: indicatieve prijzen bij het vermelde aantal. Eenmalige kosten (bv. ontwerp) en verzending zijn niet inbegrepen. De definitieve prijs volgt het gekozen aantal.</div>' : ''}
 ${opmerking ? (opmerkingTitel ? `<div class="opmerking neutraal"><h3>${esc(opmerkingTitel)}</h3>${nl(opmerking)}</div>` : `<div class="opmerking">${nl(opmerking)}</div>`) : ''}
 ${review ? `<div class="review">${review.qr}<div><strong>Tevreden over je bestelling?</strong> Laat een review achter${review.google ? ' op Google' : ''}: het helpt ons enorm. Scan de code${review.google_kort ? ` of ga naar ${esc(review.google_kort)}` : review.facebook_kort ? ` of ga naar ${esc(review.facebook_kort)}` : ''}.${review.google && review.facebook_kort ? `<div class="sub">Of op Facebook: ${esc(review.facebook_kort)}</div>` : ''} <div class="sub">Bedankt!</div></div></div>` : ''}
 <div class="footer">

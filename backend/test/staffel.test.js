@@ -64,21 +64,21 @@ test('S2. voorbeeld en bewaren op de offerte; per stuk daalt met het aantal', as
   o = (await vraag('POST', `/dossiers/${dos.id}/offertes`)).data.offertes[0];
   const r = await vraag('PUT', `/offertes/${o.id}`, { staffel: { regel_id: regel.id, aantallen: '50, 100, 200' } });
   assert.equal(r.status, 200, JSON.stringify(r.data));
-  assert.deepEqual(r.data.offertes[0].staffel, { regel_id: regel.id, aantallen: [50, 100, 200], extra: [] });
+  assert.deepEqual(r.data.offertes[0].staffel, [{ regel_id: regel.id, aantallen: [50, 100, 200], extra: [] }], 'oude vorm (één object) wordt een lijst');
   assert.match((await vraag('PUT', `/offertes/${o.id}`, { staffel: { regel_id: regel.id, aantallen: '' } })).data.error, /minstens één aantal/);
   // andere velden aanpassen laat de staffel staan
-  assert.deepEqual((await vraag('PUT', `/offertes/${o.id}`, { levertermijn: '2 weken' })).data.offertes[0].staffel.aantallen, [50, 100, 200]);
+  assert.deepEqual((await vraag('PUT', `/offertes/${o.id}`, { levertermijn: '2 weken' })).data.offertes[0].staffel[0].aantallen, [50, 100, 200]);
 });
 
 test('S3. versturen legt de prijzen vast; nieuwe versie neemt de keuze over', async () => {
   const voor = (await vraag('POST', `/dossiers/${dos.id}/staffel`, { regel_id: regel.id, aantallen: '50, 100, 200' })).data.rijen;
   assert.equal((await vraag('POST', `/offertes/${o.id}/versturen`)).status, 200);
   const m = JSON.parse(getDb().prepare('SELECT momentopname FROM offertes WHERE id = ?').get(o.id).momentopname);
-  assert.deepEqual(m.document.staffel.rijen, voor);
+  assert.deepEqual(m.document.staffels[0].rijen, voor);
   const d = (await vraag('POST', `/dossiers/${dos.id}/offertes`)).data;
-  assert.deepEqual(d.offertes.find(x => x.versie === 2).staffel, { regel_id: regel.id, aantallen: [50, 100, 200], extra: [] });
+  assert.deepEqual(d.offertes.find(x => x.versie === 2).staffel, [{ regel_id: regel.id, aantallen: [50, 100, 200], extra: [] }]);
   const uit = await vraag('PUT', `/offertes/${d.offertes.find(x => x.versie === 2).id}`, { staffel: null });
-  assert.equal(uit.data.offertes.find(x => x.versie === 2).staffel, null);
+  assert.deepEqual(uit.data.offertes.find(x => x.versie === 2).staffel, []);
 });
 
 test('S3b. sleutelring per stuk mee: 1 per stuk, wat het aantal op de regel ook is; verzending (vaste prijs) niet', async () => {
@@ -103,8 +103,25 @@ test('S3b. sleutelring per stuk mee: 1 per stuk, wat het aantal op de regel ook 
   assert.match((await vraag('POST', `/dossiers/${d2.id}/staffel`, { regel_id: pr.id, aantallen: '48', extra: [vz.id] })).data.error, /per stuk meetellen/);
   const o2 = (await vraag('POST', `/dossiers/${d2.id}/offertes`)).data.offertes[0];
   const r = await vraag('PUT', `/offertes/${o2.id}`, { staffel: { regel_id: pr.id, aantallen: '48, 96', extra: [rg.id] } });
-  assert.deepEqual(r.data.offertes[0].staffel.extra, [rg.id]);
+  assert.deepEqual(r.data.offertes[0].staffel[0].extra, [rg.id]);
   assert.match((await vraag('PUT', `/offertes/${o2.id}`, { staffel: { regel_id: pr.id, aantallen: '48', extra: [vz.id] } })).data.error, /per stuk meetellen/);
+});
+
+test('S3c. meerdere printregels, elk met eigen aantallen; dubbel geweigerd', async () => {
+  const p = getDb().prepare(`SELECT id FROM printers WHERE naam = 'Bambu Lab A1 Mini'`).get().id;
+  const pg = getDb().prepare('SELECT id FROM filament_types LIMIT 1').get().id;
+  const k = (await vraag('POST', '/klanten', { type: 'particulier', voornaam: 'E', naam: 'F' })).data.id;
+  const deel = (n, pp) => ({ type: 'printen', omschrijving: n, printer_id: p, aantal: pp, per_plaat: pp, tijd_min: 200, materialen: [{ filament_type_id: pg, gram: 60 }] });
+  const d3 = (await vraag('POST', '/dossiers', { titel: 'Drie modellen', klant_id: k, regels: [deel('Meiske', 16), deel('Ventje', 12), deel('Hartje', 20)] })).data;
+  const [a, b, c] = d3.regels;
+  const o3 = (await vraag('POST', `/dossiers/${d3.id}/offertes`)).data.offertes[0];
+  const r = await vraag('PUT', `/offertes/${o3.id}`, { staffel: [{ regel_id: a.id, aantallen: '48, 96' }, { regel_id: b.id, aantallen: [36, 72] }, { regel_id: c.id, aantallen: '40' }] });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.deepEqual(r.data.offertes[0].staffel.map(x => x.aantallen), [[48, 96], [36, 72], [40]]);
+  assert.match((await vraag('PUT', `/offertes/${o3.id}`, { staffel: [{ regel_id: a.id, aantallen: '48' }, { regel_id: a.id, aantallen: '96' }] })).data.error, /staat al/);
+  assert.equal((await vraag('POST', `/offertes/${o3.id}/versturen`)).status, 200);
+  const m = JSON.parse(getDb().prepare('SELECT momentopname FROM offertes WHERE id = ?').get(o3.id).momentopname);
+  assert.deepEqual(m.document.staffels.map(x => [x.omschrijving, x.rijen.map(y => y.platen)]), [['Meiske', [3, 6]], ['Ventje', [3, 6]], ['Hartje', [2]]]);
 });
 
 test('S4. sjabloon: tabel "Prijs per aantal"', () => {
@@ -112,7 +129,11 @@ test('S4. sjabloon: tabel "Prijs per aantal"', () => {
   const html = documentHtml({ soort: 'OFFERTE', nummer: 'O', datum: '2026-11-21', inhoud,
     staffel: { omschrijving: 'Sleutelhanger <rood>', extra: ['Sleutelring'], rijen: [{ aantal: 50, per_stuk: 1.2, totaal: 60 }, { aantal: 100, per_stuk: 0.95, totaal: 95 }] } });
   assert.match(html, /Prijs per aantal \(indicatief\)/);
-  assert.match(html, /Sleutelhanger &lt;rood&gt;, inclusief Sleutelring/);
+  assert.match(html, /Sleutelhanger &lt;rood&gt;<span class="sub">, inclusief Sleutelring/);
+  const twee = documentHtml({ soort: 'OFFERTE', nummer: 'O', datum: '2026-11-21', inhoud, staffels: [
+    { omschrijving: 'Meiske', rijen: [{ aantal: 48, per_stuk: 1, totaal: 48 }] }, { omschrijving: 'Ventje', rijen: [{ aantal: 36, per_stuk: 1.1, totaal: 39.6 }] }] });
+  assert.equal((twee.match(/class="staffel"/g) || []).length, 2);
+  assert.equal((twee.match(/Prijs per aantal \(indicatief\)/g) || []).length, 1, 'één kop');
   assert.match(html, /<td>50 stuks<\/td><td class="r">€ 1,20<\/td><td class="r">€ 60,00<\/td>/);
   assert.doesNotMatch(documentHtml({ soort: 'OFFERTE', nummer: 'O', datum: '2026-11-21', inhoud }), /Prijs per aantal/);
 });
