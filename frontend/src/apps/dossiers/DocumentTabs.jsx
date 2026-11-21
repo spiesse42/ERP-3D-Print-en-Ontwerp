@@ -27,7 +27,8 @@ function useActies({ vuil, herlaad }) {
 // 17-11: foto-bijlagen die op de pagina "Beelden" van de offerte kunnen
 const OFFERTE_FOTO = /^image\/(png|jpe?g|webp)$/;
 const vanOfferte = o => ({ geldig_tot: o.geldig_tot || '', levertermijn: o.levertermijn || '', opmerking: o.opmerking || '', een_regel: o.een_regel || '', fotos: o.fotos || [],
-  staffel: (o.staffel || []).map(x => ({ regel_id: x.regel_id, aantallen: x.aantallen.join(', '), extra: x.extra || [] })) });
+  staffel: (o.staffel || []).map(x => ({ regel_id: x.regel_id, aantallen: x.aantallen.join(', '), extra: x.extra || [],
+    prijzen: Object.fromEntries(Object.entries(x.prijzen || {}).map(([k, v]) => [k, String(v).replace('.', ',')])) })) });
 const zelfde = (a, b) => a.geldig_tot === b.geldig_tot && a.levertermijn === b.levertermijn && a.opmerking === b.opmerking && a.een_regel === b.een_regel
   && a.fotos.length === b.fotos.length && a.fotos.every((x, i) => x === b.fotos[i]) && JSON.stringify(a.staffel) === JSON.stringify(b.staffel);
 
@@ -37,11 +38,11 @@ const zelfde = (a, b) => a.geldig_tot === b.geldig_tot && a.levertermijn === b.l
 function StaffelBlok({ d, st, i, print, perStuk, naamVan, zet, weg }) {
   const [voorbeeld, setVoorbeeld] = useState(null);
   const [fout, setFout] = useState(null);
-  const sleutel = `${st.regel_id}|${st.aantallen}|${(st.extra || []).join(',')}`;
+  const sleutel = `${st.regel_id}|${st.aantallen}|${(st.extra || []).join(',')}|${JSON.stringify(st.prijzen || {})}`;
   useEffect(() => {
     if (!st.regel_id || !String(st.aantallen).trim()) { setVoorbeeld(null); setFout(null); return undefined; }
     const t = setTimeout(async () => {
-      try { setVoorbeeld(await api.post(`/dossiers/${d.id}/staffel`, { regel_id: st.regel_id, aantallen: st.aantallen, extra: st.extra || [] })); setFout(null); }
+      try { setVoorbeeld(await api.post(`/dossiers/${d.id}/staffel`, { regel_id: st.regel_id, aantallen: st.aantallen, extra: st.extra || [], prijzen: st.prijzen || {} })); setFout(null); }
       catch (e) { setVoorbeeld(null); setFout(e.message); }
     }, 350);
     return () => clearTimeout(t);
@@ -67,8 +68,17 @@ function StaffelBlok({ d, st, i, print, perStuk, naamVan, zet, weg }) {
       {fout && <div className="note fout" style={{ marginTop: 6 }}>{fout}</div>}
       {voorbeeld && (
         <table className="staffel-tabel">
-          <thead><tr><th>Aantal</th><th className="r">Platen</th><th className="r">Prijs per stuk</th><th className="r">Totaal</th></tr></thead>
-          <tbody>{voorbeeld.rijen.map(x => <tr key={x.aantal}><td>{x.aantal} stuks</td><td className="r num">{x.platen ?? '—'}</td><td className="r num"><b>{euro(x.per_stuk)}</b></td><td className="r num">{euro(x.totaal)}</td></tr>)}</tbody>
+          <thead><tr><th>Aantal</th><th className="r">Platen</th><th className="r">Berekend / stuk</th><th className="r">Eigen prijs / stuk</th><th className="r">Totaal</th></tr></thead>
+          <tbody>{voorbeeld.rijen.map(x => (
+            <tr key={x.aantal}>
+              <td>{x.aantal} stuks</td>
+              <td className="r num">{x.platen ?? '—'}</td>
+              <td className={`r num${x.eigen ? ' sub' : ''}`}>{x.eigen ? <s>{euro(x.berekend)}</s> : <b>{euro(x.berekend)}</b>}</td>
+              <td className="r"><input className="inp num staffel-eigen" inputMode="decimal" aria-label={`Eigen prijs per stuk bij ${x.aantal} stuks`}
+                placeholder={euro(x.berekend).replace('€', '').trim()} value={st.prijzen?.[x.aantal] ?? ''}
+                onChange={e => zet({ prijzen: { ...(st.prijzen || {}), [x.aantal]: e.target.value } })} /></td>
+              <td className="r num">{x.eigen ? <b>{euro(x.totaal)}</b> : euro(x.totaal)}</td>
+            </tr>))}</tbody>
         </table>
       )}
     </div>
@@ -102,7 +112,7 @@ function StaffelKeuze({ d, f, setF }) {
       ))}
       {lijst.length > 0 && <>
         {lijst.length < print.length && <button type="button" className="btn ghost" style={{ marginTop: 6 }} onClick={erbij}><Icoon naam="plus" maat={14} /> Printregel toevoegen</button>}
-        <div className="sub" style={{ marginTop: 4 }}>Elke gekozen printregel krijgt een eigen tabel, herrekend per aantal (printtijd, filament en platen). Het totaal van de offerte verandert niet; eenmalige kosten zoals ontwerp tellen niet mee.</div>
+        <div className="sub" style={{ marginTop: 4 }}>Elke gekozen printregel krijgt een eigen tabel, herrekend per aantal (printtijd, filament, platen en onderdelen zoals een sleutelring). Een eigen prijs per stuk gaat voor op de berekende; leeg = berekend. Het totaal van de offerte verandert niet; eenmalige kosten zoals ontwerp tellen niet mee.</div>
       </>}
     </div>
   );

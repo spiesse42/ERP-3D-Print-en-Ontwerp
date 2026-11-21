@@ -56,7 +56,19 @@ export function kanMeePerStuk(db, r) {
 // → { regel_id, omschrijving, extra: [namen], rijen: [{ aantal, per_stuk, totaal, platen }] }
 // per_stuk naar boven afgerond op de cent; totaal = per_stuk × aantal (zo
 // kan de klant het zelf narekenen).
-export function berekenStaffel(db, d, regelId, aantallen, extraIds = []) {
+// 21-11: eigen prijs per stuk per aantal ({ "48": 0.95 }) — gaat voor op de berekening
+export function leesPrijzen(waarde, aantallen) {
+  const uit = {};
+  for (const [k, v] of Object.entries(waarde && typeof waarde === 'object' ? waarde : {})) {
+    if (v === null || v === undefined || String(v).trim() === '') continue;
+    const n = Number(String(v).replace(',', '.'));
+    if (!Number.isFinite(n) || n < 0) throw new DomeinFout(`Eigen prijs bij ${k} stuks: vul een bedrag in (bv. 0,95).`);
+    if (aantallen.includes(Number(k))) uit[Number(k)] = Math.round(n * 100) / 100;
+  }
+  return uit;
+}
+
+export function berekenStaffel(db, d, regelId, aantallen, extraIds = [], prijzen = {}) {
   const regels = leesRegelsVan(db, d.id);
   const r = regels.find(x => x.id === Number(regelId));
   if (!r || r.type !== 'printen') throw new DomeinFout('Kies een printregel van dit dossier voor de prijs per aantal.');
@@ -74,8 +86,10 @@ export function berekenStaffel(db, d, regelId, aantallen, extraIds = []) {
       const f = (b.regels || []).map(x => x._berekend?.fout).find(Boolean);
       throw new DomeinFout(`De prijs per aantal kan niet berekend worden: ${b.fout || f || 'vul eerst printer, tijd en filament in'}.`);
     }
-    const per_stuk = Math.ceil(r4(b.totaal / aantal) * 100) / 100;
-    return { aantal, per_stuk, totaal: Math.round(per_stuk * aantal * 100) / 100, platen: rb?.detail?.platen ?? null };
+    const berekend = Math.ceil(r4(b.totaal / aantal) * 100) / 100;
+    const eigen = prijzen?.[aantal] ?? prijzen?.[String(aantal)];
+    const per_stuk = eigen != null ? Number(eigen) : berekend;
+    return { aantal, per_stuk, berekend, eigen: eigen != null, totaal: Math.round(per_stuk * aantal * 100) / 100, platen: rb?.detail?.platen ?? null };
   });
   return { regel_id: r.id, omschrijving: r.omschrijving || 'Printwerk', extra: extra.map(naamVan), rijen };
 }

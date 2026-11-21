@@ -59,3 +59,27 @@ export function boekOnderdelenUit(db, { artikelId, aantal, regelId, notitie, bro
   }
   return tekort;
 }
+
+// 21-11: onderdelen per stuk op een printregel zelf (sleutelring…). Prijs:
+// de verkoopprijs als het artikel verkocht wordt, anders de laatste
+// inkoopprijs (zoals bij de onderdelen van een product).
+export function regelOnderdelen(db, lijst) {
+  return (Array.isArray(lijst) ? lijst : []).map(o => {
+    const a = db.prepare(NAAM).get(o.artikel_id);
+    const ink = db.prepare(`SELECT prijs_per_eenheid p FROM voorraad_partijen WHERE artikel_id = ? AND prijs_per_eenheid IS NOT NULL ORDER BY ontvangen_op DESC, id DESC LIMIT 1`).get(o.artikel_id)?.p ?? a?.inkoopprijs ?? null;
+    const prijs = a?.wordt_verkocht && Number(a.verkoopprijs) > 0 ? Number(a.verkoopprijs) : ink;
+    return { artikel_id: o.artikel_id, naam: a ? weergaveNaam(a) : '?', aantal: Number(o.aantal) || 1, prijs };
+  });
+}
+// Bij een levering: onderdelen van de printregel eraf (tekorten = tekst).
+export function boekRegelOnderdelenUit(db, { lijst, aantal, regelId, notitie, bronType = 'levering_regel' }) {
+  const tekort = [];
+  for (const o of Array.isArray(lijst) ? lijst : []) {
+    const nodig = Math.round((Number(o.aantal) || 1) * aantal * 1000) / 1000;
+    const er = voorraadVan(db, o.artikel_id);
+    const neem = Math.min(nodig, er);
+    if (neem > 1e-9) boekUit(db, { artikelId: o.artikel_id, aantal: neem, reden: 'levering', bronType, bronId: regelId, notitie });
+    if (nodig - neem > 1e-9) tekort.push(`${weergaveNaam(db.prepare(NAAM).get(o.artikel_id))} (${String(Math.round((nodig - neem) * 1000) / 1000).replace('.', ',')} te weinig in voorraad)`);
+  }
+  return tekort;
+}

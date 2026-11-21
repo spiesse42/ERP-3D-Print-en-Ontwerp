@@ -84,7 +84,7 @@ export function leesRegels(lijst) {
     if (!REGELTYPES.includes(r?.type)) throw new DomeinFout(`${nr}: onbekend soort regel`);
     const leeg = { aantal: null, printer_id: null, tijd_min: null, voorbereiding_min: null, nabewerking_min: null,
       minuten: null, tarief: null, artikel_id: null, bedrag: null, per_stuk: 0, materialen: [], afbeelding: null,
-      slicer_bijlage_id: null, slicer_plaat: null, per_plaat: null, plaat_van: null };
+      slicer_bijlage_id: null, slicer_plaat: null, per_plaat: null, plaat_van: null, onderdelen: null };
     const korting = leesKorting(r.korting, r.type, nr);
     const basis = { ...leeg, id: Number.isInteger(r.id) ? r.id : null, type: r.type, omschrijving: tekst(r.omschrijving),
       handmatig_bedrag: r.type === 'korting' ? null : nietNegatief(r.handmatig_bedrag, `${nr}: eindbedrag`),
@@ -107,6 +107,14 @@ export function leesRegels(lijst) {
         tijd_min: nietNegatief(r.tijd_min, `${nr}: printtijd`) ?? 0,
         voorbereiding_min: nietNegatief(r.voorbereiding_min, `${nr}: voorbereiding`),
         nabewerking_min: nietNegatief(r.nabewerking_min, `${nr}: nabewerking`),
+        // 21-11: onderdelen per stuk (sleutelring…), zitten in de prijs van deze regel
+        onderdelen: (lijst => (lijst.length ? JSON.stringify(lijst) : null))((Array.isArray(r.onderdelen) ? r.onderdelen : []).map(o => {
+          const a = id(o?.artikel_id, 'onderdeel');
+          if (!a) throw new DomeinFout(`${nr}: kies per onderdeel een artikel`);
+          const n = nietNegatief(o.aantal, `${nr}: aantal per stuk van een onderdeel`) ?? 1;
+          if (!(n > 0)) throw new DomeinFout(`${nr}: het aantal per stuk van een onderdeel moet groter dan 0 zijn`);
+          return { artikel_id: a, aantal: n };
+        })),
         materialen: (Array.isArray(r.materialen) ? r.materialen : []).map(m => {
           const a = id(m?.artikel_id, 'filament'), f = id(m?.filament_type_id, 'prijsgroep');
           if (!a === !f) throw new DomeinFout(`${nr}: kies per kleur een filament of een prijsgroep`);
@@ -125,7 +133,7 @@ export function leesRegels(lijst) {
 // ── regels bewaren: bestaande id's behouden (leveringen/printopdrachten
 // verwijzen er later naar), nieuwe toevoegen, weggelaten regels schrappen.
 const KOL = ['type', 'omschrijving', 'aantal', 'printer_id', 'tijd_min', 'voorbereiding_min', 'nabewerking_min',
-  'minuten', 'tarief', 'artikel_id', 'bedrag', 'per_stuk', 'handmatig_bedrag', 'afbeelding', 'slicer_bijlage_id', 'slicer_plaat', 'per_plaat', 'korting', 'plaat_van'];
+  'minuten', 'tarief', 'artikel_id', 'bedrag', 'per_stuk', 'handmatig_bedrag', 'afbeelding', 'slicer_bijlage_id', 'slicer_plaat', 'per_plaat', 'korting', 'plaat_van', 'onderdelen'];
 export function bewaarRegels(db, dossierId, regels) {
   const soort = db.prepare('SELECT soort FROM dossiers WHERE id = ?').get(dossierId)?.soort;
   for (const [i, r] of regels.entries()) {
@@ -137,6 +145,17 @@ export function bewaarRegels(db, dossierId, regels) {
     if (!a || a.type !== 'artikel' || !a.zelf_geprint) {
       if (soort === 'klant') { r.artikel_id = null; continue; }
       throw new DomeinFout(`Regel ${i + 1}: kies als eindproduct een artikel dat we zelf printen`);
+    }
+  }
+  // 21-11: onderdelen per stuk: enkel artikels uit de voorraad (geen filament), elk één keer
+  for (const [i, r] of regels.entries()) {
+    const lijst = r.type === 'printen' && r.onderdelen ? JSON.parse(r.onderdelen) : [];
+    const gezien = new Set();
+    for (const o of lijst) {
+      const a = db.prepare('SELECT type FROM artikelen WHERE id = ?').get(o.artikel_id);
+      if (!a || a.type !== 'artikel') throw new DomeinFout(`Regel ${i + 1}: een onderdeel moet een artikel uit de voorraad zijn (bv. sleutelring)`);
+      if (gezien.has(o.artikel_id)) throw new DomeinFout(`Regel ${i + 1}: een onderdeel staat er twee keer in`);
+      gezien.add(o.artikel_id);
     }
   }
   // slicerbestand: enkel een (nog bestaande) bijlage van DIT dossier; anders
@@ -157,9 +176,9 @@ export function bewaarRegels(db, dossierId, regels) {
   regels.forEach((r, i) => {
     let rid;
     if (r.id && bestaand.has(r.id) && !behouden.has(r.id)) {
-      upd.run(i, ...KOL.map(k => r[k]), r.id); rid = r.id; wisMat.run(rid);
+      upd.run(i, ...KOL.map(k => r[k] ?? null), r.id); rid = r.id; wisMat.run(rid);
     } else {
-      rid = Number(ins.run(dossierId, i, ...KOL.map(k => r[k])).lastInsertRowid);
+      rid = Number(ins.run(dossierId, i, ...KOL.map(k => r[k] ?? null)).lastInsertRowid);
     }
     behouden.add(rid);
     r.materialen.forEach((m, k) => insMat.run(rid, k, m.artikel_id, m.filament_type_id, m.gram));
@@ -177,7 +196,9 @@ export function leesRegelsVan(db, dossierId) {
     (SELECT b.bestandsnaam FROM bijlagen b WHERE b.id = dossier_regels.slicer_bijlage_id) AS slicer_bestandsnaam
     FROM dossier_regels WHERE dossier_id = ? ORDER BY volgorde, id`).all(dossierId);
   const mat = db.prepare('SELECT artikel_id, filament_type_id, gram FROM dossier_regel_materialen WHERE regel_id = ? ORDER BY volgorde, id');
-  return regels.map(({ werkelijk_uren, werkelijk_kwh, ...r }) => ({ ...r, per_stuk: !!r.per_stuk, korting: leesJson(r.korting),
+  // onderdelen enkel als er zijn (anders verschillen regels van oude offertes)
+  return regels.map(({ werkelijk_uren, werkelijk_kwh, onderdelen, ...r }) => ({ ...r, per_stuk: !!r.per_stuk, korting: leesJson(r.korting),
+    ...(leesJson(onderdelen)?.length ? { onderdelen: leesJson(onderdelen) } : {}),
     ...(r.type === 'printen' ? { werkelijk: { uren: werkelijk_uren, kwh: werkelijk_kwh } } : {}),
     materialen: r.type === 'printen' ? mat.all(r.id).map(m => ({
       ...(m.artikel_id ? { artikel_id: m.artikel_id } : { filament_type_id: m.filament_type_id }), gram: m.gram })) : [] }));
