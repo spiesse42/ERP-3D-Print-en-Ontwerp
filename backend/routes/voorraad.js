@@ -10,6 +10,8 @@ import { leesArtikelen, leesArtikel, leesArtikelInvoer, leesLeveranciersInvoer, 
 import { boekIn, boekUit, corrigeer, teBestellen, REDENEN_IN, REDENEN_UIT } from '../domein/voorraad.js';
 import { kostPerKg } from '../productie/kost.js';
 import { kostVanArtikel } from './producten.js';
+import multer from 'multer';
+import { tellingExcel, leesTellingExcel } from '../domein/tellinglijst.js';
 
 const r = Router();
 
@@ -298,6 +300,24 @@ r.get('/mutaties', metFouten((req, res) => {
 r.get('/te-bestellen', metFouten((req, res) => res.json(teBestellen(getDb()))));
 
 // ── Voorraadtelling ──────────────────────────────────────────────────────
+// 23-11: tellingslijst als Excel (afdrukken of invullen) en terug inlezen
+r.get('/telling.xlsx', async (req, res) => {
+  try {
+    const datum = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });
+    const { buffer } = await tellingExcel(getDb(), { datum });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="voorraadtelling-${datum}.xlsx"`);
+    res.send(buffer);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+const uploadTelling = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+r.post('/telling/inlezen', (req, res) => uploadTelling.single('bestand')(req, res, async fout => {
+  try {
+    if (fout) throw new DomeinFout(fout.code === 'LIMIT_FILE_SIZE' ? 'Bestand is groter dan 10 MB' : fout.message);
+    if (!req.file) throw new DomeinFout('Kies de ingevulde tellingslijst (.xlsx).');
+    res.json(await leesTellingExcel(getDb(), req.file.buffer));
+  } catch (e) { res.status(e instanceof DomeinFout ? 400 : 500).json({ error: e.message }); }
+}));
 // POST { regels: [{ artikel_id, geteld }], notitie? } — alles of niets.
 r.post('/telling', metFouten((req, res) => {
   const db = getDb();
