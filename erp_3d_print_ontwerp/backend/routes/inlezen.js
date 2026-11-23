@@ -59,7 +59,7 @@ r.post('/', (req, res) => {
       fs.mkdirSync(tmpMap(), { recursive: true });
       fs.writeFileSync(path.join(tmpMap(), `${token}.txt`), buf);
       fs.writeFileSync(path.join(tmpMap(), `${token}.json`), JSON.stringify({ bestandsnaam: naam, mimetype: 'text/plain; charset=utf-8', ext: '.txt', grootte: buf.length }));
-      try { return res.json({ token, bestandsnaam: naam, mimetype: 'text/plain', model: g?._model ?? null, hoofdmodel: GEMINI_MODEL(), voorstel: koppel(db, g) }); }
+      try { return res.json({ token, bestandsnaam: naam, mimetype: 'text/plain', model: g?._model ?? null, hoofdmodel: GEMINI_MODEL(), controle: g?._controle ?? null, voorstel: koppel(db, g) }); }
       catch (e) { return res.status(500).json({ error: e.message }); }
     }
     const bestandsnaam = Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200);
@@ -90,7 +90,7 @@ r.post('/', (req, res) => {
     fs.writeFileSync(path.join(tmpMap(), `${token}${ext}`), req.file.buffer);
     fs.writeFileSync(path.join(tmpMap(), `${token}.json`), JSON.stringify({ bestandsnaam, mimetype: req.file.mimetype, ext, grootte: req.file.size }));
     try {
-      res.json({ token, bestandsnaam, mimetype: req.file.mimetype, model: gelezen?._model ?? null, hoofdmodel: GEMINI_MODEL(), voorstel: koppel(db, gelezen) });
+      res.json({ token, bestandsnaam, mimetype: req.file.mimetype, model: gelezen?._model ?? null, hoofdmodel: GEMINI_MODEL(), controle: gelezen?._controle ?? null, voorstel: koppel(db, gelezen) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 });
