@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { api } from '../../lib/api.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api, BASE } from '../../lib/api.js';
 import { useData } from '../../schil/useData.js';
 import { useOmgeving } from '../../schil/Omgeving.jsx';
 import { ControlePaneel, Chip, Laden, Fout } from '../../schil/Weergaven.jsx';
@@ -18,6 +18,7 @@ export default function Voorraadtelling() {
   const [type, setType] = useState(null);
   const [enkelVerschil, setEnkelVerschil] = useState(false);
   const [bezig, setBezig] = useState(false);
+  const invoer = useRef(null);
 
   const artikelen = useMemo(() => (data || []).filter(a => a.type !== 'dienst'), [data]);
   const verschil = a => { const g = uitInvoer(geteld[a.id]); return g === null || Number.isNaN(g) ? null : Math.round((g - a.voorraad) * 1e4) / 1e4; };
@@ -49,6 +50,19 @@ export default function Voorraadtelling() {
     finally { setBezig(false); }
   }
 
+  // 23-11: ingevulde tellingslijst (Excel) → de kolom "Geteld" hier invullen; nakijken en dan verwerken
+  async function leesIn(bestand) {
+    if (!bestand) return;
+    setBezig(true);
+    try {
+      const fd = new FormData(); fd.append('bestand', bestand);
+      const r = await api.upload('/voorraad/telling/inlezen', fd);
+      setGeteld(g => ({ ...g, ...Object.fromEntries(r.regels.map(x => [x.artikel_id, String(x.geteld).replace('.', ',')])) }));
+      melding(`${r.regels.length} getelde artikel(en) ingelezen.${r.fouten.length ? ` Overgeslagen: ${r.fouten.join('; ')}.` : ''} Kijk na en kies "Telling verwerken".`, r.fouten.length ? 'fout' : undefined);
+    } catch (e) { melding(e.message, 'fout'); }
+    finally { setBezig(false); if (invoer.current) invoer.current.value = ''; }
+  }
+
   const facetten = [];
   if (type) facetten.push({ label: type === 'filament' ? 'Filament' : 'Artikelen', onWeg: () => setType(null) });
   if (enkelVerschil) facetten.push({ label: 'Met verschil', onWeg: () => setEnkelVerschil(false) });
@@ -61,6 +75,9 @@ export default function Voorraadtelling() {
         acties={<>
           <button type="button" className="btn primary" disabled={bezig || !teBoeken.length} onClick={verwerk}>Telling verwerken{teBoeken.length ? ` (${teBoeken.length})` : ''}</button>
           {ingevuld && <button type="button" className="btn" disabled={bezig} onClick={() => setGeteld({})}>Wissen</button>}
+          <a className="btn" href={`${BASE}/voorraad/telling.xlsx`} download title="Lijst van alle artikels met de voorraad volgens het systeem en een lege kolom Geteld, om af te drukken of in te vullen">Tellingslijst (Excel)</a>
+          <label className="btn" htmlFor="telling-inlezen" title="De ingevulde tellingslijst terug inlezen: de getelde aantallen komen hieronder, daarna nakijken en verwerken">{bezig ? 'Bezig…' : 'Telling inlezen…'}</label>
+          <input ref={invoer} id="telling-inlezen" type="file" className="sr-only" accept=".xlsx" disabled={bezig} onChange={e => leesIn(e.target.files?.[0])} />
         </>}
         filters={<>
           <Chip aan={type === 'filament'} onClick={() => setType(x => (x === 'filament' ? null : 'filament'))}>Filament</Chip>
