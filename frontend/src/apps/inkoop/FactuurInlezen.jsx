@@ -78,7 +78,7 @@ export default function FactuurInlezen() {
       if (tekst) fd.append('tekst', tekst); else fd.append('bestand', bestand);
       const r = await api.upload('/inkoop/inlezen', fd);
       const v = r.voorstel;
-      setLees({ token: r.token, bestandsnaam: r.bestandsnaam, mimetype: r.mimetype, model: r.model, hoofdmodel: r.hoofdmodel, bron: r.bron || 'ocr' });
+      setLees({ token: r.token, bestandsnaam: r.bestandsnaam, mimetype: r.mimetype, model: r.model, hoofdmodel: r.hoofdmodel, controle: r.controle || null, bron: r.bron || 'ocr' });
       setF({
         leverancier: v.leverancier, factuurnummer: v.factuurnummer || '', datum: v.datum || '', totaal: v.totaal_factuur,
         documentsoort: v.documentsoort || 'factuur', bestelnummer: v.bestelnummer || '', bestelling: v.bestelling || null, koppelen: !!v.bestelling,
@@ -156,7 +156,7 @@ export default function FactuurInlezen() {
             onDrop={e => { e.preventDefault(); setSleep(false); leesIn(e.dataTransfer.files?.[0]); }}>
             {fase === 'lezen' ? <>
               <b>Gemini leest het document…</b>
-              <span className="sub">Dat duurt meestal 5 à 20 seconden. Is Gemini druk, dan probeert het ERP het vanzelf opnieuw en eventueel met een reservemodel (kan tot een minuut duren).</span>
+              <span className="sub">Dat duurt meestal 5 à 30 seconden. Is Gemini druk of traag, dan probeert het ERP het vanzelf opnieuw of met een reservemodel. Tellen de regels niet op tot het factuurtotaal, dan leest het ERP de factuur nog eens (kan samen een paar minuten duren).</span>
             </> : <>
               <Icoon naam="plus" maat={28} />
               <b>Sleep een factuur, bonnetje of bestelbon hierheen</b>
@@ -207,6 +207,11 @@ export default function FactuurInlezen() {
               <h2>{f.leverancier.naam || 'Onbekende leverancier'}</h2>
               {lees.bron === 'ubl' && <div className="sub">Gelezen uit het UBL-bestand (zonder Gemini){lees.mimetype === 'application/pdf' ? '; links de meegestuurde PDF' : ''}.</div>}
               {lees.model && <div className="sub">Gelezen door <span className="mono">{lees.model}</span>{lees.model !== lees.hoofdmodel && <> <span className="badge b-warn">reservemodel: kijk extra goed na</span></>}</div>}
+              {lees.controle && <div className={`note${lees.controle.opgelost ? '' : ' fout'}`} style={{ marginTop: 6 }}>
+                {lees.controle.opgelost
+                  ? `De eerste lezing had ${lees.controle.eerste_regels} regel(s) en klopte niet met het totaal; een tweede lezing vond ${lees.controle.tweede_regels} regel(s) en klopt wel. Kijk toch even na.`
+                  : `De regels tellen niet op tot het factuurtotaal (verschil € ${Number(lees.controle.verschil).toFixed(2).replace('.', ',')}), ook niet na een tweede lezing. Kijk na of er regels ontbreken (bv. een kost of korting) en vul ze aan.`}
+              </div>}
               <div className="badges">
                 {Object.entries(tellers).map(([s, n]) => <span key={s} className={`badge ${STATUS[s]?.[0] || 'b-neutral'}`}>{n} {STATUS[s]?.[1].toLowerCase() || s}</span>)}
               </div>
