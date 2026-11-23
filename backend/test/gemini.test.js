@@ -116,3 +116,65 @@ test('GEMINI_MODEL_RESERVE: eigen lijst, "geen", standaard; hoofdmodel nooit dub
   if (oud.m === undefined) delete process.env.GEMINI_MODEL; else process.env.GEMINI_MODEL = oud.m;
   if (oud.r === undefined) delete process.env.GEMINI_MODEL_RESERVE; else process.env.GEMINI_MODEL_RESERVE = oud.r;
 });
+
+// ── 23-11: sneller en vollediger ──
+import { leesMetControle, somVanRegels, verschilMetTotaal, vergeetDenken } from '../integraties/gemini.js';
+
+test('weinig denken + limiet op het antwoord; model zonder denk-instelling: opnieuw zonder en onthouden', async () => {
+  vergeetDenken();
+  const f = nepFetch(fout(400, 'Thinking level is not supported for this model'), antwoord({ regels: [] }), antwoord({ regels: [] }));
+  await roepGeminiAan(ARGS, { fetchFn: f, wacht, reserves: [] });
+  const cfg = n => JSON.parse(f.oproepen[n].opties.body).generationConfig;
+  assert.deepEqual(cfg(0).thinkingConfig, { thinkingLevel: 'low' });
+  assert.equal(cfg(0).maxOutputTokens, 32768);
+  assert.equal(cfg(1).thinkingConfig, undefined, 'tweede poging zonder');
+  await roepGeminiAan(ARGS, { fetchFn: f, wacht, reserves: [] });
+  assert.equal(cfg(2).thinkingConfig, undefined, 'onthouden voor dat model');
+  assert.deepEqual(gewacht, []);
+  vergeetDenken();
+});
+
+test('time-out: niet opnieuw op hetzelfde model, meteen het reservemodel', async () => {
+  const afgebroken = Object.assign(new Error('aborted'), { name: 'AbortError' });
+  const f = nepFetch(afgebroken, antwoord({ regels: [{ soort: 'kost', omschrijving: 'x', aantal: 1 }] }));
+  const uit = await roepGeminiAan(ARGS, { fetchFn: f, wacht, reserves: ['reserve-model'] });
+  assert.equal(f.oproepen.length, 2);
+  assert.equal(uit.model, 'reserve-model');
+  assert.deepEqual(gewacht, []);
+  await assert.rejects(roepGeminiAan(ARGS, { fetchFn: nepFetch(afgebroken), wacht, reserves: [] }), /niet binnen 120 seconden/);
+});
+
+test('afgebroken antwoord (MAX_TOKENS) wordt herkend', async () => {
+  const lang = { ok: true, status: 200, json: async () => ({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '{"regels":[' }] } }] }) };
+  await assert.rejects(roepGeminiAan(ARGS, { fetchFn: nepFetch(lang), wacht, reserves: [] }), /afgebroken/);
+});
+
+test('controle: regels tellen niet op tot het totaal → tweede lezing, beste wint', async () => {
+  const r = (p, a = 1) => ({ soort: 'artikel', omschrijving: 'x', aantal: a, prijs_per_eenheid: p });
+  assert.equal(somVanRegels({ regels: [r(10, 2), { ...r(5), regeltotaal: 4.5 }] }), 24.5);
+  assert.equal(verschilMetTotaal({ totaal_incl_btw: null, regels: [] }), null, 'bestelbon zonder totaal: geen controle');
+  // klopt meteen: één oproep
+  let oproepen = [];
+  const roep = antwoorden => async a => { oproepen.push(a); return { data: antwoorden[oproepen.length - 1], model: 'm' }; };
+  let uit = await leesMetControle({ instructie: 'lees' }, roep([{ totaal_incl_btw: 20, regels: [r(10, 2)] }]));
+  assert.equal(oproepen.length, 1);
+  assert.equal(uit._controle, undefined);
+  // regel vergeten: tweede lezing vindt hem
+  oproepen = [];
+  uit = await leesMetControle({ instructie: 'lees' }, roep([{ totaal_incl_btw: 30, regels: [r(10, 2)] }, { totaal_incl_btw: 30, regels: [r(10, 2), r(10)] }]));
+  assert.equal(oproepen.length, 2);
+  assert.match(oproepen[1].instructie, /CONTROLE: .*1 regel\(s\) met samen € 20\.00.*€ 30\.00/s);
+  assert.equal(uit.regels.length, 2);
+  assert.deepEqual(uit._controle, { eerste_regels: 1, tweede_regels: 2, verschil_eerst: 10, verschil: 0, opgelost: true, tweede_gebruikt: true });
+  // tweede lezing slechter: eerste houden
+  oproepen = [];
+  uit = await leesMetControle({ instructie: 'lees' }, roep([{ totaal_incl_btw: 30, regels: [r(10, 2)] }, { totaal_incl_btw: 30, regels: [r(1)] }]));
+  assert.equal(uit.regels.length, 1);
+  assert.equal(uit._controle.tweede_gebruikt, false);
+  assert.equal(uit._controle.opgelost, false);
+  // tweede lezing faalt: eerste houden
+  let n = 0;
+  uit = await leesMetControle({ instructie: 'lees' }, async () => { if (n++) throw new Error('druk'); return { data: { totaal_incl_btw: 30, regels: [r(10, 2)] }, model: 'm' }; });
+  assert.equal(uit.regels.length, 1);
+  assert.equal(uit._controle.opgelost, false);
+});

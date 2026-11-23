@@ -110,8 +110,21 @@ export const WACHTTIJDEN = [2000, 5000, 10000];
 const TIJDELIJK = new Set([429, 500, 502, 503, 504]);
 
 export class GeminiFout extends Error {
-  constructor(boodschap, { status = null, tijdelijk = false } = {}) { super(boodschap); this.status = status; this.tijdelijk = tijdelijk; }
+  constructor(boodschap, { status = null, tijdelijk = false, timeout = false } = {}) { super(boodschap); this.status = status; this.tijdelijk = tijdelijk; this.timeout = timeout; }
 }
+
+// 23-11: sneller en vollediger lezen
+// - weinig "denken": een factuur overtypen vraagt geen redeneerwerk, en
+//   denken maakt Gemini traag (oorzaak van de time-outs). Kent een model
+//   die instelling niet (400), dan opnieuw zonder, en dat onthouden.
+// - ruime limiet voor het antwoord; een afgebroken antwoord (MAX_TOKENS)
+//   wordt herkend in plaats van een onleesbare fout.
+// - time-out: niet nog eens 2 minuten op hetzelfde model wachten, maar
+//   meteen het (snellere) reservemodel proberen.
+export const TIJDSLIMIET_MS = 120_000;
+export const MAX_ANTWOORD = 32768;
+const zonderDenken = new Set();
+export const vergeetDenken = () => zonderDenken.clear();
 
 export function vertaalFout(status, tekst = '', model = GEMINI_MODEL()) {
   const t = String(tekst);
@@ -139,7 +152,9 @@ async function eenPoging({ buffer, mimetype, tekst, instructie, sleutel, fetchFn
     ? { text: `DOCUMENT (tekst, bv. uit een e-mail):\n${String(tekst).slice(0, 60000)}` }
     : { inline_data: { mime_type: mimetype, data: buffer.toString('base64') } };
   const stop = new AbortController();
-  const klok = setTimeout(() => stop.abort(), 90_000);
+  const klok = setTimeout(() => stop.abort(), TIJDSLIMIET_MS);
+  const begin = Date.now();
+  const denken = !zonderDenken.has(model);
   try {
     let res;
     try {
@@ -149,24 +164,37 @@ async function eenPoging({ buffer, mimetype, tekst, instructie, sleutel, fetchFn
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': sleutel },
         body: JSON.stringify({
           contents: [{ parts: [{ text: instructie }, document] }],
-          generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0 },
+          generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0, maxOutputTokens: MAX_ANTWOORD,
+            ...(denken ? { thinkingConfig: { thinkingLevel: 'low' } } : {}) },
         }),
         signal: stop.signal,
       });
     } catch (e) {
-      if (e.name === 'AbortError') throw new GeminiFout('Gemini antwoordde niet binnen 90 seconden. Probeer het opnieuw.');
+      if (e.name === 'AbortError') throw new GeminiFout(`Gemini antwoordde niet binnen ${TIJDSLIMIET_MS / 1000} seconden.`, { tijdelijk: true, timeout: true });
       // geen verbinding (internet, DNS, …): ook tijdelijk
       throw new GeminiFout('Geen verbinding met Gemini. Kijk de internetverbinding na en probeer opnieuw.', { tijdelijk: true });
     }
     if (!res.ok) {
       const t = (await res.text().catch(() => '')).slice(0, 500);
       if (process.env.NODE_ENV !== 'test') console.warn(`Gemini ${model} ${res.status}: ${t}`);
+      // model kent de denk-instelling niet: onthouden en meteen opnieuw zonder
+      if (res.status === 400 && denken && /think/i.test(t)) {
+        zonderDenken.add(model);
+        clearTimeout(klok);
+        return eenPoging({ buffer, mimetype, tekst, instructie, sleutel, fetchFn, model });
+      }
       throw vertaalFout(res.status, t, model);
     }
     const data = await res.json();
-    const tekst = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('');
-    if (!tekst) throw new GeminiFout('Gemini gaf geen bruikbaar antwoord terug. Probeer het opnieuw.');
-    try { return JSON.parse(tekst); } catch { throw new GeminiFout('Het antwoord van Gemini kon niet gelezen worden. Probeer het opnieuw.'); }
+    const kandidaat = data?.candidates?.[0];
+    const antwoord = kandidaat?.content?.parts?.filter(p => !p.thought).map(p => p.text || '').join('');
+    if (process.env.NODE_ENV !== 'test') {
+      const u = data?.usageMetadata || {};
+      console.log(`Gemini ${model}: ${Math.round((Date.now() - begin) / 100) / 10} s, einde ${kandidaat?.finishReason || '?'}, tokens in ${u.promptTokenCount ?? '?'} / uit ${u.candidatesTokenCount ?? '?'}${u.thoughtsTokenCount ? ` / denken ${u.thoughtsTokenCount}` : ''}`);
+    }
+    if (kandidaat?.finishReason === 'MAX_TOKENS') throw new GeminiFout('Het antwoord van Gemini werd afgebroken (te lang document). Probeer het opnieuw, of lees de factuur in delen in (bv. per pagina als foto).', { tijdelijk: true });
+    if (!antwoord) throw new GeminiFout('Gemini gaf geen bruikbaar antwoord terug. Probeer het opnieuw.');
+    try { return JSON.parse(antwoord); } catch { throw new GeminiFout('Het antwoord van Gemini kon niet gelezen worden. Probeer het opnieuw.', { tijdelijk: true }); }
   } finally { clearTimeout(klok); }
 }
 
@@ -176,7 +204,8 @@ async function metHerhaling(args, model, { fetchFn, wachttijden, wacht, sleutel 
     try {
       return await eenPoging({ ...args, sleutel, fetchFn, model });
     } catch (e) {
-      if (!(e instanceof GeminiFout) || !e.tijdelijk || poging >= wachttijden.length) { e.pogingen = poging + 1; throw e; }
+      // time-out: meteen naar het volgende (reserve)model, niet nog eens wachten
+      if (!(e instanceof GeminiFout) || !e.tijdelijk || e.timeout || poging >= wachttijden.length) { e.pogingen = poging + 1; throw e; }
       await wacht(wachttijden[poging]);
     }
   }
@@ -210,10 +239,50 @@ export async function roepGeminiAan(args, { fetchFn = fetch, wachttijden = WACHT
   throw laatste;
 }
 
-const echteGemini = async args => {
-  const { data, model } = await roepGeminiAan(args);
-  return { ...data, _model: model };
-};
+// 23-11: controle op ontbrekende regels. Tellen de regels niet op tot het
+// totaal op het document, dan las Gemini waarschijnlijk regels over het hoofd
+// (lange factuur, meerdere pagina's). Dan één keer opnieuw, met die
+// vaststelling erbij; het antwoord dat het best klopt wint.
+const r2 = x => Math.round(x * 100) / 100;
+export function somVanRegels(data) {
+  return r2((Array.isArray(data?.regels) ? data.regels : []).reduce((s, r) => {
+    const t = Number(r?.regeltotaal);
+    if (r?.regeltotaal != null && Number.isFinite(t)) return s + t;
+    const p = Number(r?.prijs_per_eenheid), a = Number(r?.aantal) || 1;
+    return s + (r?.prijs_per_eenheid != null && Number.isFinite(p) ? p * a : 0);
+  }, 0));
+}
+export function verschilMetTotaal(data) {
+  const totaal = Number(data?.totaal_incl_btw);
+  if (data?.totaal_incl_btw == null || !Number.isFinite(totaal) || totaal <= 0) return null;   // bv. bestelbon zonder prijzen
+  return r2(totaal - somVanRegels(data));
+}
+const klopt = v => v === null || Math.abs(v) <= 0.05;
+
+export async function leesMetControle(args, roep = roepGeminiAan) {
+  const eerste = await roep(args);
+  const v1 = verschilMetTotaal(eerste.data);
+  if (klopt(v1)) return { ...eerste.data, _model: eerste.model };
+  const n1 = Array.isArray(eerste.data?.regels) ? eerste.data.regels.length : 0;
+  const extra = `\n\nCONTROLE: een eerste uitlezing van dit document gaf ${n1} regel(s) met samen € ${somVanRegels(eerste.data).toFixed(2)}, `
+    + `maar het totaal op het document is € ${Number(eerste.data.totaal_incl_btw).toFixed(2)} (verschil € ${v1.toFixed(2)}). `
+    + 'Lees het document opnieuw, pagina per pagina, en geef ALLE regels: elk product, elke verzend-, administratie- of andere kost. '
+    + 'Kijk ook na of aantallen en prijzen per eenheid (incl. btw, na korting) kloppen met de regeltotalen.';
+  try {
+    const tweede = await roep({ ...args, instructie: `${args.instructie}${extra}` });
+    const v2 = verschilMetTotaal(tweede.data);
+    const beter = v2 !== null && Math.abs(v2) < Math.abs(v1);
+    const gekozen = beter ? tweede : eerste;
+    const v = beter ? v2 : v1;
+    return { ...gekozen.data, _model: gekozen.model,
+      _controle: { eerste_regels: n1, tweede_regels: Array.isArray(tweede.data?.regels) ? tweede.data.regels.length : 0, verschil_eerst: v1, verschil: v, opgelost: klopt(v), tweede_gebruikt: beter } };
+  } catch {
+    // tweede lezing mislukt (bv. druk): de eerste houden, met de vaststelling
+    return { ...eerste.data, _model: eerste.model, _controle: { eerste_regels: n1, verschil_eerst: v1, verschil: v1, opgelost: false, tweede_gebruikt: false } };
+  }
+}
+
+const echteGemini = args => leesMetControle(args);
 
 
 // Vervangbaar in de tests (geen echte oproep, geen sleutel nodig):
