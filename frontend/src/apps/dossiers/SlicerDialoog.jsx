@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../lib/api.js';
-import { slicerVoorUpload, isGcode, teGrootOmTeBewaren, MAX_SLICER_MB } from '../../lib/slicerbestand.js';
+import { slicerVoorUpload, teGrootOmTeBewaren, MAX_SLICER_MB } from '../../lib/slicerbestand.js';
 import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { nieuweRegel } from '../../components/RegelEditor.jsx';
@@ -31,9 +31,10 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
     if (!bestand) return;
     setBezig(true);
     try {
-      if (!isGcode(bestand) && teGrootOmTeBewaren(bestand)) throw new Error(`Dit 3mf-bestand is groter dan ${MAX_SLICER_MB} MB. Exporteer de gcode van de plaat (.gcode): die mag zo groot zijn als nodig.`);
+      const klein = await slicerVoorUpload(bestand);
+      if (teGrootOmTeBewaren(klein)) throw new Error(`Dit bestand kon niet verkleind worden en is groter dan ${MAX_SLICER_MB} MB. Exporteer het geslicete bestand opnieuw uit de slicer.`);
       const fd = new FormData();
-      fd.append('bestand', slicerVoorUpload(bestand), bestand.name);
+      fd.append('bestand', klein, bestand.name);
       const d = await api.upload('/slicer', fd);
       setBestand(bestand);
       if (teGrootOmTeBewaren(bestand)) setBewaren(false);   // te groot als bijlage: enkel de gegevens
