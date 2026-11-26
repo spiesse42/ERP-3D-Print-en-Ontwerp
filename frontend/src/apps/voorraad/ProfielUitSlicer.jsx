@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../lib/api.js';
+import { slicerVoorUpload, isGcode, teGrootOmTeBewaren, MAX_SLICER_MB } from '../../lib/slicerbestand.js';
 import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { naarInvoer } from '../../lib/formaat.js';
@@ -47,12 +48,13 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
     if (!bestand) return;
     setBezig(true);
     try {
+      if (!isGcode(bestand) && teGrootOmTeBewaren(bestand)) throw new Error(`Dit 3mf-bestand is groter dan ${MAX_SLICER_MB} MB. Exporteer de gcode van de plaat (.gcode): die mag zo groot zijn als nodig.`);
       const fd = new FormData();
-      fd.append('bestand', bestand);
+      fd.append('bestand', slicerVoorUpload(bestand), bestand.name);
       const r = await api.upload('/slicer', fd);
       // voorkeur: de plaat met een object met de naam van dit product
       const i = Math.max(0, r.platen.findIndex(p => p.objecten.some(o => norm(o).includes(norm(naam)) || norm(naam).includes(norm(o)))));
-      setD(r); setBestand(bestand); setPlaat(i); setStuks(stuksOp(r.platen[i], naam));
+      setD(r); setBestand(bestand); if (teGrootOmTeBewaren(bestand)) setBewaren(false); setPlaat(i); setStuks(stuksOp(r.platen[i], naam));
       setGekozen(Object.fromEntries(r.platen.map(x => [x.nummer, true])));
     } catch (e) { melding(e.message, 'fout'); }
     setBezig(false);
@@ -130,7 +132,9 @@ export default function ProfielUitSlicer({ naam, onOvernemen, onSluit }) {
           </div>
         </div>
         </>}
-        <label className="vinkje" style={{ marginTop: 8 }}><input type="checkbox" checked={bewaren} onChange={e => setBewaren(e.target.checked)} /> Slicerbestand bewaren bij dit artikel (downloaden vanuit het printprofiel)</label>
+        {teGrootOmTeBewaren(bestand)
+          ? <p className="sub" style={{ marginTop: 8 }}>Het bestand ({Math.round(bestand.size / 1048576)} MB) is te groot om te bewaren (max. {MAX_SLICER_MB} MB). Printtijd en filament zijn wel ingelezen.</p>
+          : <label className="vinkje" style={{ marginTop: 8 }}><input type="checkbox" checked={bewaren} onChange={e => setBewaren(e.target.checked)} /> Slicerbestand bewaren bij dit artikel (downloaden vanuit het printprofiel)</label>}
         <p className="note">Staan er ook andere producten op deze plaat, dan krijgt elk stuk een gelijk deel van tijd en gram. Slice voor een juiste kost liefst een plaat met enkel dit product. Filament dat niet herkend wordt, kies je daarna zelf in het profiel.</p>
       </>}
     </Dialoog>
