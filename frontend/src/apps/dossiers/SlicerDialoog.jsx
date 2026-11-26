@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../lib/api.js';
+import { slicerVoorUpload, isGcode, teGrootOmTeBewaren, MAX_SLICER_MB } from '../../lib/slicerbestand.js';
 import { useOmgeving, Dialoog } from '../../schil/Omgeving.jsx';
 import Icoon from '../../schil/Icoon.jsx';
 import { nieuweRegel } from '../../components/RegelEditor.jsx';
@@ -30,10 +31,12 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
     if (!bestand) return;
     setBezig(true);
     try {
+      if (!isGcode(bestand) && teGrootOmTeBewaren(bestand)) throw new Error(`Dit 3mf-bestand is groter dan ${MAX_SLICER_MB} MB. Exporteer de gcode van de plaat (.gcode): die mag zo groot zijn als nodig.`);
       const fd = new FormData();
-      fd.append('bestand', bestand);
+      fd.append('bestand', slicerVoorUpload(bestand), bestand.name);
       const d = await api.upload('/slicer', fd);
       setBestand(bestand);
+      if (teGrootOmTeBewaren(bestand)) setBewaren(false);   // te groot als bijlage: enkel de gegevens
       setNietGeslicet(d.niet_geslicet || []);
       setPrinterId(d.printer_id ? String(d.printer_id) : '');
       setPlaten(d.platen.map(p => ({ ...p, mee: true, omschrijving: p.naam || `Plaat ${p.nummer}`, aantal: String(p.stuks || 1),
@@ -121,7 +124,9 @@ export default function SlicerDialoog({ printers, filamenten, prijsgroepen, onTo
           <label className="vinkje"><input type="checkbox" checked={afbOpOfferte} onChange={e => setAfbOpOfferte(e.target.checked)} /> Afbeelding van elke plaat op de offerte en werkbon (bij de regel)</label>
           <label className="vinkje"><input type="checkbox" checked={fotosMee} onChange={e => setFotosMee(e.target.checked)} /> Afbeeldingen ook bij de foto's van het dossier zetten</label>
         </div>}
-        <label className="vinkje" style={{ marginTop: 4 }}><input type="checkbox" checked={bewaren} onChange={e => setBewaren(e.target.checked)} /> Slicerbestand bewaren bij het dossier (downloaden bij de regel en de printopdracht)</label>
+        {teGrootOmTeBewaren(bestand)
+          ? <p className="sub" style={{ marginTop: 4 }}>Het bestand ({Math.round(bestand.size / 1048576)} MB) is te groot om bij het dossier te bewaren (max. {MAX_SLICER_MB} MB). Printtijd en filament zijn wel ingelezen; bewaar het bestand zelf op je pc.</p>
+          : <label className="vinkje" style={{ marginTop: 4 }}><input type="checkbox" checked={bewaren} onChange={e => setBewaren(e.target.checked)} /> Slicerbestand bewaren bij het dossier (downloaden bij de regel en de printopdracht)</label>}
         <p className="note">De grammen zijn het totale verbruik volgens de slicer, per filament: model, supports, en bij meerkleurig ook het spoelen (flush) en de prime tower. Dat alles betaalt de klant mee.</p>
         {zonderFilament && <p className="note">Niet elk filament is herkend: kies het zelf, of voeg het toe in Voorraad (merk + type als prijsgroep). Zonder keuze telt dat filament niet mee in de prijs.</p>}
       </>}
